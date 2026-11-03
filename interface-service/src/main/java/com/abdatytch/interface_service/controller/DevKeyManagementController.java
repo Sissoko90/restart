@@ -114,7 +114,7 @@ public class DevKeyManagementController {
             status.put("totalValidKeys", keyRotationService.getAllValidPublicKeys().size());
             status.put("rotationNeeded", keyRotationService.isRotationNeeded());
             status.put("issuer", "interface-service");
-            status.put("audience", "abdatech-developers");
+            status.put("audience", "restart-developers");
             status.put("timestamp", java.time.Instant.now().toString());
 
             return ResponseEntity.ok(status);

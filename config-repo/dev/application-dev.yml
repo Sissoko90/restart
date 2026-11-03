@@ -382,7 +382,7 @@ logging:
 jwt:
   expiration: 86400000  # 24 heures en millisecondes
   issuer: interface-service
-  audience: abdatech-developers,quotas-service,setting-service,media-service,user-service,gateway-service
+  audience: restart-developers,quotas-service,setting-service,media-service,user-service,gateway-service
   refresh-expiration: 604800000  # 7 jours (en millisecondes)
   # JWKS - Récupération des clés publiques depuis interface-service (développeurs)
   jwks:

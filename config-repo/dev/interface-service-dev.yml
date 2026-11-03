@@ -1,7 +1,7 @@
 # ==========================================
 # INTERFACE SERVICE - Configuration DEV
 # ==========================================
-# Service de gestion des projets pour développeurs AbdaTech
+# Service de gestion des projets pour développeurs
 # Port: 8088 (éviter conflit avec payment-service:8085)
 
 server:

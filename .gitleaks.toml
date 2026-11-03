@@ -1,0 +1,67 @@
+# ==========================================================
+# Configuration Gitleaks
+# ==========================================================
+# Les regles par defaut sont CONSERVEES — `useDefault = true`. Ce fichier n'en
+# retire aucune : il ajoute une liste d'exceptions pour les fausses detections,
+# et c'est tout.
+#
+# Pourquoi une exception plutot qu'un scanner desactive
+# -----------------------------------------------------
+# Gitleaks signalait `"confirmPassword":"NouveauMotDePasse123"` dans
+# AuthControllerTest : un corps JSON de test, pas un secret. Un scanner qui
+# echoue sur du trafic legitime finit desactive, et toute sa protection part
+# avec lui — c'est exactement le raisonnement applique a XssProtectionWebFilter
+# dans ce depot, qu'on a choisi de ne PAS faire bloquer pour la meme raison.
+#
+# Ce que cette exception ne retire PAS
+# ------------------------------------
+# Les motifs de fournisseurs — AWS, Stripe, Twilio, Google, SendGrid, jetons
+# GitHub et Slack — restent actifs sur TOUT le depot, y compris les tests. Ce
+# qui est tolere ici est le motif generique « un champ nomme password porte une
+# valeur », qui ne distingue pas une fixture d'un vrai secret.
+#
+# Et ce n'est pas la seule barriere : la protection de push de GitHub analyse
+# chaque poussee, indifferemment de ce fichier. C'est elle qui a arrete
+# scripts/vault-secrets-complete.sh — ~25 identifiants reels — alors que nos
+# propres verifications l'avaient declare propre. Un fichier de configuration
+# local ne desarme pas ce filet.
+# ==========================================================
+
+title = "Restart"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = """
+Fixtures de test. Les valeurs concernees sont des mots de passe inventes pour \
+exercer des endpoints — y compris des mots de passe VOLONTAIREMENT faux, qui \
+servent a verifier qu'un refus se produit bien."""
+
+paths = [
+    # Sources de test de tous les modules. Un mot de passe y est une donnee
+    # d'entree, pas un justificatif.
+    '''.*src/test/.*''',
+    # Scenarios de securite joues a la main contre une plateforme locale :
+    # ce fichier ne contient QUE des mots de passe destines a etre refuses.
+    '''^test-security-scenarios\.sh$''',
+    # Collections Postman : engendrees depuis le code, elles portent des
+    # valeurs d'exemple. Les ENVIRONNEMENTS Postman, eux, portent les vraies
+    # valeurs — ils sont exclus du depot par .gitignore et ne sont donc jamais
+    # analyses.
+    '''^postman/.*\.postman_collection\.json$''',
+    # Gabarit d'environnement : 191 variables declarees, 4 renseignees, et ce
+    # sont `false`, `localhost` et deux URL locales.
+    '''^\.env\.example$''',
+]
+
+regexes = [
+    # En-tetes PEM apparaissant comme LITTERAUX dans du code qui decoupe une
+    # cle — SecretClientApple, DevKeyRotationServiceImpl. Verifie : aucune
+    # matiere de cle, seulement la chaine de delimitation.
+    '''-----(BEGIN|END) [A-Z ]*PRIVATE KEY-----''',
+    # Valeur par defaut LIVREE PAR GRAFANA, publique et documentee. Elle doit
+    # changer avant toute mise en ligne — un commentaire le dit dans
+    # grafana.ini — mais elle n'est pas un secret de ce projet.
+    '''SW2YcwTIb9zpOOhoPsMm''',
+]

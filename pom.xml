@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 
 	<!-- ==========================================================
-	     POM PARENT DE LA PLATEFORME ABDATECH
+	     POM PARENT DE LA PLATEFORME RESTART
 	     ==========================================================
 	     Source unique de vérité pour les versions.
 	     Avant ce POM, chaque service redéclarait son parent Spring Boot
@@ -24,10 +24,10 @@
 	</parent>
 
 	<groupId>com.abdatytch</groupId>
-	<artifactId>abdatech-platform</artifactId>
+	<artifactId>restart-platform</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<packaging>pom</packaging>
-	<name>AbdaTech Platform</name>
+	<name>Restart</name>
 	<description>POM parent : versions et dépendances communes à tous les microservices</description>
 
 	<modules>

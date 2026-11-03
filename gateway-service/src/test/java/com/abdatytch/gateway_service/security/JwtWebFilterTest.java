@@ -52,7 +52,7 @@ import static org.mockito.Mockito.when;
 class JwtWebFilterTest {
 
     private static final String ISSUER = "interface-service";
-    private static final String AUDIENCES = "abdatech-developers,user-service,media-service";
+    private static final String AUDIENCES = "restart-developers,user-service,media-service";
     private static final String KID = "key-2026-09";
 
     @Mock
@@ -132,7 +132,7 @@ class JwtWebFilterTest {
                         "email", "dev@abdatech.com",
                         "role", "ROLE_DEVELOPER",
                         "type", "developer"),
-                ISSUER, List.of("abdatech-developers"), authorityKeys.getPrivate(), 60_000);
+                ISSUER, List.of("restart-developers"), authorityKeys.getPrivate(), 60_000);
     }
 
     private MockServerWebExchange get(String path, String bearer) {

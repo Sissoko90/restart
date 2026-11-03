@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<parent>
 		<groupId>com.abdatytch</groupId>
-		<artifactId>abdatech-platform</artifactId>
+		<artifactId>restart-platform</artifactId>
 		<version>0.0.1-SNAPSHOT</version>
 		<relativePath>../pom.xml</relativePath>
 	</parent>
@@ -426,12 +426,21 @@
 			</exclusions>
 		</dependency>
 
-		<!-- loki4j dependencies -->
-        <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>${logback.version}</version>
-        </dependency>
+		<!--
+		  loki4j dependencies.
+
+		  logback-classic N'EST PAS redeclare ici : il l'est deja plus haut
+		  (« Force Logback as logging implementation »), sans version, donc
+		  gere par la BOM de spring-boot-starter-parent.
+
+		  Le declarer deux fois faisait echouer la LECTURE du POM :
+		  « dependencies.dependency.(groupId:artifactId:type:classifier) must
+		  be unique ». Maven 3.9.11 en local n'en faisait qu'un avertissement,
+		  que le filtrage de la sortie masquait ; le runner d'integration
+		  continue, lui, refusait de construire. Le defaut n'etait donc visible
+		  que sur GitHub — et il a fait echouer d'un coup toutes les taches qui
+		  dependent d'une compilation reussie.
+		-->
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-core</artifactId>

@@ -5,8 +5,14 @@
 **N'ouvrez pas d'issue publique.** Une issue est visible de tous, y compris de
 quelqu'un qui exploiterait la faille avant qu'elle ne soit corrigée.
 
-Utilisez un [avis de sécurité privé](https://github.com/Sissoko90/micro-service-restart/security/advisories/new),
-ou à défaut écrivez à **security@abdatech.ml**.
+Utilisez un [avis de sécurité privé](https://github.com/Sissoko90/restart/security/advisories/new).
+C'est le canal recommandé : il est confidentiel, il reste attaché au dépôt, et il
+permet de discuter du correctif avant toute publication.
+
+> L'adresse de courriel qui figurait ici a été retirée avec le reste de l'ancien
+> nommage. En ajouter une est utile le jour où le dépôt s'ouvrira à des
+> rapporteurs externes — tant qu'il est privé, l'avis de sécurité suffit, et
+> quiconque peut lire ce fichier peut en ouvrir un.
 
 Ce qui aide à traiter vite :
 

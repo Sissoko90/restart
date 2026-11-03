@@ -65,7 +65,7 @@ public class DevJwtServiceImpl implements IDevJwtService {
      * Liste d'audiences séparées par des virgules, émises dans le claim `aud`.
      * Doit couvrir tous les services consommateurs, sinon ils rejettent le token.
      */
-    @Value("${jwt.dev.audience:abdatech-developers}")
+    @Value("${jwt.dev.audience:restart-developers}")
     private String jwtAudience;
 
     private final IDevKeyRotationService keyRotationService;
@@ -136,7 +136,7 @@ public class DevJwtServiceImpl implements IDevJwtService {
                     .forEach(audiences::add);
         }
         if (audiences.isEmpty()) {
-            audiences.add("abdatech-developers");
+            audiences.add("restart-developers");
         }
         return audiences;
     }

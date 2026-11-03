@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "AbdaTech — media-service",
+    "name": "Restart — media-service",
     "description": "Collection générée depuis le code source (27 endpoints).\n\n**Appels via le Gateway** : `baseUrl` = `http://localhost:8081/api/v1`.\n\nL'appel en direct sur `http://localhost:8087` est refusé : les services exigent la signature HMAC du Gateway, qu'un client ne peut pas produire.\n\nLe jeton est capturé automatiquement après une connexion réussie et réinjecté dans `{{accessToken}}`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },

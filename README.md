@@ -2,33 +2,20 @@
 
 # Restart
 
-**Plateforme d'authentification en tant que service — AbdaTech**
+**Authentification en tant que service**
 
 Un portail développeur qui délivre des identités, des jetons et des quotas à des
-applications tierces, bâti sur neuf microservices réactifs.
+applications tierces, bâti sur dix modules réactifs.
 
 <br>
 
-[![CI](https://github.com/Sissoko90/micro-service-restart/actions/workflows/ci.yml/badge.svg)](https://github.com/Sissoko90/micro-service-restart/actions/workflows/ci.yml)
-[![Sécurité](https://github.com/Sissoko90/micro-service-restart/actions/workflows/security.yml/badge.svg)](https://github.com/Sissoko90/micro-service-restart/actions/workflows/security.yml)
-[![Couverture](https://img.shields.io/badge/couverture-20.7%25-orange)](docs/TESTING.md)
-[![Tests](https://img.shields.io/badge/tests-337-brightgreen)](docs/TESTING.md)
+[![CI](https://github.com/Sissoko90/restart/actions/workflows/ci.yml/badge.svg)](https://github.com/Sissoko90/restart/actions/workflows/ci.yml)
+[![Sécurité](https://github.com/Sissoko90/restart/actions/workflows/security.yml/badge.svg)](https://github.com/Sissoko90/restart/actions/workflows/security.yml)
 
 [![Java](https://img.shields.io/badge/Java-17-007396?logo=openjdk&logoColor=white)](https://openjdk.org/projects/jdk/17/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.1-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
-[![Spring Cloud](https://img.shields.io/badge/Spring%20Cloud-2025.1.0-6DB33F?logo=spring&logoColor=white)](https://spring.io/projects/spring-cloud)
 [![WebFlux](https://img.shields.io/badge/architecture-r%C3%A9active-6DB33F)](docs/NON-BLOCKING.md)
-[![Plateforme](https://img.shields.io/badge/plateforme-Docker%20%7C%20Linux%20%7C%20macOS-2496ED?logo=docker&logoColor=white)](#démarrage-rapide)
-
 [![Licence](https://img.shields.io/badge/licence-propri%C3%A9taire-red)](LICENSE)
-[![OWASP](https://img.shields.io/badge/OWASP-Top%2010%20audit%C3%A9-000000?logo=owasp&logoColor=white)](docs/COMPLIANCE.md)
-[![CWE](https://img.shields.io/badge/MITRE-CWE%20Top%2025-c00000)](docs/COMPLIANCE.md)
-[![RGPD](https://img.shields.io/badge/RGPD-art.17%20complet%20%C2%B7%20art.20%20absent-orange)](docs/COMPLIANCE.md)
-
-[![Dernier commit](https://img.shields.io/github/last-commit/Sissoko90/micro-service-restart)](https://github.com/Sissoko90/micro-service-restart/commits/main)
-[![PRs](https://img.shields.io/github/issues-pr/Sissoko90/micro-service-restart)](https://github.com/Sissoko90/micro-service-restart/pulls)
-[![Stars](https://img.shields.io/github/stars/Sissoko90/micro-service-restart?style=flat)](https://github.com/Sissoko90/micro-service-restart/stargazers)
-[![Forks](https://img.shields.io/github/forks/Sissoko90/micro-service-restart?style=flat)](https://github.com/Sissoko90/micro-service-restart/network/members)
 
 </div>
 
@@ -38,8 +25,8 @@ applications tierces, bâti sur neuf microservices réactifs.
 
 - [Ce que fait Restart](#ce-que-fait-restart)
 - [Architecture](#architecture)
-- [Les services](#les-services)
-- [Démarrage rapide](#démarrage-rapide)
+- [Les modules](#les-modules)
+- [Démarrage](#démarrage)
 - [Construire et tester](#construire-et-tester)
 - [Sécurité](#sécurité)
 - [Conformité](#conformité)
@@ -54,30 +41,38 @@ applications tierces, bâti sur neuf microservices réactifs.
 
 Un développeur s'inscrit sur le portail, crée un projet, et reçoit des clés. Son
 application peut dès lors déléguer à Restart l'inscription, la connexion, la
-vérification d'identité et la gestion des rôles de **ses propres** utilisateurs —
-sans écrire une ligne de code d'authentification.
-
-La plateforme fournit :
+vérification d'identité et la gestion des rôles de **ses propres** utilisateurs.
 
 | | |
 |---|---|
-| **Authentification** | mot de passe, code à usage unique par SMS ou courriel, OAuth2 (Google, Facebook), biométrie |
+| **Authentification** | mot de passe, code à usage unique par SMS ou courriel, OAuth2 (Google, Facebook, Apple), biométrie |
 | **Jetons** | JWT signés RS256, rotation de clés sans interruption, révocation immédiate |
 | **Vérification d'identité** | dépôt de pièces justificatives, chiffrement AES-256-GCM, circuit de validation |
 | **Rôles et permissions** | affectation multiple, portée par projet |
 | **Quotas** | plafonds par palier d'abonnement, comptage temps réel |
-| **Second facteur** | TOTP conforme RFC 6238, compatible Google Authenticator |
+| **Second facteur** | TOTP conforme RFC 6238, codes de secours |
+| **Politique de sécurité** | règles d'adresses, pays refusés, fenêtres de maintenance, seuils |
 
 ### Ce qui structure la conception
 
+**Un seul détenteur par règle.** C'est le principe qui tient l'édifice, et il
+vient d'une expérience répétée : le défaut le plus fréquent de ce dépôt a
+toujours été une protection écrite, présente, et jamais atteinte — ou deux
+mécanismes pour une même règle, dont l'un masque l'autre en silence.
+
 **Une seule autorité de signature.** `interface-service` est le seul service à
 détenir des clés privées. Les autres valident les jetons via son point JWKS. Un
-service compromis ne peut donc pas fabriquer d'identité — il n'a pas de quoi
+service compromis ne peut donc pas fabriquer d'identité : il n'a pas de quoi
 signer.
 
 **Un seul point d'entrée.** Tout passe par le Gateway. Les services refusent les
 appels directs : chaque requête proxifiée porte une signature HMAC-SHA256
-horodatée que le Gateway seul sait produire. Un appel direct reçoit un 403.
+horodatée que le Gateway seul sait produire.
+
+**Décider et appliquer sont séparés.** `security-service` décide de la politique
+et l'écrit en base ; le Gateway l'applique en lisant Redis. Il n'appelle jamais
+le service de politique sur le chemin d'une requête — ce serait un saut réseau
+par requête, et une panne de ce service arrêterait la plateforme.
 
 **Aucun blocage sur le chemin d'une requête.** L'ensemble est réactif de bout en
 bout — WebFlux, R2DBC, pilotes MongoDB et Cassandra réactifs. L'absence d'appel
@@ -91,39 +86,41 @@ bloquant est vérifiée par des tests BlockHound, pas seulement par relecture.
                          ┌──────────────────┐
       Client ───────────▶│  gateway-service │ :8081
                          │                  │
-                         │  liste noire IP  │
-                         │  géo-blocage     │
+                         │  règles d'IP     │
+                         │  pays refusés    │
                          │  débit (Redis)   │
                          │  traversée/XSS   │
                          │  JWT + révocation│
+                         │  maintenance     │
                          │  signature HMAC  │
                          └────────┬─────────┘
                                   │  Consul (découverte)
-        ┌──────────────┬──────────┼──────────┬──────────────┐
-        ▼              ▼          ▼          ▼              ▼
-  ┌───────────┐  ┌──────────┐ ┌────────┐ ┌────────┐  ┌───────────┐
-  │ interface │  │   auth   │ │  user  │ │ media  │  │  quotas   │
-  │   :8088   │  │  :8082   │ │ :8083  │ │ :8087  │  │  :8089    │
-  │           │  │          │ │        │ │        │  │           │
-  │ AUTORITÉ  │  │ connexion│ │ profil │ │  KYC   │  │ plafonds  │
-  │    JWT    │  │ OTP,OAuth│ │ rôles  │ │ chiffré│  │  usage    │
-  │ JWKS/kid  │  │ biométrie│ │        │ │        │  │           │
-  └─────┬─────┘  └────┬─────┘ └───┬────┘ └───┬────┘  └─────┬─────┘
-        │             │           │          │             │
-   PostgreSQL    PostgreSQL  PostgreSQL   MongoDB      Cassandra
-        │             │           │          │             │
-        └─────────────┴───────────┴──────────┴─────────────┘
-                              Redis  ·  Kafka
-                                  │
-                         ┌────────┴─────────┐
-                         │ setting  :8090   │  config-service :8888
-                         └──────────────────┘
+   ┌───────────┬─────────┬────────┼───────┬──────────┬──────────┐
+   ▼           ▼         ▼        ▼       ▼          ▼          ▼
+┌─────────┐ ┌────────┐ ┌───────┐ ┌─────┐ ┌────────┐ ┌────────┐
+│interface│ │  auth  │ │ user  │ │media│ │security│ │ quotas │
+│  :8088  │ │ :8082  │ │ :8083 │ │:8087│ │ :8091  │ │ :8089  │
+│         │ │        │ │       │ │     │ │        │ │        │
+│AUTORITÉ │ │connexion│ │profil │ │ KYC │ │politiq.│ │plafonds│
+│   JWT   │ │OTP OAuth│ │rôles  │ │chiff│ │ décide │ │ usage  │
+│JWKS/kid │ │biométrie│ │       │ │     │ │        │ │        │
+└────┬────┘ └───┬────┘ └───┬───┘ └──┬──┘ └───┬────┘ └───┬────┘
+     │          │          │        │        │          │
+ PostgreSQL PostgreSQL PostgreSQL MongoDB PostgreSQL Cassandra
+     │          │          │        │        │          │
+     └──────────┴──────────┴────────┴────────┴──────────┘
+                      Redis  ·  Kafka
+                            │
+                   ┌────────┴─────────┐
+                   │ setting  :8090   │  config-service :8888
+                   └──────────────────┘
 ```
 
 ### Le chemin d'une requête authentifiée
 
-1. Le Gateway écarte les IP en liste noire et les pays bloqués.
-2. Il applique le plafond de débit, indexé sur l'**IP réelle** — l'en-tête
+1. Le Gateway écarte les adresses bloquées et les pays refusés, et répond à la
+   place du service si une fenêtre de maintenance court.
+2. Il applique le plafond de débit, indexé sur l'**adresse réelle** —
    `X-Forwarded-For` n'est cru que s'il vient d'un proxy déclaré.
 3. Il valide le jeton : signature RS256 (clé résolue par le `kid` de l'en-tête
    JWS), émetteur, audience, expiration, **type**, puis **révocation**.
@@ -137,44 +134,57 @@ y ont été trouvées — est dans [docs/GATEWAY-SECURITY.md](docs/GATEWAY-SECUR
 
 ---
 
-## Les services
+## Les modules
 
-| Service | Port | Rôle | Persistance | Endpoints |
+| Module | Port | Rôle | Persistance | Endpoints |
 |---|---|---|---|---|
 | **gateway-service** | 8081 | Point d'entrée unique : filtrage, débit, JWT, routage, disjoncteurs | Redis | — |
-| **interface-service** | 8088 | **Autorité JWT** (JWKS, rotation), portail développeur, projets, console d'administration, TOTP | PostgreSQL | 34 |
-| **auth-service** | 8082 | Connexion, inscription, OTP, OAuth2, biométrie, verrouillage de compte, rôles | PostgreSQL | 62 |
-| **user-service** | 8083 | Profils, photos, administration des comptes | PostgreSQL | 27 |
+| **interface-service** | 8088 | **Autorité JWT** (JWKS, rotation), portail développeur, projets, console d'administration | PostgreSQL | 36 |
+| **auth-service** | 8082 | Connexion, inscription, OTP, OAuth2, biométrie, TOTP, sessions, verrouillage | PostgreSQL | 99 |
 | **media-service** | 8087 | Pièces d'identité chiffrées, circuit de validation, expiration | MongoDB + MinIO | 27 |
-| **quotas-service** | 8089 | Plafonds par palier, comptage d'usage | Cassandra | 6 |
+| **user-service** | 8083 | Profils, photos, administration des comptes | PostgreSQL | 20 |
+| **security-service** | 8091 | **Décide** la politique : adresses, pays, maintenance, seuils | PostgreSQL | 13 |
 | **setting-service** | 8090 | Paramètres par projet, valeurs par défaut | PostgreSQL | 9 |
-| **config-service** | 8888 | Configuration centralisée (Spring Cloud Config) | dépôt Git | — |
-| **platform-commons** | — | Bibliothèque partagée : JWKS, HMAC, lecture des claims JWT | — | — |
+| **quotas-service** | 8089 | Plafonds par palier, comptage d'usage | Cassandra | 6 |
+| **config-service** | 8888 | Configuration centralisée (Spring Cloud Config) | `config-repo/` | — |
+| **platform-commons** | — | Contrat partagé entre services | — | — |
 
 > **`platform-commons` n'est pas un fourre-tout.** Il ne contient que ce dont une
-> divergence entre services créerait une faille : la résolution des clés
-> publiques, la signature HMAC, la comparaison à temps constant, et la lecture des
-> rôles. Cette dernière existait auparavant en quatre exemplaires, dont trois
-> étaient cassés.
+> divergence entre services créerait une faille : chemins publics, clés Redis,
+> signature HMAC, lecture d'adresse IP, lecture des claims JWT, empreinte de
+> secret. La lecture des rôles existait auparavant en quatre exemplaires, dont
+> trois étaient cassés.
 
-### Squelettes, pas encore implémentés
+### Squelettes, hors construction
 
 `geo-service` (8084), `payment-service` (8085) et `notification-service` (8086)
-existent comme modules mais ne sont pas fonctionnels. Ils ne sont pas dans la
-construction Maven.
+existent comme répertoires mais **ne sont pas déclarés dans le POM parent** : ils
+ne sont jamais compilés. Les aborder sera du développement neuf, pas de la
+consolidation.
+
+### Tableau de bord des modules
+
+```bash
+./scripts/etat-des-modules.sh
+```
+
+Note chaque module sur sept critères, **recalculés depuis le code** : déclaré au
+build, routé, signature de passerelle vérifiée, chaîne Spring Security, test de
+chaîne HTTP, test BlockHound, collection Postman. Chaque critère correspond à un
+défaut que ce dépôt a réellement connu.
 
 ---
 
-## Démarrage rapide
+## Démarrage
 
 ### Prérequis
 
-- JDK 17 · Maven 3.9+ · Docker (pour les dépendances et les tests d'intégration)
+JDK 17 · Maven 3.9+ · Docker
 
-### 1. Infrastructure — tout vient de Docker
+### 1. Infrastructure
 
 ```bash
-cp .env.example .env    # renseigner les valeurs — voir §Secrets ci-dessous
+cp .env.example .env    # renseigner les valeurs
 docker compose -f docker-compose-minimal.yml up -d
 ```
 
@@ -194,7 +204,7 @@ mvn clean install       # depuis la RACINE : les modules dépendent du POM paren
 > Construire un module seul échoue : les versions vivent dans le POM parent, et
 > `platform-commons` doit être installé d'abord.
 
-### 3. Démarrer les services, dans cet ordre
+### 3. Démarrer, dans cet ordre
 
 ```bash
 ./scripts/start-platform.sh --check    # état de l'infrastructure et des services
@@ -202,25 +212,18 @@ mvn clean install       # depuis la RACINE : les modules dépendent du POM paren
 
 L'ordre n'est pas arbitraire — deux dépendances le contraignent :
 
-| Ordre | Service | Pourquoi à cette place |
+| Ordre | Module | Pourquoi à cette place |
 |---|---|---|
 | 1 | `config-service` (8888) | sert la configuration de tous les autres. Sans lui, chacun démarre sur ses valeurs par défaut — **sans erreur visible**, ce qui est pire qu'un échec franc |
 | 2 | `interface-service` (8088) | **autorité JWT**. Les autres démarrent sans elle, mais tant qu'elle est absente ils **refusent tous les jetons** |
 | 3 | `gateway-service` (8081) | point d'entrée unique |
-| 4+ | auth, user, media, quotas, setting | indépendants les uns des autres |
-
-```bash
-mvn -pl config-service spring-boot:run
-mvn -pl interface-service spring-boot:run
-mvn -pl gateway-service spring-boot:run
-# puis les autres, dans n'importe quel ordre
-```
+| 4+ | auth, user, media, security, setting, quotas | indépendants les uns des autres |
 
 > **Un 401 systématique sur une plateforme en apparence démarrée vient presque
 > toujours d'`interface-service` absent.** Les journaux des autres services le
-> disent : `❌ Échec du rafraîchissement JWKS: Connection refused … :8088`. Ils
-> continuent de démarrer — le chargement des clés est non bloquant et réessayé —
-> mais sans clé publique, aucune signature n'est vérifiable.
+> disent — « Échec du rafraîchissement JWKS : Connection refused … :8088 ». Ils
+> continuent de démarrer, le chargement des clés étant non bloquant et réessayé,
+> mais sans clé publique aucune signature n'est vérifiable.
 
 ### 4. Vérifier
 
@@ -229,20 +232,23 @@ curl http://localhost:8081/actuator/health
 curl http://localhost:8088/dev/.well-known/jwks.json    # les clés publiques
 ```
 
-Les [collections Postman](postman/) couvrent les 165 endpoints, avec l'ordre de
-test conseillé service par service.
+Les [collections Postman](postman/) couvrent les **211 requêtes**, avec l'ordre de
+test conseillé module par module.
 
 > `baseUrl` pointe sur le **Gateway**. Un appel direct à un service renvoie 403 :
 > c'est le comportement attendu, pas une panne.
 
 ### Secrets
 
-Aucune valeur réelle ne doit figurer dans le dépôt. `.env` est ignoré par Git et
-la CI refuse toute PR qui en committerait un.
+Aucune valeur réelle ne doit figurer dans le dépôt. `.env` est ignoré par Git, la
+CI refuse toute PR qui en committerait un, et la protection de push de GitHub
+analyse chaque poussée.
 
-> ⚠️ Un `.env` a été committé dans le commit initial `71af837`. Il a été retiré du
-> suivi, mais **les valeurs restent dans l'historique Git et doivent être
-> changées** : les retirer d'un commit ne les rend pas secrètes.
+> Cette dernière barrière est celle qui compte. Elle a arrêté un script portant
+> vingt-cinq identifiants réels alors que nos propres vérifications l'avaient
+> déclaré propre : elles contrôlaient des noms de fichiers et quelques motifs, et
+> ne connaissaient ni Twilio ni Stripe. **Ne jamais la désactiver, ni suivre les
+> liens « allow secret » qu'elle propose.**
 
 ---
 
@@ -258,22 +264,37 @@ mvn -pl gateway-service test           # un seul module
 
 ### État des tests
 
-**337 tests**, couverture **20,7 %** des instructions, **12,3 %** des branches.
+**2404 tests**, 0 échec. Répartition : auth 1127 · platform-commons 276 ·
+gateway 262 · interface 199 · user 176 · security 141 · media 132 · setting 40 ·
+quotas 38 · config 13.
 
-La couverture est basse et le document [docs/TESTING.md](docs/TESTING.md) ne le
-dissimule pas. Ce qui compte davantage, c'est **où** portent les tests : le
-contrat JWT, les filtres du Gateway, le chiffrement des documents, le contrôle
-d'accès, la persistance. Sur les huit suites écrites lors de la dernière
-campagne, **six ont révélé un défaut réel en production** — dont un qui rejetait
-la totalité des jetons légitimes.
+Plancher de couverture : **21,41 %** des instructions, **13,60 %** des branches.
+
+La couverture est basse et [docs/TESTING.md](docs/TESTING.md) ne le dissimule
+pas. Ce qui compte davantage, c'est **où** portent les tests : le contrat JWT,
+les filtres du Gateway, le chiffrement des documents, le contrôle d'accès, la
+persistance. Plusieurs suites écrites ici ont révélé un défaut réel — dont un qui
+rejetait la totalité des jetons légitimes, et un autre qui rendait un module
+entièrement injoignable.
 
 Le garde-fou de CI n'exige pas un seuil absolu : il interdit que la couverture
-**baisse**. Un seuil à 80 % sur une base à 19 % serait désactivé en deux jours.
+**baisse**. Un seuil à 80 % sur une base à 21 % serait désactivé en deux jours.
 
-### Tests d'intégration
+### Deux références engendrées, jamais écrites à la main
 
-`AuthPersistenceIntegrationTest` démarre un vrai PostgreSQL via Testcontainers et
-applique les migrations Flyway. Il se désactive de lui-même si Docker est absent.
+`postman/` (211 requêtes) et [docs/API-FRONTEND.md](docs/API-FRONTEND.md) (203
+endpoints) sont **dérivées** des contrôleurs, de `CheminCible` et des
+`SecurityConfig`. À régénérer après tout ajout d'endpoint :
+
+```bash
+./scripts/postman/generate.sh
+python3 scripts/postman/generer_reference_frontend.py
+```
+
+> Ce n'est pas une formalité. C'est la référence engendrée — et non un test — qui
+> a trouvé un chemin d'endpoint faux : les listes de chemins publics portaient la
+> bonne valeur, donc la garde qui les compare passait, tandis que l'annotation du
+> contrôleur en produisait un autre.
 
 ---
 
@@ -286,30 +307,44 @@ applique les migrations Flyway. Il se désactive de lui-même si Docker est abse
 | **Point d'entrée unique** | signature HMAC-SHA256 horodatée, fenêtre anti-rejeu de 5 s |
 | **Jetons** | RS256, `kid` en en-tête JWS, rotation avec période de grâce, audiences multiples |
 | **Révocation** | par `jti` et par porteur, appliquée **au Gateway** sur tout le trafic |
+| **Jetons de rafraîchissement** | seule leur empreinte SHA-256 est stockée ; le secret ne l'est jamais |
 | **Débit** | plafonds par type d'endpoint, distribués via Redis, repli local en cas de panne |
-| **IP client** | `X-Forwarded-For` cru uniquement depuis un proxy déclaré |
-| **Second facteur** | TOTP RFC 6238, vérifié contre les vecteurs d'essai officiels |
+| **Adresse client** | `X-Forwarded-For` cru uniquement depuis un proxy déclaré |
+| **Second facteur** | TOTP RFC 6238, vérifié contre les vecteurs d'essai officiels, codes de secours |
 | **Documents** | AES-256-GCM, clé dérivée par HMAC propre à chaque couple (utilisateur, document) |
 | **Mots de passe** | BCrypt, verrouillage de compte après tentatives échouées |
 | **En-têtes** | CSP, HSTS, `X-Frame-Options: DENY`, CORS à liste blanche explicite |
+| **Documentation OpenAPI** | joignable **seulement** par la passerelle, sous authentification HTTP dédiée |
 
 ### Ce qui a été trouvé et corrigé
 
-L'audit du 2026-09-03 a mis au jour des défauts sérieux, tous corrigés et
-verrouillés par des tests :
+Les audits successifs ont mis au jour des défauts sérieux, tous corrigés et
+verrouillés par des tests. Ils partagent presque tous la même forme : une
+protection écrite, présente, et jamais atteinte.
 
 - **le Gateway rejetait en 401 la totalité des jetons légitimes** — une lecture
   de claim qui n'était jamais vraie ;
 - **chaque filtre de sécurité s'exécutait deux fois**, divisant par deux le
   plafond réel de tentatives de connexion ;
-- **débit, liste noire et géo-blocage étaient tous contournables** en modifiant
-  un en-tête HTTP ;
-- **la révocation ne s'appliquait pas** au trafic entrant ;
+- **débit, règles d'adresses et pays refusés étaient tous contournables** en
+  modifiant un en-tête HTTP ;
+- **media-service était entièrement injoignable** — deux défauts indépendants, et
+  aucun test ne le disait, parce qu'aucun test n'appelait un endpoint comme la
+  passerelle l'appelle ;
+- **les documents étaient servis chiffrés** : le déchiffrement était écrit et
+  jamais appelé ;
+- **security-service n'avait aucune chaîne de sécurité**, alors qu'il décide de
+  la politique de toute la plateforme ;
+- **les jetons OAuth2 voyageaient dans l'URL** de redirection, donc dans
+  l'historique du navigateur, les journaux de tout proxy et l'en-tête `Referer` ;
+- **un appel DNS bloquant de 113 ms** sur le chemin de chaque requête du Gateway,
+  déclenchable par un en-tête forgé ;
 - **deux IDOR** : lecture du profil et des fichiers d'autrui ;
 - **une collision de dérivation de clé** dans le chiffrement des pièces d'identité.
 
 Le récit complet, avec la cause de chacun, est dans
-[docs/GATEWAY-SECURITY.md](docs/GATEWAY-SECURITY.md).
+[docs/GATEWAY-SECURITY.md](docs/GATEWAY-SECURITY.md) et
+[docs/SECURITY-CHAIN.md](docs/SECURITY-CHAIN.md).
 
 ### Signaler une faille
 
@@ -325,9 +360,9 @@ Voir [SECURITY.md](SECURITY.md). **Jamais dans une issue publique.**
 |---|---|
 | **OWASP Top 10 (2021)** | 7 catégories satisfaites, 3 partielles |
 | **MITRE CWE Top 25** | analysé par CodeQL ; 7 CWE effectivement corrigés |
-| **RGPD — droit à l'effacement (art. 17)** | ✅ les 6 services détenteurs |
-| **RGPD — rectification (art. 16)** | ✅ |
-| **RGPD — portabilité (art. 20)** | ❌ absent |
+| **RGPD — droit à l'effacement (art. 17)** | complet, les 6 services détenteurs |
+| **RGPD — rectification (art. 16)** | complet |
+| **RGPD — portabilité (art. 20)** | absent |
 
 ### Droit à l'effacement
 
@@ -336,13 +371,13 @@ propage la demande par événement Kafka aux services qui en détiennent d'autre
 Chacun accuse réception ; le registre d'exécution permet de **prouver**
 l'effacement — l'article 5.2 l'exige, et une intention ne se démontre pas.
 
+Effacer n'est pas supprimer la ligne : supprimer casserait les références des
+journaux d'audit et des écritures de facturation. Les champs identifiants sont
+écrasés, l'identifiant technique est conservé.
+
 Les **développeurs du portail** disposent de leur propre point d'entrée,
 `POST /dev/erasure/me` : ils forment une population distincte, dont l'identité
-vit dans interface-service et non dans auth-service. Ils n'avaient jusqu'ici
-aucun moyen d'exercer ce droit.
-
-Ce qui est effacé et ce qui est conservé, service par service, est détaillé dans
-[docs/COMPLIANCE.md §1](docs/COMPLIANCE.md).
+vit dans `interface-service` et non dans `auth-service`.
 
 ---
 
@@ -357,8 +392,8 @@ Ce qui est effacé et ce qui est conservé, service par service, est détaillé 
 **Politique de blocage** : critique et élevé bloquent, le reste est signalé. Une
 CI qui échoue pour tout est une CI qu'on désactive.
 
-CodeQL alimente l'onglet Sécurité (CWE, OWASP, MITRE) sans bloquer la fusion —
-le durcir viendra quand la base d'alertes existantes aura été traitée.
+CodeQL alimente l'onglet Sécurité sans bloquer la fusion — le durcir viendra
+quand la base d'alertes existantes aura été traitée.
 
 ### Protection de `main`
 
@@ -371,26 +406,17 @@ gh auth login
 ./scripts/github/protect-main.sh
 ```
 
-Applique : fusion par PR uniquement, approbation d'un `CODEOWNER`, approbation
-invalidée par tout nouveau commit, les sept contrôles de CI obligatoires,
-historique linéaire, force-push et suppression interdits, **règles applicables
-aux administrateurs**.
-
 ### Dépendances
 
-Dependabot ouvre des PR hebdomadaires, groupées par thème (Spring, tests,
-observabilité). Les montées **majeures** sont ignorées : elles se décident, elles
-ne se subissent pas.
+Dependabot ouvre des PR hebdomadaires, groupées par thème. Les montées
+**majeures** sont ignorées : elles se décident, elles ne se subissent pas.
 
 ---
 
 ## Contribuer
 
 Le projet est sous licence propriétaire ([LICENSE](LICENSE)). Les contributions
-externes ne sont pas ouvertes ; le dépôt est visible à des fins d'évaluation,
-d'audit et de signalement de failles.
-
-Pour l'équipe :
+externes ne sont pas ouvertes.
 
 1. Brancher depuis `main` — `main` est protégée.
 2. Écrire le test **avant** le correctif quand il s'agit d'un défaut : c'est ce
@@ -401,40 +427,37 @@ Pour l'équipe :
 
 ### Les pièges du dépôt
 
-Chacun a déjà causé un défaut réel. Ils sont détaillés dans la documentation ;
-en voici la liste courte :
+Chacun a déjà causé un défaut réel.
 
 | Piège | Conséquence |
 |---|---|
 | Un `WebFilter` annoté `@Component` **et** ajouté à la chaîne Spring Security | s'exécute deux fois par requête |
-| Lire `X-Forwarded-For` directement | débit et liste noire contournables |
+| `@PreAuthorize` sans `@EnableReactiveMethodSecurity` | l'annotation est **inerte**, en silence |
+| Lire `X-Forwarded-For` directement | débit et règles d'adresses contournables |
 | `claims.get("roles", String.class)` | lève sur un jeton utilisateur — passer par `JwtClaimsReader` |
 | Un rôle dans `@PreAuthorize` sur un endpoint à identifiant de chemin | IDOR : un rôle n'est pas une autorisation |
+| `switchIfEmpty` sur un `Mono<Void>` final | il se termine vide en cas de **succès** : le repli s'exécute à chaque requête |
+| Un `Mono` vide traversant un `WebFilter` | **200 OK avec un corps vide**, pas un blocage |
 | Remplacer `@{argLine}` dans le surefire parent | couverture à zéro, sans erreur |
 | `.then(x)` en Reactor | évalue `x` à l'assemblage — utiliser `Mono.defer` |
+| Un endpoint ouvert d'un seul côté | public dans le service mais pas au Gateway : 401 inexplicable |
+| Signer sur le chemin décodé | la signature porte sur le chemin **brut** transformé |
 
 ---
 
 ## Feuille de route
 
-[![Playground](https://img.shields.io/badge/Playground-planifi%C3%A9-lightgrey)](#feuille-de-route)
-[![Hermes](https://img.shields.io/badge/Hermes-planifi%C3%A9-lightgrey)](#feuille-de-route)
-
-> Ces deux composants **n'existent pas encore**. Les badges ci-dessus les
-> annoncent comme planifiés, non comme disponibles.
-
 | Échéance | Sujet |
 |---|---|
-| **Immédiat** | Faire tourner les secrets du commit `71af837` |
-| **Immédiat** | Purger les comptes inactifs et la consommation d'API |
-| **Court terme** | Extraire l'autorité de signature JWT dans un service dédié |
-| **Court terme** | Retirer la table `users` d'`interface-service` |
+| **Immédiat** | Faire tourner les identifiants ayant vécu dans l'ancien dépôt |
+| **Immédiat** | Test de chaîne HTTP pour interface, user, setting et quotas |
+| **Court terme** | Auditer `interface-service` — 36 endpoints, jamais audité, et c'est l'autorité JWT |
+| **Court terme** | BlockHound dans security, setting et quotas |
+| **Court terme** | Chaîne de sécurité pour `config-service`, qui n'en a aucune |
+| **Court terme** | Unifier les quatre filtres de liste d'adresses divergents |
 | **Court terme** | Portabilité des données (RGPD art. 20) |
-| **Court terme** | Élever la couverture sur `OAuth2ServiceImpl` et la gestion des rôles |
-| **Court terme** | Tests d'intégration pour `interface-service` (8 migrations non validées) |
-| **Moyen terme** | **Playground** — console de test d'API dans le portail développeur |
-| **Moyen terme** | **Hermes** — service de notification (SMS, courriel, push) |
-| **Moyen terme** | `geo-service` et `payment-service` |
+| **Court terme** | Purger les comptes inactifs et la consommation d'API |
+| **Moyen terme** | `geo-service`, `payment-service`, `notification-service` |
 | **Moyen terme** | SBOM CycloneDX, signature des artefacts |
 | **Moyen terme** | Remplacer le substitut WebAuthn par une vraie vérification |
 
@@ -444,23 +467,22 @@ en voici la liste courte :
 
 | Document | Contenu |
 |---|---|
+| [docs/API-FRONTEND.md](docs/API-FRONTEND.md) | Référence engendrée : 203 endpoints, chemins publics, authentification |
 | [docs/GATEWAY-SECURITY.md](docs/GATEWAY-SECURITY.md) | Audit de sécurité, failles trouvées et corrigées, IDOR, injections |
-| [docs/COMPLIANCE.md](docs/COMPLIANCE.md) | RGPD, OWASP, MITRE, registre des données, chaîne d'approvisionnement |
-| [docs/SECURITY-CHAIN.md](docs/SECURITY-CHAIN.md) | Audit de la chaîne : filtres, frontière de confiance, interservice, IDOR |
+| [docs/SECURITY-CHAIN.md](docs/SECURITY-CHAIN.md) | Audit de la chaîne : filtres, frontière de confiance, interservice |
+| [docs/COMPLIANCE.md](docs/COMPLIANCE.md) | RGPD, OWASP, MITRE, registre des données |
 | [docs/ROLES.md](docs/ROLES.md) | Modèle de rôles : SUPER_ADMIN, ADMIN, DEVELOPER |
-| [docs/TESTING.md](docs/TESTING.md) | Stratégie de test, couverture, conventions, priorités |
+| [docs/TESTING.md](docs/TESTING.md) | Stratégie de test, couverture, conventions |
 | [docs/JWT-CONTRACT.md](docs/JWT-CONTRACT.md) | Contrat des jetons : claims, audiences, rotation |
 | [docs/NON-BLOCKING.md](docs/NON-BLOCKING.md) | Politique réactive, vérification BlockHound |
 | [docs/QUOTAS.md](docs/QUOTAS.md) · [docs/SETTINGS.md](docs/SETTINGS.md) | Quotas et paramètres |
-| [docs/AUTH-SERVICE-R2DBC-MIGRATION.md](docs/AUTH-SERVICE-R2DBC-MIGRATION.md) | Migration JPA → R2DBC |
+| [docs/AUTH-SERVICE-R2DBC-MIGRATION.md](docs/AUTH-SERVICE-R2DBC-MIGRATION.md) | Migration JPA vers R2DBC |
 | [postman/README.md](postman/README.md) | Collections et ordre de test |
 | [SECURITY.md](SECURITY.md) | Signalement de failles |
 
 ---
 
 <div align="center">
-
-**AbdaTech Technologie** · Bamako, Mali · [contact@abdatech.ml](mailto:contact@abdatech.ml)
 
 Tous droits réservés — voir [LICENSE](LICENSE)
 

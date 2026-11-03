@@ -118,7 +118,7 @@ jwt:
     # Liste des audiences émises dans le claim `aud` (séparées par des virgules).
     # DOIT couvrir tous les services qui valident les tokens, sinon ils rejettent
     # le token avec "Invalid JWT audience".
-    audience: ${JWT_DEV_AUDIENCE:abdatech-developers,gateway-service,auth-service,user-service,media-service,quotas-service,setting-service}
+    audience: ${JWT_DEV_AUDIENCE:restart-developers,gateway-service,auth-service,user-service,media-service,quotas-service,setting-service}
     expiration: ${JWT_DEV_EXPIRATION:3600000}
     refresh-expiration: ${JWT_DEV_REFRESH_EXPIRATION:604800000}
     key:

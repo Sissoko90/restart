@@ -48,7 +48,7 @@ class DevJwtServiceImplTest {
 
     private static final String ISSUER = "interface-service";
     private static final String AUDIENCES =
-            "abdatech-developers,gateway-service,auth-service,user-service,"
+            "restart-developers,gateway-service,auth-service,user-service,"
                     + "media-service,quotas-service,setting-service";
     private static final String CURRENT_KID = "kid-courant";
 

@@ -563,7 +563,7 @@ def build_collection(service, info):
     total = sum(len(f["item"]) for f in folders)
     return {
         "info": {
-            "name": f"AbdaTech — {service}",
+            "name": f"Restart — {service}",
             "description": (
                 f"Collection générée depuis le code source ({total} endpoints).\n\n"
                 f"**Appels via le Gateway** : `baseUrl` = `http://localhost:8081/api/v1`.\n\n"

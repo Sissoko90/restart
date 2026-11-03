@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Faille de sécurité
-    url: https://github.com/Sissoko90/micro-service-restart/security/advisories/new
+    url: https://github.com/Sissoko90/restart/security/advisories/new
     about: >-
       Ne JAMAIS signaler une faille dans une issue publique. Utiliser un
       avis de sécurité privé — voir SECURITY.md.

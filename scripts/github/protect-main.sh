@@ -16,7 +16,7 @@
 # ==========================================================
 set -euo pipefail
 
-REPO="${1:-Sissoko90/micro-service-restart}"
+REPO="${1:-Sissoko90/restart}"
 BRANCH="${2:-main}"
 
 if ! command -v gh >/dev/null 2>&1; then

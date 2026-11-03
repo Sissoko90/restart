@@ -5,7 +5,7 @@ dossier par contrôleur.
 
 ```
 postman/
-├── AbdaTech-Local.postman_environment.json   ← à importer une fois
+├── Restart-Local.postman_environment.json   ← à importer une fois
 ├── interface-service/    34 endpoints
 ├── auth-service/         62 endpoints
 ├── user-service/         27 endpoints
@@ -18,9 +18,9 @@ postman/
 
 ## 1. Import
 
-1. Importer `AbdaTech-Local.postman_environment.json` (Environments).
+1. Importer `Restart-Local.postman_environment.json` (Environments).
 2. Importer les collections souhaitées (Collections → Import).
-3. Sélectionner l'environnement **AbdaTech — Local (via Gateway)** en haut à droite.
+3. Sélectionner l'environnement **Restart — Local (via Gateway)** en haut à droite.
 
 ---
 
@@ -115,7 +115,7 @@ Pour un jeu de non-régression complet, exécuter en ligne de commande :
 ```bash
 npm install -g newman
 newman run postman/auth-service/auth-service.postman_collection.json \
-       -e postman/AbdaTech-Local.postman_environment.json
+       -e postman/Restart-Local.postman_environment.json
 ```
 
 ---
