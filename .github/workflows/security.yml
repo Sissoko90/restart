@@ -1,4 +1,4 @@
-﻿# ==========================================================
+# ==========================================================
 # Analyse de sécurité
 # ==========================================================
 # Séparé de la CI parce que plus lent, et parce que certaines
@@ -47,7 +47,7 @@ jobs:
           fetch-depth: 0
 
       - name: Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
