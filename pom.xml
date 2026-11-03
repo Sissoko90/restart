@@ -50,7 +50,7 @@
 		<spring-cloud.version>2025.1.0</spring-cloud.version>
 
 		<!-- Bibliothèques transverses -->
-		<jjwt.version>0.12.5</jjwt.version>
+		<jjwt.version>0.13.0</jjwt.version>
 		<springdoc.version>2.7.0</springdoc.version>
 		<resilience4j.version>2.2.0</resilience4j.version>
 		<dotenv.version>3.0.0</dotenv.version>
