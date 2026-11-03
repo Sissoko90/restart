@@ -1,0 +1,161 @@
+﻿# ==========================================================
+# Intégration continue — compilation, tests, couverture
+# ==========================================================
+# Ce workflow est la porte d'entrée de toute modification.
+# Il doit rester RAPIDE : l'analyse de sécurité, plus lente,
+# vit dans security.yml et tourne en parallèle.
+# ==========================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Une PR mise à jour annule l'exécution précédente : inutile de
+# payer deux fois la même vérification.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MAVEN_ARGS: -B -ntp --fail-at-end
+
+jobs:
+  build:
+    name: Compilation et tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      # Les tests d'intégration (AuthPersistenceIntegrationTest) démarrent un
+      # PostgreSQL via Testcontainers. Le démon Docker des runners GitHub le
+      # permet ; sans lui, ces tests se désactivent d'eux-mêmes
+      # (`disabledWithoutDocker = true`) et la régression passerait inaperçue.
+      - name: Vérifier la disponibilité de Docker
+        run: |
+          docker version --format 'API serveur : {{.Server.APIVersion}} (min {{.Server.MinAPIVersion}})'
+          echo "Les tests d'intégration s'exécuteront."
+
+      - name: Compiler et tester
+        run: mvn $MAVEN_ARGS verify
+
+      - name: Publier les résultats de tests
+        uses: mikepenz/action-junit-report@v4
+        if: always()
+        with:
+          report_paths: '**/target/surefire-reports/TEST-*.xml'
+          check_name: Résultats des tests
+          detailed_summary: true
+          include_passed: false
+
+      - name: Agréger la couverture
+        if: always()
+        run: ./scripts/coverage-report.sh | tee coverage.txt
+
+      # Garde-fou anti-régression plutôt que seuil absolu : la couverture est
+      # basse (voir docs/TESTING.md), exiger 80 % bloquerait tout. Ce qu'on
+      # refuse, c'est qu'elle DIMINUE.
+      - name: Vérifier la non-régression de la couverture
+        if: always()
+        run: ./scripts/coverage-gate.sh
+
+      - name: Conserver les rapports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rapports-couverture
+          path: |
+            coverage.txt
+            **/target/site/jacoco/
+          retention-days: 14
+
+      - name: Résumé dans l'onglet Actions
+        if: always()
+        run: |
+          {
+            echo '## Couverture'
+            echo '```'
+            cat coverage.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ------------------------------------------------------------------
+  # Vérifications de forme, séparées pour ne pas retarder les tests
+  # ------------------------------------------------------------------
+  conventions:
+    name: Conventions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refuser les fichiers d'environnement suivis
+        run: |
+          # Un .env a déjà été committé une fois dans ce dépôt (commit 71af837).
+          # Cette vérification empêche que cela se reproduise.
+          if git ls-files | grep -E '(^|/)\.env(\.|$)' | grep -v '\.env\.example'; then
+            echo "::error::Un fichier .env est suivi par Git. Les secrets ne doivent jamais être committés."
+            exit 1
+          fi
+          echo "Aucun fichier d'environnement suivi."
+
+      - name: Refuser les clés privées et secrets de fournisseur
+        run: |
+          if git ls-files | grep -E '\.(pem|key|p12|jks)$|client_secret.*\.json$'; then
+            echo "::error::Une clé privée ou un secret de fournisseur est suivi par Git."
+            exit 1
+          fi
+          echo "Aucune clé privée suivie."
+
+      - name: Refuser les emojis dans le code
+        run: |
+          # Décision du 2026-09-30 : pas d'emoji dans le code source. 612 en
+          # avaient été retirés ; sans ce contrôle ils revenaient un par un.
+          python3 - <<'SCRIPT'
+          import pathlib, re, sys
+          EMOJI = re.compile(
+              "[\U0001F300-\U0001FAFF\U0001F000-\U0001F2FF"
+              "\U00002600-\U000027BF\u2705\u274C\u26A0]", re.UNICODE)
+          fautifs = []
+          for f in pathlib.Path(".").glob("*/src/**/*.java"):
+              for n, ligne in enumerate(f.read_text(errors="replace").splitlines(), 1):
+                  if EMOJI.search(ligne):
+                      fautifs.append(f"{f}:{n}")
+          if fautifs:
+              print(f"::error::{len(fautifs)} emoji(s) dans le code source")
+              for x in fautifs[:20]:
+                  print(f"  {x}")
+              sys.exit(1)
+          print("Aucun emoji dans le code source.")
+          SCRIPT
+
+      - name: Vérifier que les collections Postman suivent le code
+        run: |
+          # Les collections sont générées depuis les contrôleurs. Si elles
+          # divergent, elles décrivent une API qui n'existe plus.
+          ./scripts/postman/generate.sh >/dev/null 2>&1 || true
+          if ! git diff --quiet -- postman/; then
+            echo "::warning::Les collections Postman ne correspondent plus au code."
+            echo "Exécuter ./scripts/postman/generate.sh et committer le résultat."
+            git diff --stat -- postman/
+          else
+            echo "Collections Postman à jour."
+          fi

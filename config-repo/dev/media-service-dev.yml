@@ -1,0 +1,197 @@
+# ==========================================
+# MEDIA SERVICE - Configuration DEV (REACTIVE)
+# ==========================================
+# Stack: Spring WebFlux + MongoDB Reactive + MinIO/S3 + Redis Reactive + Kafka Reactive
+# ==========================================
+
+server:
+  port: 8087
+  netty:
+    connection-timeout: 5000
+    idle-timeout: 60000
+
+spring:
+  application:
+    name: media-service
+  
+  # WebFlux Reactive (pas de Tomcat)
+  main:
+    web-application-type: reactive
+  
+  # ==========================================
+  # MONGODB REACTIVE CONFIGURATION
+  # ==========================================
+  # Credentials chargées depuis .env via DotenvConfig
+  data:
+    mongodb:
+      # MongoDB local (MongoDB Compass) - pas Docker
+      uri: ${MONGODB_URI:mongodb://localhost:27017/media_service_db}
+      database: media_service_db
+      auto-index-creation: true
+      # Configuration pour instance locale
+      uuid-representation: standard
+    
+    # Redis Reactive (hérite de application-dev.yml)
+    redis:
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+  
+  # ==========================================
+  # KAFKA CONFIGURATION (hérite de application-dev.yml)
+  # ==========================================
+  kafka:
+    consumer:
+      group-id: media-service-group
+  
+  # ==========================================
+  # CODEC CONFIGURATION (WebFlux)
+  # ==========================================
+  codec:
+    max-in-memory-size: 20MB  # Pour upload de fichiers volumineux
+
+# ==========================================
+# MAXMIND GEOIP CONFIGURATION
+# ==========================================
+# ATTENTION: ce bloc est une clé RACINE (pas sous `spring:`).
+# Il était auparavant inséré au milieu du bloc `spring:`, ce qui cassait
+# l'indentation et rendait spring.data / spring.kafka / spring.codec illisibles.
+# Télécharger GeoLite2-City.mmdb depuis https://dev.maxmind.com/geoip/geolite2-free-geolocation-data
+# et placer dans /opt/geoip/
+geolocation:
+  enabled: true  # Passer à false tant que la base MaxMind n'est pas téléchargée
+  database:
+    path: /opt/geoip/GeoLite2-City.mmdb
+
+# ==========================================
+# SECURITY - GATEWAY ACCESS
+# ==========================================
+# Note: Zip Bomb et JWKS configs sont dans application-dev.yml
+security:
+  gateway:
+    secret-key: ${GATEWAY_SECRET_KEY}
+
+# Override audience spécifique pour media-service
+jwt:
+  audience: media-service
+
+# ==========================================
+# MINIO/S3 CONFIGURATION
+# ==========================================
+# Credentials chargées depuis .env via DotenvConfig
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY}
+  secret-key: ${MINIO_SECRET_KEY}
+  bucket-name: ${MINIO_BUCKET_NAME:media-files}
+  thumbnail-bucket: ${MINIO_THUMBNAIL_BUCKET:media-thumbnails}
+  max-file-size: 104857600  # 100 MB
+  allowed-content-types:
+    - image/jpeg
+    - image/png
+    - image/gif
+    - image/webp
+    - video/mp4
+    - video/webm
+    - application/pdf
+    - application/msword
+    - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+
+# ==========================================
+# MEDIA SERVICE CONFIGURATION
+# ==========================================
+media:
+  upload:
+    max-file-size: 104857600  # 100 MB
+    chunk-size: 8388608       # 8 MB pour streaming
+    allowed-extensions: jpg,jpeg,png,gif,webp,mp4,webm,pdf,doc,docx
+    max-attempts: ${MEDIA_UPLOAD_MAX_ATTEMPTS:10}  # Nombre max de tentatives d'upload par document
+  thumbnail:
+    enabled: true
+    width: 300
+    height: 300
+    quality: 0.8
+    max-image-width: 4096
+    max-image-height: 4096
+  cache:
+    ttl-minutes: 30
+  retention:
+    soft-delete-days: 30
+    permanent-delete-days: 90
+  processing:
+    async: true
+    max-concurrent-uploads: 10
+  compression:
+    default-quality: 0.85
+
+# ==========================================
+# ENCRYPTION CONFIGURATION
+# ==========================================
+encryption:
+  enabled: true
+  master-key: ${ENCRYPTION_MASTER_KEY}
+
+# ==========================================
+# WATERMARK CONFIGURATION
+# ==========================================
+watermark:
+  enabled: true
+  text: CONFIDENTIAL
+  opacity: 0.3
+
+# ==========================================
+# RESILIENCE4J CONFIGURATION
+# ==========================================
+# Circuit Breaker, Retry, Rate Limiter, Bulkhead
+resilience4j:
+  circuitbreaker:
+    instances:
+      storageService:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 5s
+        failureRateThreshold: 50
+        eventConsumerBufferSize: 10
+  
+  ratelimiter:
+    instances:
+      document-upload:
+        limitForPeriod: 10
+        limitRefreshPeriod: 60s
+        timeoutDuration: 5s
+        registerHealthIndicator: true
+        eventConsumerBufferSize: 100
+      document-download:
+        limitForPeriod: 50
+        limitRefreshPeriod: 60s
+        timeoutDuration: 3s
+        registerHealthIndicator: true
+      admin-operations:
+        limitForPeriod: 100
+        limitRefreshPeriod: 60s
+        timeoutDuration: 2s
+      media-upload:
+        limitForPeriod: 10
+        limitRefreshPeriod: 60s
+        timeoutDuration: 5s
+      media-download:
+        limitForPeriod: 100
+        limitRefreshPeriod: 60s
+        timeoutDuration: 2s
+
+# ==========================================
+# LOGGING CONFIGURATION
+# ==========================================
+logging:
+  level:
+    com.abdatytch.media_service: DEBUG
+    org.springframework.data.mongodb: DEBUG
+    io.minio: DEBUG
+    reactor.netty: INFO
+    org.springframework.web.reactive: DEBUG

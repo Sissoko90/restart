@@ -1,0 +1,80 @@
+Copyright (c) 2026 AbdaTech Technologie. Tous droits réservés.
+
+LICENCE PROPRIÉTAIRE — RESTART
+
+1. PROPRIÉTÉ
+
+   Le présent logiciel « Restart », son code source, sa documentation et tout
+   élément qui l'accompagne (ci-après « le Logiciel ») sont la propriété
+   exclusive d'AbdaTech Technologie.
+
+   La mise à disposition du Logiciel, y compris sur un dépôt accessible en
+   lecture, n'emporte aucune cession de droits et ne constitue pas une
+   publication sous licence libre.
+
+2. DROITS NON ACCORDÉS
+
+   Aucun droit d'utilisation, de copie, de modification, de fusion, de
+   publication, de distribution, de sous-licence ou de vente n'est accordé,
+   sauf autorisation écrite préalable d'AbdaTech Technologie.
+
+   Sont notamment interdits sans cette autorisation :
+
+   a. l'exploitation du Logiciel, en tout ou partie, dans un produit ou un
+      service, commercial ou non ;
+   b. la mise à disposition du Logiciel comme service accessible par un tiers ;
+   c. la création d'une œuvre dérivée ;
+   d. la redistribution du code source ou d'une forme compilée ;
+   e. le retrait ou l'altération des mentions de propriété.
+
+3. USAGES AUTORISÉS SANS AUTORISATION PRÉALABLE
+
+   a. La consultation du code à des fins d'évaluation, d'audit de sécurité ou
+      d'étude personnelle.
+   b. La création d'un fork sur la plateforme d'hébergement dans le seul but de
+      proposer une contribution au dépôt d'origine.
+   c. Le signalement de failles de sécurité selon SECURITY.md, y compris la
+      reproduction locale nécessaire à ce signalement.
+
+4. CONTRIBUTIONS
+
+   Toute contribution proposée au Logiciel est réputée cédée à AbdaTech
+   Technologie, qui peut l'intégrer, la modifier et l'exploiter sans
+   restriction ni contrepartie. Le contributeur garantit détenir les droits
+   sur ce qu'il propose.
+
+5. COMPOSANTS TIERS
+
+   Le Logiciel s'appuie sur des composants tiers distribués sous leurs propres
+   licences. Ces licences continuent de s'appliquer à ces composants et ne sont
+   en rien modifiées par le présent texte.
+
+   L'inventaire des composants et de leurs licences est produit par :
+
+       mvn license:aggregate-add-third-party
+
+   Sa compatibilité avec la présente licence est vérifiée automatiquement à
+   chaque modification (voir scripts/license-check.sh).
+
+6. ABSENCE DE GARANTIE
+
+   LE LOGICIEL EST FOURNI « EN L'ÉTAT », SANS GARANTIE D'AUCUNE SORTE, EXPRESSE
+   OU IMPLICITE, Y COMPRIS SANS S'Y LIMITER LES GARANTIES DE QUALITÉ MARCHANDE,
+   D'ADÉQUATION À UN USAGE PARTICULIER ET D'ABSENCE DE CONTREFAÇON.
+
+7. LIMITATION DE RESPONSABILITÉ
+
+   EN AUCUN CAS ABDATECH TECHNOLOGIE NE POURRA ÊTRE TENUE RESPONSABLE D'UNE
+   RÉCLAMATION, D'UN DOMMAGE OU DE TOUTE AUTRE RESPONSABILITÉ, CONTRACTUELLE,
+   DÉLICTUELLE OU AUTRE, DÉCOULANT DU LOGICIEL, DE SON UTILISATION OU DE TOUTE
+   AUTRE OPÉRATION LE CONCERNANT.
+
+8. DROIT APPLICABLE
+
+   La présente licence est régie par le droit malien. Tout litige relève de la
+   compétence des tribunaux de Bamako, Mali.
+
+---
+
+Pour toute demande de licence commerciale ou de partenariat :
+contact@abdatech.ml

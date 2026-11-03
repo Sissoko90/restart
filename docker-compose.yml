@@ -1,0 +1,289 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # CONSUL - Service Discovery & Configuration
+  # ==========================================
+  consul:
+    image: hashicorp/consul:latest
+    container_name: consul
+    ports:
+      - "8500:8500"  # HTTP API & UI
+      - "8600:8600/udp"  # DNS
+    command: agent -server -ui -bootstrap-expect=1 -client=0.0.0.0
+    environment:
+      - CONSUL_BIND_INTERFACE=eth0
+    volumes:
+      - consul-data:/consul/data
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ==========================================
+  # REDIS - Cache & Session Store
+  # ==========================================
+  redis-auth:
+    image: redis:7-alpine
+    container_name: redis-auth
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-auth-data:/data
+    networks:
+      - microservices-network
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ==========================================
+  # ZOOKEEPER - Kafka Dependency
+  # ==========================================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ==========================================
+  # KAFKA - Event Streaming
+  # ==========================================
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # ==========================================
+  # MONGODB - Media Service Database
+  # ==========================================
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_DATABASE: media_service_db
+    volumes:
+      - mongodb-data:/data/db
+      - mongodb-config:/data/configdb
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ==========================================
+  # MINIO - S3-Compatible Object Storage
+  # ==========================================
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    networks:
+      - microservices-network
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ==========================================
+  # PROMETHEUS - Metrics Collection
+  # ==========================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      # Le REPERTOIRE entier, et non fichier par fichier.
+      #
+      # Avec deux montages nommes, tout nouveau fichier de regles est absent du
+      # conteneur : `rule_files` le cherche, ne le trouve pas, et Prometheus
+      # demarre quand meme. C'est exactement ainsi que
+      # `user-service-alerts.yml` — onze alertes — est reste onze mois sans
+      # etre evalue. Monter le repertoire fait que `*-alerts.yml` trouve
+      # reellement ce qui existe sur le disque.
+      - ./observability/prometheus:/etc/prometheus
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - microservices-network
+      - observability
+    restart: unless-stopped
+
+  # ==========================================
+  # GRAFANA - Observability Dashboard
+  # ==========================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_INSTALL_PLUGINS=redis-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - microservices-network
+      - observability
+    restart: unless-stopped
+
+  # ==========================================
+  # LOKI - Log Aggregation
+  # ==========================================
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/local-config.yaml
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - microservices-network
+      - observability
+    restart: unless-stopped
+
+  # ==========================================
+  # TEMPO - Distributed Tracing (Zipkin Compatible)
+  # ==========================================
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    user: root
+    ports:
+      - "3200:3200"   # Tempo HTTP
+      - "9411:9411"   # Zipkin compatible endpoint
+      - "14268:14268" # Jaeger ingest
+    volumes:
+      - ./observability/tempo/tempo.yml:/etc/tempo.yaml
+      - tempo-data:/tmp/tempo
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    networks:
+      - microservices-network
+      - observability
+    restart: unless-stopped
+
+  # ==========================================
+  # ALERTMANAGER - Alert Management
+  # ==========================================
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      # Le REPERTOIRE, pour la meme raison que Prometheus : le fichier de mot
+      # de passe SMTP doit etre visible du conteneur, et un montage nomme par
+      # fichier l'aurait oublie.
+      - ./observability/alertmanager:/etc/alertmanager
+      - alertmanager-data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    networks:
+      - observability
+    restart: unless-stopped
+
+networks:
+  microservices-network:
+    driver: bridge
+    name: microservices-network
+  observability:
+    driver: bridge
+    name: observability-network
+
+volumes:
+  consul-data:
+    driver: local
+  redis-auth-data:
+    driver: local
+  mongodb-data:
+    driver: local
+  mongodb-config:
+    driver: local
+  minio-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  loki-data:
+    driver: local
+  tempo-data:
+    driver: local
+  alertmanager-data:
+    driver: local

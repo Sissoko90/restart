@@ -1,0 +1,213 @@
+spring:
+  application:
+    name: interface-service
+  config:
+    # `optional:` est obligatoire pour que le service démarre quand le config-server
+    # est indisponible. Sans ce préfixe, `spring.cloud.config.fail-fast: false` est
+    # ignoré et le démarrage échoue sur un simple "Connection refused".
+    # Convention appliquée par tous les autres services de la plateforme.
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+  cloud:
+    config:
+      enabled: true
+      uri: http://localhost:8888
+      name: interface-service
+      profile: dev
+      fail-fast: false
+  # Configuration SMTP
+  mail:
+    host: ${EMAIL_HOST:smtp.gmail.com}
+    port: ${EMAIL_PORT:587}
+    username: ${EMAIL_USERNAME:}
+    password: ${EMAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 3000
+          writetimeout: 5000
+  # Configuration Redis
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+  # Configuration Kafka
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      client-id: interface-service
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+  # Configuration R2DBC PostgreSQL
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_INTERFACE:interface_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    pool:
+      initial-size: 5
+      max-size: 20
+      max-idle-time: 30m
+      validation-query: SELECT 1
+  # Configuration Flyway pour les migrations
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_INTERFACE:interface_db}
+    user: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+# Configuration locale minimale (override config-server si nécessaire)
+server:
+  port: 8088
+
+# Configuration logging locale
+logging:
+  level:
+    com.abdatytch.interface_service: DEBUG
+
+# Configuration Email
+app:
+  email:
+    enabled: ${EMAIL_ENABLED:true}
+    from: ${EMAIL_FROM:noreply@abdatech.com}
+    verification-url: http://localhost:3000/verify-email
+    reset-password-url: http://localhost:3000/reset-password
+
+# Configuration JWT
+# NOTE: interface-service est l'AUTORITÉ de signature de la plateforme.
+# Il détient la clé privée RSA et expose les clés publiques via /dev/.well-known/jwks.json.
+# Il ne consomme donc AUCUN JWKS externe (l'ancien bloc jwt.jwks pointait vers
+# auth-service:8082, dont l'endpoint JWKS a été supprimé lors du pivot).
+jwt:
+  # interface-service est l'AUTORITÉ : il ne consomme aucun JWKS externe.
+  # Désactive le JwksKeyProvider fourni par platform-commons.
+  jwks:
+    enabled: false
+  secret: ${JWT_SECRET}
+  expiration: ${JWT_EXPIRATION:3600000}
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
+  # Configuration JWT pour les développeurs (clés RSA isolées)
+  dev:
+    # Aucun chemin par defaut. Le chargement depuis le classpath est refuse :
+    # la cle y etait empaquetee dans le JAR livre, donc extractible par
+    # quiconque disposait de l'artefact. Voir DevKeyRotationServiceImpl et
+    # .env.example.
+    private-key: ${JWT_DEV_PRIVATE_KEY:}
+    public-key: ${JWT_DEV_PUBLIC_KEY:}
+    private-key-path: ${JWT_DEV_PRIVATE_KEY_PATH:}
+    public-key-path: ${JWT_DEV_PUBLIC_KEY_PATH:}
+    issuer: interface-service
+    # Liste des audiences émises dans le claim `aud` (séparées par des virgules).
+    # DOIT couvrir tous les services qui valident les tokens, sinon ils rejettent
+    # le token avec "Invalid JWT audience".
+    audience: ${JWT_DEV_AUDIENCE:abdatech-developers,gateway-service,auth-service,user-service,media-service,quotas-service,setting-service}
+    expiration: ${JWT_DEV_EXPIRATION:3600000}
+    refresh-expiration: ${JWT_DEV_REFRESH_EXPIRATION:604800000}
+    key:
+      rotation:
+        enabled: ${JWT_DEV_KEY_ROTATION_ENABLED:false}
+        interval-days: ${JWT_DEV_KEY_ROTATION_INTERVAL_DAYS:90}
+        grace-period-days: ${JWT_DEV_KEY_ROTATION_GRACE_PERIOD_DAYS:7}
+
+# Configuration sécurité
+security:
+  gateway-secret-key: ${GATEWAY_SECRET_KEY}
+  internal-secret: ${INTERNAL_SERVICE_SECRET}
+  # Taille des clés RSA générées lors d'une rotation
+  jwks:
+    rsa-key-size: 2048
+  csp:
+    enabled: true
+    report-only: false
+  zipbomb:
+    enabled: ${ZIPBOMB_ENABLED:true}
+    max-compression-ratio: ${ZIPBOMB_MAX_COMPRESSION_RATIO:100}
+    max-uncompressed-size-mb: ${ZIPBOMB_MAX_UNCOMPRESSED_SIZE_MB:500}
+
+# Configuration CORS
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8081}
+
+# Configuration Rate Limiting
+rate-limit:
+  enabled: true
+  requests-per-minute: 60
+  window-seconds: 60
+
+# Configuration IP Blacklist
+ip-blacklist:
+  enabled: true
+  ttl-minutes: 60
+  max-violations: 10
+
+# Configuration métriques
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+      email:
+        enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Configuration pour sécuriser les endpoints admin
+admin:
+  secret:
+    key: ${ADMIN_SECRET_KEY:}
+  # Configuration SMTP pour les alertes admin
+  mail:
+    enabled: ${ADMIN_MAIL_ENABLED:true}
+    host: ${ADMIN_MAIL_HOST:smtp.gmail.com}
+    port: ${ADMIN_MAIL_PORT:587}
+    username: ${ADMIN_MAIL_USERNAME:}
+    password: ${ADMIN_MAIL_PASSWORD:}
+    from: ${ADMIN_MAIL_FROM:}
+  # Configuration SMTP pour les alertes critiques (dernière couche)
+  critical:
+    mail:
+      enabled: ${CRITICAL_MAIL_ENABLED:true}
+      host: ${CRITICAL_MAIL_HOST:smtp.gmail.com}
+      port: ${CRITICAL_MAIL_PORT:587}
+      username: ${CRITICAL_MAIL_USERNAME:}
+      password: ${CRITICAL_MAIL_PASSWORD:}
+      from: ${CRITICAL_MAIL_FROM:}
+
+# Configuration pour la géolocalisation MaxMind
+geolocation:
+  enabled: ${GEOLOCATION_ENABLED:true}
+  database:
+    city:
+      path: ${GEOLITE2_CITY_PATH:/opt/geoip/GeoLite2-City.mmdb}
+    asn:
+      path: ${GEOLITE2_ASN_PATH:/opt/geoip/GeoLite2-ASN.mmdb}
+
+# Configuration pour le Recovery Secret avec chiffrement RSA
+recovery:
+  rsa:
+    public-key: ${RECOVERY_RSA_PUBLIC_KEY:}
+    private-key: ${RECOVERY_RSA_PRIVATE_KEY:}
+

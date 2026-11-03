@@ -1,0 +1,136 @@
+# ==========================================
+# QUOTAS SERVICE - Configuration DEV
+# ==========================================
+# Configuration spécifique au service de gestion des quotas
+# La config commune est dans application-dev.yml
+# ==========================================
+
+server:
+  port: 8089
+
+# Pas de context-path car le Gateway gère le routing /api/v1/quotas/**
+# Quotas-service expose directement /quotas/**, le Gateway ajoute /api/v1
+
+spring:
+  application:
+    name: quotas-service
+  cloud:
+    consul:
+      discovery:
+        health-check-path: /actuator/health/liveness
+  
+  # Configuration Cassandra (réactif)
+  cassandra:
+    keyspace-name: ${CASSANDRA_KEYSPACE_QUOTAS:quotas_keyspace}
+    contact-points: ${CASSANDRA_HOSTS:localhost}
+    port: ${CASSANDRA_PORT:9042}
+    username: ${CASSANDRA_USERNAME:cassandra}
+    password: ${CASSANDRA_PASSWORD}
+    local-datacenter: ${CASSANDRA_DATACENTER:datacenter1}
+    connection:
+      init-query-timeout: 5s
+      set-keyspace-timeout: 5s
+    request:
+      timeout: 2s
+      consistency: LOCAL_QUORUM
+    # Les tables sont créées automatiquement au démarrage.
+    # Le KEYSPACE, lui, doit préexister : voir scripts/cassandra-init.cql
+    schema-action: create-if-not-exists
+
+  # Consommation des événements project.created / project.deleted
+  kafka:
+    consumer:
+      group-id: quotas-service-group
+
+  # Configuration Redis pour cache et sessions
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+# ==========================================================
+# JWT - audience propre au service (voir docs/JWT-CONTRACT.md)
+# ==========================================================
+jwt:
+  audience: quotas-service
+
+# ==========================================================
+# GATEWAY SECURITY
+# ==========================================================
+gateway:
+  secret:
+    key: ${GATEWAY_SECRET_KEY}
+
+# Configuration OpenAPI/Swagger
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+  show-actuator: true
+
+# Configuration Resilience4j
+resilience4j:
+  ratelimiter:
+    instances:
+      quotasService:
+        limitForPeriod: 100
+        limitRefreshPeriod: 1s
+        timeoutDuration: 0s
+  circuitbreaker:
+    instances:
+      quotasService:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 5s
+        failureRateThreshold: 50
+        eventConsumerBufferSize: 10
+
+# Configuration des services externes
+services:
+  auth-service:
+    url: http://localhost:8082
+  user-service:
+    url: http://localhost:8083
+
+# Configuration métier spécifique aux quotas
+quotas:
+  # Renommé `default` -> `free` : `default` est un mot-clé Java et ne peut pas
+  # être lié à un champ de @ConfigurationProperties.
+  free:
+    # Quotas par défaut pour les nouveaux utilisateurs (palier FREE)
+    storage-mb: 1024        # 1GB de stockage
+    api-calls-per-hour: 1000
+    projects-max: 10
+    collaborators-max: 5
+  
+  premium:
+    # Quotas pour les utilisateurs premium
+    storage-mb: 10240       # 10GB de stockage
+    api-calls-per-hour: 10000
+    projects-max: 100
+    collaborators-max: 50
+  
+  enterprise:
+    # Quotas pour les entreprises
+    storage-mb: 102400      # 100GB de stockage
+    api-calls-per-hour: 100000
+    projects-max: 1000
+    collaborators-max: 500
+
+  # Configuration de vérification des quotas
+  check:
+    interval-seconds: 300   # Vérifier les quotas toutes les 5 minutes
+    warning-threshold: 0.8  # Alerter à 80% du quota
+    block-threshold: 1.0    # Bloquer à 100% du quota

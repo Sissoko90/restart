@@ -1,0 +1,53 @@
+# ==========================================================
+# Propriétés de test - user-service
+# Valeurs factices pour les placeholders sans défaut.
+# ==========================================================
+
+gateway:
+  secret:
+    key: test-gateway-secret-key
+
+# Secret des appels de service a service, distinct de celui du Gateway.
+#
+# Absent de ce fichier jusqu'ici, et personne ne s'en apercevait : aucun test ne
+# chargeait le contexte, donc ce placeholder sans defaut n'etait jamais resolu.
+# Il EST defini dans config-repo/dev/user-service-dev.yml — c'etait le profil de
+# test qui etait incomplet, pas la configuration reelle.
+security:
+  internal-secret: test-internal-secret
+
+file:
+  base:
+    url: http://localhost:8083/files
+  upload:
+    dir: target/test-uploads
+
+cors:
+  allowed-origins: http://localhost:3000
+  allowed-methods: GET,POST,PUT,DELETE,OPTIONS
+  allowed-headers: "*"
+  exposed-headers: Authorization
+  allow-credentials: true
+  max-age: 3600
+
+spring:
+  # ==========================================================
+  # R2DBC et Flyway desactives en test
+  # ==========================================================
+  # Meme choix que dans auth-service : les tests ne touchent pas la base, et
+  # les depots sont remplaces un par un par des @MockitoBean dans le test de
+  # contexte.
+  #
+  # Sous le bloc `spring:` EXISTANT, et non dans un second bloc : deux cles
+  # `spring:` dans un meme document YAML ne fusionnent pas, la seconde remplace
+  # la premiere — la configuration Kafka ci-dessous aurait disparu en silence.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.r2dbc.autoconfigure.R2dbcAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.R2dbcDataAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.R2dbcRepositoriesAutoConfiguration
+      - org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: user-service-test

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Configuration pour masquer les données sensibles dans les logs -->
+    
+    <!-- Appender pour la console avec masquage -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="com.abdatytch.interface_service.config.LogMaskingConfig$MaskingPatternLayout">
+                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %5level [%thread] %-40logger{39} : %msg%n</pattern>
+            </layout>
+        </encoder>
+    </appender>
+
+    <!-- Appender pour les fichiers avec masquage -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/interface-service.log</file>
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="com.abdatytch.interface_service.config.LogMaskingConfig$MaskingPatternLayout">
+                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %5level [%thread] %-40logger{39} : %msg%n</pattern>
+            </layout>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/interface-service.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <!-- Appender spécial pour les logs de sécurité -->
+    <appender name="SECURITY" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/security.log</file>
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="com.abdatytch.interface_service.config.LogMaskingConfig$MaskingPatternLayout">
+                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %5level [%thread] %-40logger{39} : %msg%n</pattern>
+            </layout>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/security.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>90</maxHistory>
+            <totalSizeCap>2GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <!-- Logger spécifique pour les événements de sécurité -->
+    <logger name="com.abdatytch.interface_service.filter.GatewayAccessFilter" level="WARN" additivity="false">
+        <appender-ref ref="SECURITY"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <logger name="com.abdatytch.interface_service.filter.XssProtectionFilter" level="WARN" additivity="false">
+        <appender-ref ref="SECURITY"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <logger name="com.abdatytch.interface_service.controller.AdminController" level="INFO" additivity="false">
+        <appender-ref ref="SECURITY"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <!-- Configuration par défaut -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+
+    <!-- Profil de développement -->
+    <springProfile name="dev">
+        <root level="DEBUG">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <!-- Profil de production -->
+    <springProfile name="prod">
+        <root level="WARN">
+            <appender-ref ref="FILE"/>
+            <appender-ref ref="SECURITY"/>
+        </root>
+    </springProfile>
+</configuration>

@@ -1,0 +1,264 @@
+# ==========================================================
+# SERVICES
+# ==========================================================
+services:
+
+  # ========================================================
+  # Redis - Cache pour Auth Service
+  # ========================================================
+  # Stockage clé-valeur en mémoire
+  # Utilisé pour sessions, tokens, cache rapide
+  redis-auth:
+    image: redis:7-alpine
+    container_name: redis-auth
+    ports:
+      - "6379:6379" # Port exposé vers la machine hôte
+    volumes:
+      - redis-auth-data:/data # Persistance des données Redis
+    networks:
+      - microservices-network
+    command: redis-server --appendonly yes # Active la persistance AOF
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========================================================
+  # Zookeeper - Nécessaire pour Kafka
+  # ========================================================
+  # Gère la coordination du cluster Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========================================================
+  # Kafka - Message Broker
+  # ========================================================
+  # Permet la communication asynchrone entre microservices
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"   # Accès depuis localhost
+      - "29092:29092" # Accès interne Docker
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # ========================================================
+  # Consul - Service Discovery
+  # ========================================================
+  # Permet aux microservices de se découvrir dynamiquement
+  consul:
+    image: hashicorp/consul:latest
+    container_name: consul
+    ports:
+      - "8500:8500"       # Interface Web
+      - "8600:8600/udp"   # DNS interne
+    command: agent -server -ui -bootstrap-expect=1 -client=0.0.0.0
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========================================================
+  # MinIO - Stockage objet compatible S3
+  # ========================================================
+  # Alternative légère à AWS S3 pour dev local
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000" # API S3
+      - "9001:9001" # Console Web
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========================================================
+  # Cassandra - Base de données NoSQL pour quotas-service
+  # ========================================================
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra
+    ports:
+      - "9042:9042"  # Port CQL
+      - "7001:7000"  # Port inter-nœuds (évite conflit avec port 7000)
+    environment:
+      CASSANDRA_CLUSTER_NAME: "microservices-cluster"
+      CASSANDRA_DC: "datacenter1"
+      CASSANDRA_RACK: "rack1"
+      CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
+      CASSANDRA_NUM_TOKENS: "128"
+      HEAP_NEWSIZE: "128M"
+      MAX_HEAP_SIZE: "512M"
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ========================================================
+  # Loki - Centralisation des logs
+  # ========================================================
+  # Stocke et indexe les logs de tes microservices
+  # loki:
+  #   image: grafana/loki:latest
+  #   container_name: loki
+  #   ports:
+  #     - "3100:3100" # API Loki
+  #   volumes:
+  #     - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml
+  #     - loki-data:/loki
+  #   command: -config.file=/etc/loki/local-config.yaml
+  #   networks:
+  #     - monitoring
+  #   restart: unless-stopped
+
+# ==========================================================
+# NETWORKS
+  # ========================================================
+  # MongoDB - Métadonnées des documents (media-service)
+  # ========================================================
+  # Était absent de ce fichier : media-service ne pouvait pas
+  # démarrer en suivant le démarrage rapide du README.
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========================================================
+  # PostgreSQL - auth, interface, user, setting
+  # ========================================================
+  # Quatre bases, créées au premier démarrage par
+  # docker/postgres-init. Les schémas sont ensuite appliqués par
+  # Flyway au démarrage de chaque service.
+  #
+  # ⚠️ Une installation PostgreSQL locale occupant déjà le port 5432
+  # empêchera ce conteneur de démarrer. Dans ce cas, arrêter le
+  # service local :
+  #     brew services stop postgresql@16      (macOS, Homebrew)
+  #     sudo systemctl stop postgresql        (Linux)
+  # ou changer DB_PORT dans .env pour exposer le conteneur ailleurs.
+  postgres:
+    # Version EPINGLEE, et alignee sur l'instance qui detenait les donnees.
+    #
+    # Le compose declarait postgres:16-alpine alors que les bases vivaient dans
+    # un PostgreSQL 18.2 installe sur la machine. Un dump produit par pg_dump 18
+    # ne se restaure pas dans un serveur 16 : la migration aurait echoue au
+    # moment de la restauration, apres l'arret du service source.
+    #
+    # Etiquette precise plutot que 18-alpine : une image flottante change sous
+    # les pieds de l'equipe, et un ecart de version majeure entre deux postes
+    # produit des erreurs de restauration difficiles a rattacher a leur cause.
+    image: postgres:18.6-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD doit être défini dans .env}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      # Montage sur /var/lib/postgresql, et NON /var/lib/postgresql/data.
+      #
+      # L'image PostgreSQL 18 a change de convention : elle attend un montage
+      # unique sur le repertoire parent et place les donnees dans un
+      # sous-repertoire, ce qui permet un pg_upgrade --link sans se heurter a
+      # une frontiere de point de montage.
+      #
+      # Avec l'ancien chemin, le conteneur refuse de demarrer sur un message
+      # evoquant une montee de version — alors que le volume etait vide. Le
+      # diagnostic est trompeur : ce n'est pas un probleme de donnees, c'est le
+      # chemin de montage.
+      - postgres-data:/var/lib/postgresql
+      # Crée les quatre bases au premier démarrage uniquement.
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ==========================================================
+# RÉSEAUX
+# microservices-network : communication interne des services
+# monitoring : réseau dédié pour observabilité/logging
+
+networks:
+  microservices-network:
+    driver: bridge
+  monitoring:
+    driver: bridge
+
+# ==========================================================
+# VOLUMES
+# ==========================================================
+# Permet la persistance des données
+
+volumes:
+  redis-auth-data:
+  minio-data:
+  cassandra-data:
+  loki-data:
+  mongodb-data:
+  postgres-data:

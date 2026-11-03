@@ -1,0 +1,310 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<!-- ==========================================================
+	     POM PARENT DE LA PLATEFORME ABDATECH
+	     ==========================================================
+	     Source unique de vérité pour les versions.
+	     Avant ce POM, chaque service redéclarait son parent Spring Boot
+	     et ses versions de bibliothèques, d'où une dérive (Boot 3.2.4 vs 4.0.1,
+	     jjwt 0.12.3 vs 0.12.5) entre des services qui doivent pourtant
+	     interpréter les MÊMES tokens JWT.
+
+	     Chaque service hérite de ce POM via <relativePath>../pom.xml</relativePath>,
+	     ce qui laisse fonctionner le `./mvnw` propre à chaque service.
+	     ========================================================== -->
+
+	<parent>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-parent</artifactId>
+		<version>4.0.1</version>
+		<relativePath/>
+	</parent>
+
+	<groupId>com.abdatytch</groupId>
+	<artifactId>abdatech-platform</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+	<packaging>pom</packaging>
+	<name>AbdaTech Platform</name>
+	<description>POM parent : versions et dépendances communes à tous les microservices</description>
+
+	<modules>
+		<module>platform-commons</module>
+		<module>config-service</module>
+		<module>gateway-service</module>
+		<module>interface-service</module>
+		<module>auth-service</module>
+		<module>user-service</module>
+		<module>media-service</module>
+		<module>quotas-service</module>
+		<module>setting-service</module>
+		<module>security-service</module>
+	</modules>
+
+	<properties>
+		<java.version>17</java.version>
+
+		<!-- Spring Cloud : doit rester compatible avec la version de Spring Boot ci-dessus -->
+		<spring-cloud.version>2025.1.0</spring-cloud.version>
+
+		<!-- Bibliothèques transverses -->
+		<jjwt.version>0.12.5</jjwt.version>
+		<springdoc.version>2.7.0</springdoc.version>
+		<resilience4j.version>2.2.0</resilience4j.version>
+		<dotenv.version>3.0.0</dotenv.version>
+		<reactor-kafka.version>1.3.25</reactor-kafka.version>
+		<blockhound.version>1.0.9.RELEASE</blockhound.version>
+		<jacoco.version>0.8.12</jacoco.version>
+		<testcontainers.version>1.21.3</testcontainers.version>
+		<license-plugin.version>2.4.0</license-plugin.version>
+	</properties>
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.springframework.cloud</groupId>
+				<artifactId>spring-cloud-dependencies</artifactId>
+				<version>${spring-cloud.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+
+			<!-- JWT : la version DOIT être identique partout, tous les services
+			     valident les mêmes tokens (voir docs/JWT-CONTRACT.md) -->
+			<dependency>
+				<groupId>io.jsonwebtoken</groupId>
+				<artifactId>jjwt-api</artifactId>
+				<version>${jjwt.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>io.jsonwebtoken</groupId>
+				<artifactId>jjwt-impl</artifactId>
+				<version>${jjwt.version}</version>
+				<scope>runtime</scope>
+			</dependency>
+			<dependency>
+				<groupId>io.jsonwebtoken</groupId>
+				<artifactId>jjwt-jackson</artifactId>
+				<version>${jjwt.version}</version>
+				<scope>runtime</scope>
+			</dependency>
+
+			<dependency>
+				<groupId>org.springdoc</groupId>
+				<artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
+				<version>${springdoc.version}</version>
+			</dependency>
+
+			<dependency>
+				<groupId>io.github.cdimascio</groupId>
+				<artifactId>dotenv-java</artifactId>
+				<version>${dotenv.version}</version>
+			</dependency>
+
+			<!-- Kafka réactif : version unique (était 1.3.24 dans auth, 1.3.25 dans user) -->
+			<dependency>
+				<groupId>io.projectreactor.kafka</groupId>
+				<artifactId>reactor-kafka</artifactId>
+				<version>${reactor-kafka.version}</version>
+			</dependency>
+
+			<!-- BlockHound : détecte tout appel bloquant sur un thread non bloquant.
+			     Instrumente la JVM en test et fait échouer le build au lieu de laisser
+			     passer un blocage silencieux sur l'EventLoop Netty. -->
+			<dependency>
+				<groupId>io.projectreactor.tools</groupId>
+				<artifactId>blockhound</artifactId>
+				<version>${blockhound.version}</version>
+				<scope>test</scope>
+			</dependency>
+
+			<!-- Tests d'intégration : bases de données réelles en conteneur.
+			     Le BOM aligne les versions de tous les modules Testcontainers. -->
+			<dependency>
+				<groupId>org.testcontainers</groupId>
+				<artifactId>testcontainers-bom</artifactId>
+				<version>${testcontainers.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<!-- MaxMind GeoIP2 : version GEREE ICI, et nulle part ailleurs.
+			     gateway-service declarait 5.0.2 et media-service 4.1.0 — deux
+			     versions pour le meme travail, avec des API qui different entre
+			     MaxMind 4 et 5. La lecture est desormais dans platform-commons
+			     (LocalisationIp) ; les modules n'ont plus a la declarer. -->
+			<dependency>
+				<groupId>com.maxmind.geoip2</groupId>
+				<artifactId>geoip2</artifactId>
+				<version>5.0.2</version>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
+	<build>
+		<plugins>
+			<!-- BlockHound instrumente des classes déjà chargées : sur JDK 13+, la JVM
+			     doit autoriser la redéfinition ajoutant des méthodes. Sans ce flag,
+			     BlockHound.install() échoue et les tests d'absence de blocage ne
+			     prouveraient plus rien. -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<!-- @{argLine} reprend l'agent injecté par JaCoCo. Sans cette
+					     référence, la configuration ci-dessous l'écraserait et la
+					     couverture serait systématiquement à zéro. -->
+					<argLine>@{argLine} -XX:+AllowRedefinitionToAddDeleteMethods</argLine>
+
+					<!-- Version d'API Docker imposee au client embarque par
+					     Testcontainers.
+
+					     Docker 29 refuse les versions anterieures a 1.44 : il
+					     repond HTTP 400 sur /info, et Testcontainers en conclut
+					     « Could not find a valid Docker environment », ce qui
+					     oriente vers une fausse piste — le demon repond, il
+					     refuse seulement la version negociee.
+
+					     Consequence avant ce correctif :
+					     AuthPersistenceIntegrationTest etait entierement SAUTE,
+					     3 tests avec lui, et le build restait VERT. La
+					     persistance R2DBC — dont le piege Persistable/isNew —
+					     n'etait donc verifiee par aucun test en cours
+					     d'execution, sans que rien ne le signale.
+
+					     La propriete doit etre posee au DEMARRAGE DE LA JVM. Le
+					     bloc statique qui la posait dans la classe de test
+					     arrivait trop tard : l'extension Testcontainers evalue
+					     sa condition d'execution AVANT l'initialisation
+					     statique de la classe, la reflexion sur les champs
+					     @Container ne la declenchant pas. -->
+					<systemPropertyVariables>
+						<api.version>1.44</api.version>
+					</systemPropertyVariables>
+
+					<!-- Valeurs FACTICES pour les tests.
+					     La configuration de production référence ces variables sans
+					     valeur par défaut. Sans elles ici, un test réussit ou échoue
+					     selon qu'un config-server tourne par hasard sur le poste et
+					     qu'un .env traîne — l'échec devient alors incompréhensible,
+					     et surtout non reproductible d'une machine à l'autre.
+					     AUCUNE valeur réelle ne doit figurer ici. -->
+					<environmentVariables>
+						<GATEWAY_SECRET_KEY>TEST_ONLY_gateway_secret</GATEWAY_SECRET_KEY>
+						<ADMIN_SECRET_KEY>TEST_ONLY_admin_secret</ADMIN_SECRET_KEY>
+						<GATEWAY_API_KEY>TEST_ONLY_api_key</GATEWAY_API_KEY>
+						<JWT_SECRET>TEST_ONLY_jwt_secret_at_least_32_chars_long</JWT_SECRET>
+						<DB_PASSWORD>TEST_ONLY_db_password</DB_PASSWORD>
+						<ADMIN_DEFAULT_EMAIL>admin@test.local</ADMIN_DEFAULT_EMAIL>
+						<ADMIN_DEFAULT_PASSWORD>TEST_ONLY_admin_password</ADMIN_DEFAULT_PASSWORD>
+						<ADMIN_DEFAULT_PHONE>+22300000000</ADMIN_DEFAULT_PHONE>
+						<ADMIN_DEFAULT_FIRSTNAME>Test</ADMIN_DEFAULT_FIRSTNAME>
+						<ADMIN_DEFAULT_LASTNAME>Admin</ADMIN_DEFAULT_LASTNAME>
+						<EMAIL_ENABLED>false</EMAIL_ENABLED>
+						<EMAIL_HOST>localhost</EMAIL_HOST>
+						<EMAIL_PORT>1025</EMAIL_PORT>
+						<EMAIL_USERNAME>test</EMAIL_USERNAME>
+						<EMAIL_PASSWORD>TEST_ONLY_email_password</EMAIL_PASSWORD>
+						<EMAIL_FROM>noreply@test.local</EMAIL_FROM>
+						<SMS_ENABLED>false</SMS_ENABLED>
+						<SMS_ACCOUNT_SID>TEST_ONLY_sms_sid</SMS_ACCOUNT_SID>
+						<SMS_AUTH_TOKEN>TEST_ONLY_sms_token</SMS_AUTH_TOKEN>
+						<SMS_SENDER_ID>TEST</SMS_SENDER_ID>
+						<OAUTH2_GOOGLE_CLIENT_ID>TEST_ONLY_google_id</OAUTH2_GOOGLE_CLIENT_ID>
+						<OAUTH2_GOOGLE_CLIENT_SECRET>TEST_ONLY_google_secret</OAUTH2_GOOGLE_CLIENT_SECRET>
+						<OAUTH2_GOOGLE_REDIRECT_URI>http://localhost:8081/callback/google</OAUTH2_GOOGLE_REDIRECT_URI>
+						<OAUTH2_FACEBOOK_CLIENT_ID>TEST_ONLY_fb_id</OAUTH2_FACEBOOK_CLIENT_ID>
+						<OAUTH2_FACEBOOK_CLIENT_SECRET>TEST_ONLY_fb_secret</OAUTH2_FACEBOOK_CLIENT_SECRET>
+						<OAUTH2_FACEBOOK_REDIRECT_URI>http://localhost:8081/callback/facebook</OAUTH2_FACEBOOK_REDIRECT_URI>
+						<ENCRYPTION_MASTER_KEY>TEST_ONLY_master_key_32_chars_min_ok</ENCRYPTION_MASTER_KEY>
+						<INTERNAL_SERVICE_SECRET>TEST_ONLY_internal_secret</INTERNAL_SERVICE_SECRET>
+						<MINIO_ACCESS_KEY>TEST_ONLY_minio_access</MINIO_ACCESS_KEY>
+						<MINIO_SECRET_KEY>TEST_ONLY_minio_secret</MINIO_SECRET_KEY>
+						<CASSANDRA_PASSWORD>TEST_ONLY_cassandra_password</CASSANDRA_PASSWORD>
+						<SECURITY_CRITICAL_ALERT_EMAIL>alerte@test.local</SECURITY_CRITICAL_ALERT_EMAIL>
+						<APP_PUBLIC_BASE_URL>http://localhost:8081</APP_PUBLIC_BASE_URL>
+						<MAINTENANCE_PHONE>+22300000001</MAINTENANCE_PHONE>
+						<FCM_SERVER_KEY>TEST_ONLY_fcm_key</FCM_SERVER_KEY>
+					</environmentVariables>
+
+				</configuration>
+			</plugin>
+
+			<!-- Couverture de tests. Rapport HTML par module :
+			     <module>/target/site/jacoco/index.html -->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>${jacoco.version}</version>
+				<configuration>
+					<excludes>
+						<!-- Classes sans logique : leur inclure fausse la mesure -->
+						<exclude>**/dto/**</exclude>
+						<exclude>**/entities/**</exclude>
+						<exclude>**/entity/**</exclude>
+						<exclude>**/enums/**</exclude>
+						<exclude>**/constants/**</exclude>
+						<exclude>**/constant/**</exclude>
+						<exclude>**/event/**</exclude>
+						<exclude>**/*Application.class</exclude>
+					</excludes>
+				</configuration>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>test</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- Inventaire des licences tierces. Le projet est distribué sous licence
+			     propriétaire (voir LICENSE) : une dépendance sous AGPL ou GPL, même
+			     transitive, imposerait la publication des sources. Vérifié par
+			     scripts/license-check.sh à chaque modification. -->
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>license-maven-plugin</artifactId>
+				<version>${license-plugin.version}</version>
+				<configuration>
+					<outputDirectory>${session.executionRootDirectory}/target/generated-sources/license</outputDirectory>
+					<excludedScopes>test</excludedScopes>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+
+	<profiles>
+		<!-- Sur macOS, Netty cherche un résolveur DNS natif. Absent, il le signale
+		     au niveau ERROR à chaque démarrage — ce qui ressemble à une panne — et
+		     retombe sur les réglages système, avec le risque de résolutions
+		     incorrectes que le message mentionne lui-même.
+		     Ce profil s'active seul sur macOS : les autres plateformes ne tirent
+		     pas cette bibliothèque native. -->
+		<profile>
+			<id>macos</id>
+			<activation>
+				<os>
+					<family>mac</family>
+				</os>
+			</activation>
+			<dependencies>
+				<dependency>
+					<groupId>io.netty</groupId>
+					<artifactId>netty-resolver-dns-native-macos</artifactId>
+					<classifier>osx-aarch_64</classifier>
+					<optional>true</optional>
+				</dependency>
+			</dependencies>
+		</profile>
+	</profiles>
+</project>

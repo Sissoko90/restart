@@ -1,0 +1,390 @@
+# =============================================================================
+# Alertes de securite et de surveillance des surfaces d'administration
+# =============================================================================
+#
+# POURQUOI CE FICHIER EXISTE
+#
+# `alerts.yml` contenait deux alertes de securite, et elles interrogeaient des
+# metriques QUE RIEN N'EMET :
+#
+#   rate(authentication_failures_total[5m]) > 0.1
+#   rate(jwt_validation_failures_total[5m]) > 0.5
+#
+# Verifie sur l'endpoint reel (auth-service, 610 series exposees) : aucune de
+# ces deux familles n'y figure, et aucun code du depot ne les cree. Les seules
+# alertes de securite de la plateforme ne pouvaient donc jamais se declencher,
+# et rien ne le signalait — Prometheus evalue sans erreur une regle qui porte
+# sur une metrique absente, elle reste simplement toujours fausse.
+#
+# C'est la forme la plus trompeuse du defaut : le fichier d'alertes donne
+# l'apparence d'une couverture.
+#
+# REGLE POUR CE FICHIER
+#
+# Chaque expression ci-dessous porte sur une metrique dont la source est nommee
+# en commentaire. `MetriquesDesAlertesTest` verifie automatiquement que toute
+# metrique citee ici existe bien dans le code ou dans la liste des metriques de
+# plateforme connues.
+#
+# PAS D'ETIQUETTE D'IDENTIFIANT
+#
+# Aucune alerte ne groupe par identifiant, telephone ou adresse IP. Ce sont des
+# donnees personnelles, et une serie Prometheus n'est pas effaçable par
+# AccountErasureService. L'adresse reste dans les journaux, qui le sont.
+
+groups:
+  # ==========================================================================
+  # CE QUI EST BLOQUE — attaque en cours ou utilisateur enferme
+  # ==========================================================================
+  - name: blocage_authentification
+    interval: 30s
+    rules:
+      # Source : AccountLockoutServiceImpl.appliquerLeVerrou
+      # (detenteur unique de la regle de verrouillage)
+      - alert: VerrouillagesEnRafale
+        expr: sum(rate(auth_account_lockout_total{reason="seuil_tentatives_atteint"}[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Verrouillages de comptes en rafale"
+          description: >-
+            Plus de 3 verrouillages par minute sur l'ensemble des comptes.
+            Signale une attaque par force brute distribuee plutot qu'un
+            utilisateur qui se trompe de mot de passe.
+
+      # Source : AccountLockoutServiceImpl.assurerNonVerrouille
+      #
+      # Comptee SEPAREMENT du verrouillage, et les deux courbes se lisent
+      # ensemble : des refus qui montent SANS nouveau verrouillage designent
+      # un utilisateur legitime enferme, pas une attaque.
+      - alert: TentativesBloqueesSansNouveauVerrouillage
+        expr: >-
+          sum(rate(auth_tentative_bloquee_total[10m])) > 0.1
+          and sum(rate(auth_account_lockout_total[10m])) < 0.01
+        for: 10m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Comptes verrouilles qui insistent, sans nouveau verrouillage"
+          description: >-
+            Des tentatives sont refusees sur des comptes deja verrouilles alors
+            qu'aucun nouveau verrouillage ne se produit. Probablement un
+            utilisateur legitime enferme : verifier avant que le support ne soit
+            saisi.
+
+      # Source : AuthMetrics.recordLoginFailure, appelee par AuthServiceImpl.
+      # Remplace `authentication_failures_total`, qui n'existait pas.
+      - alert: EchecsDeConnexionEleves
+        expr: sum(rate(auth_login_failure_total[5m])) > 0.5
+        for: 2m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Taux d'echec de connexion anormal"
+          description: >-
+            Plus de 30 echecs de connexion par minute. Metrique corrigee : la
+            regle precedente portait sur authentication_failures_total, que
+            rien n'emettait.
+
+  # ==========================================================================
+  # SECOND FACTEUR — le dernier rempart des comptes d'administration
+  # ==========================================================================
+  - name: second_facteur
+    interval: 30s
+    rules:
+      # Source : SecondFacteurServiceImpl.verifier
+      #
+      # CRITIQUE et non warning : pour produire un code TOTP faux, l'appelant a
+      # DEJA franchi le mot de passe. Six chiffres font un million de
+      # possibilites, epuisables en quelques heures. Cette courbe qui monte
+      # signifie qu'un mot de passe d'administration est compromis.
+      - alert: ForceBruteSurLeSecondFacteur
+        expr: sum(rate(auth_second_facteur_total{resultat="code_faux"}[5m])) > 0.05
+        for: 1m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Codes TOTP errones en serie — mot de passe probablement compromis"
+          description: >-
+            Des codes de second facteur errones arrivent en serie. Pour en
+            arriver la, le mot de passe a deja ete valide : traiter comme une
+            compromission de mot de passe d'administration.
+
+      # Source : SecondFacteurServiceImpl.retirer, appelee par
+      # AdminAuthServiceImpl.retirerSecondFacteur (SUPER_ADMIN seul).
+      #
+      # Seuil a ZERO, sur une heure : une seule occurrence suffit a ouvrir un
+      # compte d'administration. Alerter sur un taux laisserait passer
+      # l'evenement unique, qui est precisement celui qui compte.
+      - alert: SecondFacteurRetire
+        expr: sum(increase(auth_second_facteur_operation_total{operation="retrait"}[1h])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Second facteur d'un administrateur RETIRE"
+          description: >-
+            Un super administrateur a retire le second facteur d'un compte
+            d'administration. Operation legitime uniquement en cas d'appareil
+            perdu. Verifier dans authentication_logs qui l'a demandee et pour
+            quel compte.
+
+      # Source : SecondFacteurServiceImpl.reinitialiser
+      - alert: SecondFacteurRemplace
+        expr: sum(increase(auth_second_facteur_operation_total{operation="reinitialisation"}[1h])) > 0
+        for: 0m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Second facteur d'un administrateur remplace"
+          description: >-
+            Un administrateur a remplace son second facteur. Exige le mot de
+            passe ET le code de l'appareil courant, donc moins grave qu'un
+            retrait — mais l'ancien appareil cesse immediatement de fonctionner.
+
+      # Source : SecondFacteurServiceImpl.verifier (branche non_enrole)
+      #
+      # Un compte d'administration qui se connecte sans second facteur est
+      # protege par un mot de passe seul. Ce n'est pas une attaque : c'est une
+      # dette a resorber, d'ou le seuil sur la duree et non sur un taux.
+      - alert: AdministrateurSansSecondFacteur
+        expr: sum(increase(auth_second_facteur_total{resultat="non_enrole"}[6h])) > 0
+        for: 30m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Connexion d'administration sans second facteur"
+          description: >-
+            Un compte s'est connecte alors que son second facteur n'est pas
+            enrole : il n'est protege que par un mot de passe. Enroler via
+            POST /auth/admin/totp/enroll.
+
+  # ==========================================================================
+  # SURFACES D'ADMINISTRATION — surveillees par les metriques HTTP EXISTANTES
+  # ==========================================================================
+  #
+  # Aucun compteur nouveau ici, volontairement : `http_server_requests_seconds_count`
+  # porte deja les etiquettes `uri`, `status` et `application`, et l'uri cote
+  # service est le GABARIT concret (`/auth/admin/login`, `/admin/accounts/...`).
+  #
+  # A noter — cela ne marche PAS depuis le Gateway : son etiquette `uri` est le
+  # motif de route (`/api/v1/auth-sdk/**`), donc `/auth/admin/login` y est
+  # indistinguable de `/auth/login`. Mesure faite sur l'endpoint reel. La
+  # surveillance par endpoint se fait donc cote service.
+  - name: surfaces_administration
+    interval: 30s
+    rules:
+      - alert: RefusRepetesSurLaConnexionAdministrateur
+        expr: >-
+          sum(rate(http_server_requests_seconds_count{
+            uri="/auth/admin/login", status="401"}[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Refus repetes sur la connexion administrateur"
+          description: >-
+            Plus de 3 refus par minute sur /auth/admin/login. Ce chemin est
+            public par necessite et ne delivre que des jetons d'administration.
+
+      - alert: RefusSurLesEndpointsAdministration
+        expr: >-
+          sum(rate(http_server_requests_seconds_count{
+            uri=~"/admin/.*", status=~"40[13]"}[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Acces refuses sur les endpoints d'administration"
+          description: >-
+            Des appels sans droits suffisants frappent /admin/**. Un jeton
+            d'utilisateur final n'a aucune raison de s'y presenter.
+
+      - alert: ErreursSurLesEndpointsAdministration
+        expr: >-
+          sum(rate(http_server_requests_seconds_count{
+            uri=~"/admin/.*", status=~"5.."}[5m])) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+          category: errors
+        annotations:
+          summary: "Erreurs serveur sur les endpoints d'administration"
+          description: >-
+            Les operations d'administration echouent. Un verrouillage ou un
+            retrait de second facteur qui renvoie 500 laisse l'administrateur
+            croire que rien n'a ete fait — ou l'inverse.
+
+      # Source : InternalAuthController / ErasureController.
+      # L'effacement est IRREVERSIBLE : seuil a zero.
+      - alert: EffacementDeDonneesDeclenche
+        expr: >-
+          sum(increase(http_server_requests_seconds_count{
+            uri=~"/auth/erasure.*|/internal/auth/users/.*",
+            method="DELETE", status=~"2.."}[1h]))
+          + sum(increase(http_server_requests_seconds_count{
+            uri=~"/auth/erasure.*", method="POST", status=~"2.."}[1h])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Effacement de donnees personnelles declenche"
+          description: >-
+            Un effacement RGPD a abouti. Irreversible. Le registre de preuve
+            (table erasure_requests) porte le demandeur et le motif.
+
+  # ==========================================================================
+  # GATEWAY — refus a la peripherie
+  # ==========================================================================
+  - name: refus_gateway
+    interval: 30s
+    rules:
+      # Source : SecurityViolationRecorder.enregistrer, point de convergence
+      # des quatre filtres qui detectent (traversee de repertoire, XSS URL,
+      # XSS corps, depassement de debit).
+      - alert: ViolationsDeSecuriteAuGateway
+        expr: sum(rate(gateway_security_violations_total[5m])) > 0.2
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Violations de securite detectees au Gateway ({{ $labels.motif }})"
+          description: >-
+            Les filtres du Gateway refusent du trafic a un rythme inhabituel.
+            L'etiquette `motif` dit lequel : traversee de repertoire, XSS ou
+            depassement de debit.
+
+      # Source : SecurityViolationRecorder, branche de mise en liste noire.
+      #
+      # Une mise en liste noire demande DIX violations en cinq minutes depuis la
+      # meme adresse : l'evenement est rare par construction, donc le seuil est
+      # a zero.
+      - alert: AdresseMiseEnListeNoire
+        expr: sum(increase(gateway_security_ip_blacklisted_total[30m])) > 0
+        for: 0m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Adresse mise en liste noire par le Gateway"
+          description: >-
+            Dix violations en cinq minutes depuis une meme adresse, bloquee
+            pour 24 h. L'adresse figure dans les journaux du Gateway, pas dans
+            la metrique (donnee personnelle).
+
+      # Source : DisjoncteurSortantServiceImpl, instances creees par le
+      # registre Spring donc visibles de resilience4j-micrometer.
+      #
+      # Seuil a ZERO sur l'etat « open » : un disjoncteur ouvert signifie
+      # qu'une dependance est consideree morte et que les appels sont refuses
+      # SANS tentative. C'est un evenement, pas un taux.
+      - alert: DisjoncteurOuvert
+        expr: max by (name) (resilience4j_circuitbreaker_state{state="open"}) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: errors
+        annotations:
+          summary: "Disjoncteur {{ $labels.name }} OUVERT"
+          description: >-
+            Les appels vers {{ $labels.name }} sont refuses sans tentative. Pour
+            interface-service, cela signifie qu'aucune connexion ne peut aboutir
+            sur la plateforme : il signe les jetons de tous les services.
+
+      - alert: DisjoncteurEnReprise
+        expr: max by (name) (resilience4j_circuitbreaker_state{state="half_open"}) > 0
+        for: 0m
+        labels:
+          severity: warning
+          category: errors
+        annotations:
+          summary: "Disjoncteur {{ $labels.name }} en reprise"
+          description: >-
+            Le disjoncteur teste si la dependance est revenue. Informatif : s'il
+            repasse a « open », la panne dure.
+
+      # Remplace `jwt_validation_failures_total`, que rien n'emettait.
+      #
+      # Repose sur les 401 du Gateway, qui existent deja. Moins precis qu'un
+      # compteur dedie — un 401 peut etre un jeton absent comme un jeton
+      # invalide — et c'est assume : mieux vaut une alerte moins fine qui se
+      # declenche qu'une alerte precise qui ne peut pas.
+      - alert: RefusAuthentificationAuGateway
+        expr: >-
+          sum(rate(http_server_requests_seconds_count{
+            application="gateway-service", status="401"}[5m])) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Taux eleve de refus d'authentification au Gateway"
+          description: >-
+            Jetons absents, expires, revoques ou invalides en nombre. Le detail
+            est dans les journaux du Gateway.
+
+      # ================================================================
+      # Alertes de securite : la protection qui peut s'eteindre sans bruit
+      # ================================================================
+      # Une alerte de securite ne fait JAMAIS echouer l'operation qu'elle
+      # signale : le mot de passe est deja change quand le courriel part. Une
+      # panne de SMTP ne doit pas faire croire a la personne que rien n'a bouge.
+      #
+      # Consequence directe : l'echec d'envoi est AVALE. Sans les deux regles
+      # ci-dessous, il serait avale ET invisible — et les detournements de
+      # compte redeviendraient silencieux sans que personne l'apprenne. C'est
+      # exactement le motif que ce depot passe son temps a retirer : une
+      # protection ecrite, presente, et que plus rien n'atteint.
+      - alert: AlertesDeSecuriteNonEnvoyees
+        expr: >-
+          sum(increase(auth_security_alerte_total{resultat="echec"}[15m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Des alertes de securite ne partent plus"
+          description: >-
+            Un changement de mot de passe ou d'adresse n'a pas pu etre signale a
+            son titulaire. L'operation a bien eu lieu : c'est la notification qui
+            manque, donc un detournement de compte passerait desormais inaperçu.
+            Verifier SMTP et le fournisseur de SMS.
+
+      # Seuil a zero et « for: 0m » : un evenement, pas un taux.
+      #
+      # Un seul envoi manque suffit a laisser un detournement invisible pour une
+      # personne. Attendre un taux reviendrait a accepter que les premieres
+      # victimes ne soient pas prevenues.
+
+      # Comptes qu'aucune alerte ne peut atteindre.
+      #
+      # Distinct de l'echec : ce n'est pas une panne, c'est un compte sans
+      # coordonnee verifiee. La correction n'est pas une reprise d'envoi mais la
+      # verification des contacts — d'ou une severite moindre et une fenetre
+      # plus large.
+      - alert: ComptesSansCoordonneeVerifiee
+        expr: >-
+          sum(increase(auth_security_alerte_total{resultat="sans_destinataire"}[1h])) > 5
+        for: 10m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Des comptes ne peuvent recevoir aucune alerte de securite"
+          description: >-
+            Plusieurs changements sensibles n'ont pu etre signales faute de
+            coordonnee verifiee. Ces comptes sont detournables sans que leur
+            titulaire en soit informe. A corriger en incitant a la confirmation
+            de l'adresse ou du numero, pas par une reprise d'envoi.

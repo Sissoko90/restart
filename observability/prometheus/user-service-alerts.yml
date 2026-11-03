@@ -1,0 +1,139 @@
+groups:
+  - name: user-service
+    interval: 30s
+    rules:
+      # ==========================================
+      # ALERTES CRITIQUES - CPU & MEMORY
+      # ==========================================
+      - alert: UserServiceHighCPU
+        expr: rate(process_cpu_usage{job="user-service"}[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: critical
+          service: user-service
+        annotations:
+          summary: "User-Service CPU usage is high"
+          description: "CPU usage is above 80% for more than 5 minutes (current: {{ $value | humanizePercentage }})"
+          
+      - alert: UserServiceHighMemory
+        expr: jvm_memory_used_bytes{job="user-service",area="heap"} / jvm_memory_max_bytes{job="user-service",area="heap"} > 0.85
+        for: 5m
+        labels:
+          severity: critical
+          service: user-service
+        annotations:
+          summary: "User-Service memory usage is high"
+          description: "Heap memory usage is above 85% for more than 5 minutes (current: {{ $value | humanizePercentage }})"
+
+      # ==========================================
+      # ALERTES CRITIQUES - ERROR RATE
+      # ==========================================
+      - alert: UserServiceHighErrorRate
+        expr: rate(http_server_requests_seconds_count{job="user-service",status=~"5.."}[5m]) / rate(http_server_requests_seconds_count{job="user-service"}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          service: user-service
+        annotations:
+          summary: "User-Service error rate is high"
+          description: "HTTP 5xx error rate is above 5% for more than 2 minutes (current: {{ $value | humanizePercentage }})"
+
+      # ==========================================
+      # ALERTES CRITIQUES - DATABASE
+      # ==========================================
+      - alert: UserServiceDatabaseConnectionPoolExhausted
+        # METRIQUE CORRIGEE : hikaricp_* -> r2dbc_pool_*
+        # user-service est reactif (R2DBC, aucune dependance JPA ni Hikari) :
+        # ces series n'existent pas. Meme defaut que dans alerts.yml.
+        expr: >-
+          r2dbc_pool_acquired_connections{job="user-service"}
+          / r2dbc_pool_max_allocated_connections{job="user-service"} > 0.9
+        for: 3m
+        labels:
+          severity: critical
+          service: user-service
+        annotations:
+          summary: "User-Service database connection pool nearly exhausted"
+          description: "Database connection pool usage is above 90% (current: {{ $value | humanizePercentage }})"
+
+      - alert: UserServiceDatabaseDown
+        expr: up{job="user-service-db"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: user-service
+        annotations:
+          summary: "User-Service database is down"
+          description: "PostgreSQL database for user-service is not responding"
+
+      # ==========================================
+      # ALERTES CRITIQUES - REDIS
+      # ==========================================
+      # ALERTE RETIREE : UserServiceRedisDown
+      #
+      # Elle portait sur `redis_up{job="redis"}`, qui vient de
+      # `redis_exporter`. Aucun exporter Redis n'existe dans cette pile
+      # (verifie dans les trois docker-compose), et aucune cible `redis` n'est
+      # declaree dans prometheus.yml : l'expression ne pouvait designer
+      # personne.
+      #
+      # Pour la retablir : ajouter oliver006/redis_exporter au compose et une
+      # cible de scrape. Tant que ce n'est pas fait, l'indisponibilite de Redis
+      # se voit par ses effets — montee des erreurs 5xx et des latences sur les
+      # services qui s'en servent.
+      # ALERTE RETIREE : UserServiceKafkaConsumerLag
+      #
+      # Deux raisons, et la seconde suffit a elle seule :
+      #   1. `kafka_consumer_lag` n'est pas un nom Micrometer. Le vrai est
+      #      `kafka_consumer_fetch_manager_records_lag` ;
+      #   2. AUCUNE metrique Kafka n'est exposee par ces services — verifie sur
+      #      l'endpoint reel d'auth-service, qui consomme Kafka : zero serie
+      #      `kafka_*`. La liaison Micrometer du client Kafka n'est pas activee.
+      #
+      # Renommer n'aurait donc rien change. Pour la retablir : exposer les
+      # metriques du client Kafka (MicrometerConsumerListener), puis alerter
+      # sur le nom reel.
+      - alert: UserServiceHighLatency
+        expr: histogram_quantile(0.95, rate(http_server_requests_seconds_bucket{job="user-service"}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: user-service
+        annotations:
+          summary: "User-Service response time is high"
+          description: "P95 latency is above 1 second for more than 5 minutes (current: {{ $value }}s)"
+
+      # ==========================================
+      # ALERTES WARNING - CIRCUIT BREAKER
+      # ==========================================
+      - alert: UserServiceCircuitBreakerOpen
+        expr: resilience4j_circuitbreaker_state{job="user-service",state="open"} > 0
+        for: 2m
+        labels:
+          severity: warning
+          service: user-service
+        annotations:
+          summary: "User-Service circuit breaker is open"
+          description: "Circuit breaker '{{ $labels.name }}' is in OPEN state - requests are being rejected"
+
+      # ==========================================
+      # ALERTES INFO - HEALTH
+      # ==========================================
+      - alert: UserServiceDown
+        expr: up{job="user-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: user-service
+        annotations:
+          summary: "User-Service is down"
+          description: "User-Service instance is not responding to health checks"
+
+      - alert: UserServiceRestarted
+        expr: changes(process_start_time_seconds{job="user-service"}[5m]) > 0
+        labels:
+          severity: info
+          service: user-service
+        annotations:
+          summary: "User-Service has restarted"
+          description: "User-Service instance has restarted in the last 5 minutes"

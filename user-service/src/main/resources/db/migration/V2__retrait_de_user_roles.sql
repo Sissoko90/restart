@@ -1,0 +1,37 @@
+-- ============================================================================
+-- Retrait de user_roles : un second magasin pour un état qu'auth-service détient
+-- ============================================================================
+-- La table existait avec son entité (`UserRoleInfo`) et son dépôt
+-- (`UserRoleInfoRepository`), et l'entité se décrivait elle-même comme
+-- « synchronisée depuis auth-service ».
+--
+-- Trois constats l'ont condamnée :
+--   - rien ne l'alimentait : aucun code n'écrivait dans cette table ;
+--   - rien ne la lisait : le dépôt n'était injecté nulle part ;
+--   - le rôle voyage déjà dans le jeton, et `UserMapper` le lit auprès
+--     d'auth-service à la demande.
+--
+-- C'était donc une réplique vide d'un état détenu ailleurs — le défaut que le
+-- projet connaît sous « deux magasins pour un même état ». Une réplique qui ne
+-- se remplit jamais est inoffensive ; celle qui commence à se remplir divergera
+-- à la première modification faite dans auth-service, et c'est à ce moment-là
+-- qu'on ne saura plus laquelle croire.
+--
+-- ----------------------------------------------------------------------------
+-- Pourquoi une migration V2, et non une correction de V1
+-- ----------------------------------------------------------------------------
+-- Flyway enregistre l'empreinte de chaque migration appliquée. Retoucher V1
+-- après son application fait échouer le démarrage sur une « checksum mismatch »
+-- — un refus de démarrer, pas un avertissement.
+--
+-- Une migration qui défait est donc la seule forme sûre, même quand V1 est
+-- récente et probablement jamais appliquée : on ne déduit pas l'état d'une base
+-- qu'on ne voit pas.
+--
+-- Les deux index partent avec la table ; ils sont nommés ici pour mémoire,
+-- parce que c'est ce que montre une relecture de V1 :
+--   - idx_user_roles_unique            (user_id, role)
+--   - idx_user_roles_un_seul_principal (user_id) WHERE is_primary
+-- ============================================================================
+
+DROP TABLE IF EXISTS user_roles;

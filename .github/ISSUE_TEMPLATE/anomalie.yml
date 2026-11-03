@@ -1,0 +1,64 @@
+name: Anomalie
+description: Un comportement qui diffère de ce qui est attendu
+labels: [anomalie]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **Pour une faille de sécurité, n'utilisez pas ce formulaire.**
+        Voir [SECURITY.md](../../SECURITY.md).
+
+  - type: dropdown
+    id: service
+    attributes:
+      label: Service concerné
+      options:
+        - gateway-service
+        - interface-service
+        - auth-service
+        - user-service
+        - media-service
+        - quotas-service
+        - setting-service
+        - config-service
+        - platform-commons
+        - je ne sais pas
+    validations:
+      required: true
+
+  - type: textarea
+    id: attendu
+    attributes:
+      label: Comportement attendu
+    validations:
+      required: true
+
+  - type: textarea
+    id: observe
+    attributes:
+      label: Comportement observé
+      description: Inclure le code de statut HTTP et le corps de la réponse s'il y en a un.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Comment le reproduire
+      description: >-
+        La requête exacte si possible. Les collections Postman du dépôt
+        (dossier postman/) sont un bon point de départ.
+      placeholder: |
+        1. POST /api/v1/auth/login avec …
+        2. GET /api/v1/users/{id} avec le jeton obtenu
+        3. Réponse : 401 alors que 200 était attendu
+    validations:
+      required: true
+
+  - type: textarea
+    id: journaux
+    attributes:
+      label: Journaux
+      description: >-
+        ⚠️ Retirer jetons, mots de passe et données personnelles avant de coller.
+      render: text

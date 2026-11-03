@@ -1,0 +1,163 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'microservices-dev'
+    environment: 'development'
+
+# Configuration AlertManager
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Chargement des règles d'alertes
+# Chargement des regles d'alertes
+#
+# `user-service-alerts.yml` existait depuis le debut et n'etait PAS charge :
+# `rule_files` ne listait que `alerts.yml`. Onze alertes ecrites, deployees,
+# et jamais evaluees — Prometheus n'a aucune raison de signaler un fichier de
+# regles qu'on ne lui demande pas de lire.
+#
+# Le glob evite que le prochain fichier ajoute connaisse le meme sort.
+rule_files:
+  - '*-alerts.yml'
+  - 'alerts.yml'
+
+# Configuration des scrapes pour chaque microservice
+scrape_configs:
+  # Gateway Service
+  - job_name: 'gateway-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8081']
+        labels:
+          application: 'gateway-service'
+          service: 'gateway'
+          tier: 'edge'
+
+  # Auth Service - Via Gateway pour header X-Secret-Key
+  - job_name: 'auth-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8082']
+        labels:
+          application: 'auth-service'
+          service: 'authentication'
+          tier: 'backend'
+    # Note: Prometheus ne supporte pas les headers custom facilement
+    # Le GatewayAccessFilter autorise déjà /actuator sans X-Secret-Key
+
+  # User Service
+  - job_name: 'user-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8083']
+        labels:
+          application: 'user-service'
+          service: 'user-management'
+          tier: 'backend'
+    # Note: Le GatewayAccessFilter autorise déjà /actuator sans X-Secret-Key
+
+  # Media Service
+  - job_name: 'media-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8087']
+        labels:
+          application: 'media-service'
+          service: 'media-management'
+          tier: 'backend'
+          storage: 'minio'
+          database: 'mongodb'
+    # Note: Le GatewayAccessFilter autorise déjà /actuator sans X-Secret-Key
+
+  # Interface Service — AUTORITE JWT de la plateforme
+  #
+  # Il n'etait PAS collecte. C'est le seul detenteur des cles privees de
+  # signature : il emet tous les jetons que les huit autres services
+  # verifient. Son indisponibilite empeche toute connexion sur la plateforme,
+  # et aucune alerte ne pouvait la voir — `ServiceDown` ne se declenche que sur
+  # une cible declaree ici.
+  - job_name: 'interface-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8088']
+        labels:
+          application: 'interface-service'
+          service: 'jwt-authority'
+          tier: 'backend'
+
+  # Quotas Service
+  - job_name: 'quotas-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8089']
+        labels:
+          application: 'quotas-service'
+          service: 'quotas'
+          tier: 'backend'
+
+  # Setting Service
+  - job_name: 'setting-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8090']
+        labels:
+          application: 'setting-service'
+          service: 'settings'
+          tier: 'backend'
+
+  # Security Service — la politique de securite de toute la plateforme
+  #
+  # Cette cible MANQUAIT. Le module etait complet, teste, configure et route,
+  # et ses metriques — dont la jauge geo_blocked_countries_count — n'etaient
+  # collectees par personne. Meme oubli que pour sa configuration et son
+  # routage : une liste tenue a la main, qu'aucun code ne lit.
+  - job_name: 'security-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8091']
+        labels:
+          application: 'security-service'
+          service: 'security'
+          tier: 'backend'
+
+  # Config Service — sa chute empeche tout demarrage de service
+  - job_name: 'config-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8888']
+        labels:
+          application: 'config-service'
+          service: 'configuration'
+          tier: 'infrastructure'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          application: 'prometheus'
+
+  # AlertManager monitoring
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+        labels:
+          application: 'alertmanager'
+
+  # Loki monitoring
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+        labels:
+          application: 'loki'
+
+  # Tempo monitoring (désactivé temporairement)
+  - job_name: 'tempo'
+    static_configs:
+      - targets: ['tempo:3200']
+        labels:
+          application: 'tempo'

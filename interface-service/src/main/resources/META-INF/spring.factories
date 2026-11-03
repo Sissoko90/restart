@@ -1,0 +1,2 @@
+org.springframework.boot.EnvironmentPostProcessor=\
+com.abdatytch.interface_service.config.DotenvConfig

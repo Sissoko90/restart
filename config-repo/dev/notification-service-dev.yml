@@ -1,0 +1,74 @@
+# ==========================================
+# NOTIFICATION SERVICE - Configuration DEV
+# ==========================================
+
+server:
+  port: 8086
+
+spring:
+  application:
+    name: notification-service
+  
+  # DATABASE CONFIGURATION
+  # Note: datasource credentials sont chargés depuis .env via DotenvConfig
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+  
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: notification-service-group-dev
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+      auto-offset-reset: earliest
+  
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+  
+  # OAuth2 Resource Server - autorité JWT = interface-service (plus de Keycloak)
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8088}
+          jwk-set-uri: ${JWKS_URL:http://localhost:8088/dev/.well-known/jwks.json}
+
+notification:
+  sms:
+    provider: ${SMS_PROVIDER:mock}
+    api-key: ${SMS_PROVIDER_API_KEY}
+    api-secret: ${SMS_PROVIDER_API_SECRET}
+    from-number: ${SMS_FROM_NUMBER:+1234567890}
+  
+  push:
+    fcm:
+      server-key: ${FCM_SERVER_KEY}
+      sender-id: ${FCM_SENDER_ID:dev-sender-id}
+  
+  email:
+    from: ${SMTP_FROM:noreply@dev.microservices.com}
+    reply-to: ${SMTP_FROM:noreply@dev.microservices.com}

@@ -1,0 +1,145 @@
+# ==========================================
+# SETTING SERVICE - Configuration DEV
+# ==========================================
+# Configuration spécifique au service de paramètres
+# La config commune est dans application-dev.yml
+# ==========================================
+
+server:
+  port: 8090
+
+# Pas de context-path car le Gateway gère le routing /api/v1/settings/**
+# Setting-service expose directement /settings/**, le Gateway ajoute /api/v1
+
+spring:
+  application:
+    name: setting-service
+  cloud:
+    consul:
+      discovery:
+        health-check-path: /actuator/health/liveness
+  
+  # Configuration R2DBC pour PostgreSQL (réactif)
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_SETTING:setting_service_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    pool:
+      enabled: true
+      initial-size: 5
+      max-size: 20
+      max-idle-time: 30m
+      validation-query: SELECT 1
+
+  # Schéma versionné par Flyway (Flyway n'a pas d'API réactive : il passe par JDBC
+  # au démarrage uniquement)
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_SETTING:setting_service_db}
+    user: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  # Configuration Redis pour cache et sessions
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+# ==========================================================
+# JWT - audience propre au service (voir docs/JWT-CONTRACT.md)
+# ==========================================================
+jwt:
+  audience: setting-service
+
+# ==========================================================
+# GATEWAY SECURITY
+# ==========================================================
+gateway:
+  secret:
+    key: ${GATEWAY_SECRET_KEY}
+
+# Configuration OpenAPI/Swagger
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+  show-actuator: true
+
+# Configuration Resilience4j
+resilience4j:
+  ratelimiter:
+    instances:
+      settingService:
+        limitForPeriod: 100
+        limitRefreshPeriod: 1s
+        timeoutDuration: 0s
+  circuitbreaker:
+    instances:
+      settingService:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 5s
+        failureRateThreshold: 50
+        eventConsumerBufferSize: 10
+
+# Configuration des services externes
+services:
+  auth-service:
+    url: http://localhost:8082
+  user-service:
+    url: http://localhost:8083
+
+# Configuration métier spécifique aux paramètres
+settings:
+  # Paramètres système par défaut
+  system:
+    # Ouverture des inscriptions : décision commerciale — « acceptons-nous de
+    # nouveaux clients » — et non une règle de sécurité. C'est le seul paramètre
+    # système qui reste.
+    registration-enabled: true
+
+    # Les six autres ont rejoint security-service : ils décidaient de la
+    # sécurité sous l'étiquette « system ».
+    #   maintenance-mode            -> fenêtres de maintenance (une table, pas
+    #                                  une clé : message, durée, service)
+    #   email-verification-required -> security.email-confirme-obligatoire
+    #   phone-verification-required -> security.telephone-confirme-obligatoire
+    #   password-complexity-enabled -> security.complexite-mot-de-passe
+    #   two-factor-auth-enabled     -> dédoublé utilisateur / administration
+    #   session-timeout-minutes     -> dédoublé utilisateur / administration
+    
+  # La politique de sécurité a QUITTÉ ce service.
+  #
+  # Elle est portée par security-service, typée : chaque paramètre y a un type,
+  # des bornes et un auteur conservé. Ici, toute clé était acceptée et toute
+  # valeur était une chaîne — un seuil pouvait valoir « cinq » sans que rien ne
+  # s'y oppose.
+  #
+  # Voir config-repo/dev/security-service-dev.yml et la migration
+  # V2__retrait_politique_securite.sql, qui archive les surcharges existantes.
+    
+  # Paramètres de notification
+  notifications:
+    email-enabled: true
+    sms-enabled: true
+    push-enabled: false
+    
+  # Paramètres de cache
+  cache:
+    user-settings-ttl-minutes: 60
+    system-settings-ttl-minutes: 1440  # 24h
+    refresh-on-update: true

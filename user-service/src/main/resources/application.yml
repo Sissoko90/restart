@@ -1,0 +1,153 @@
+# ==========================================
+# USER SERVICE - Bootstrap Configuration
+# ==========================================
+# Ce fichier contient uniquement la config de démarrage
+# Toute la config métier est dans config-repo/dev/
+# ==========================================
+
+spring:
+  application:
+    name: user-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  
+  # ==========================================
+  # CONFIG SERVER
+  # ==========================================
+  config:
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+  cloud:
+    config:
+      enabled: true
+      fail-fast: false
+      retry:
+        max-attempts: 3
+        initial-interval: 1000
+        max-interval: 2000
+
+  # ==========================================
+  # PLAFOND DES ENVOIS MULTIPART
+  # ==========================================
+  # `spring.servlet.multipart.*` etait declare ici, et ce service est en
+  # WebFlux : ces clefs appartiennent au monde Servlet et sont silencieusement
+  # IGNOREES. Le plafond de 5 Mo annonce n'etait applique par personne.
+  #
+  # Il l'etait tout de meme, mais ailleurs : LocalFileStorageService verifie la
+  # taille en code, et LocalFileStorageReactiveTest le prouve. La configuration
+  # donnait donc l'apparence d'une seconde barriere qui n'existait pas.
+  #
+  # Ces clefs sont DANS le bloc `spring:` existant, et non dans un second.
+  # Deux clefs `spring:` dans un meme document ne fusionnent pas : snakeyaml,
+  # celui qu'utilise Spring, les REFUSE et le service ne demarre plus du tout.
+  # Mesure : PyYAML, lui, les tolere en gardant la derniere — une verification
+  # faite avec lui passe sur un fichier que Spring rejette.
+  webflux:
+    multipart:
+      # Au-dela, la partie est ecrite sur disque au lieu d'etre gardee en
+      # memoire. Ce n'est pas un refus, c'est un seuil de bascule.
+      max-in-memory-size: 256KB
+      # Ceci est le vrai plafond : au-dela, la requete est refusee.
+      max-disk-usage-per-part: 5MB
+      # Une photo de profil, c'est UNE partie. En autoriser mille permettrait
+      # d'epuiser la memoire par le nombre plutot que par la taille.
+      max-parts: 4
+
+# ==========================================
+# NETTY SERVER CONFIGURATION
+# ==========================================
+netty:
+  server:
+    worker-threads: ${NETTY_WORKER_THREADS:0}  # 0 = auto (2x CPU cores)
+    connection-timeout: ${NETTY_CONNECTION_TIMEOUT:10000}
+    idle-timeout: ${NETTY_IDLE_TIMEOUT:60}
+    read-timeout: ${NETTY_READ_TIMEOUT:60}
+    write-timeout: ${NETTY_WRITE_TIMEOUT:60}
+    backlog: ${NETTY_BACKLOG:1024}
+    receive-buffer: ${NETTY_RECEIVE_BUFFER:262144}  # 256KB
+    send-buffer: ${NETTY_SEND_BUFFER:262144}        # 256KB
+    tcp-nodelay: ${NETTY_TCP_NODELAY:true}
+    keep-alive: ${NETTY_KEEP_ALIVE:true}
+    compression: ${NETTY_COMPRESSION:true}
+
+# ==========================================
+# KAFKA CONSUMER RESILIENCE
+# ==========================================
+kafka:
+  consumer:
+    resilience:
+      auto-offset-reset: ${KAFKA_AUTO_OFFSET_RESET:earliest}
+      enable-auto-commit: ${KAFKA_ENABLE_AUTO_COMMIT:false}
+      max-poll-records: ${KAFKA_MAX_POLL_RECORDS:100}
+      session-timeout: ${KAFKA_SESSION_TIMEOUT:30000}
+      max-poll-interval: ${KAFKA_MAX_POLL_INTERVAL:300000}
+      heartbeat-interval: ${KAFKA_HEARTBEAT_INTERVAL:10000}
+      max-interval: 1000
+
+server:
+  port: 8083
+  netty:
+    connection-timeout: ${NETTY_CONNECTION_TIMEOUT:10000}
+    idle-timeout: ${NETTY_IDLE_TIMEOUT:60s}
+    max-keep-alive-requests: 1000
+
+# ==========================================
+# FALLBACK CONFIGURATION
+# ==========================================
+# Utilisé uniquement si config-server est indisponible
+# ==========================================
+
+# Fallback datasource
+spring.datasource:
+  url: ${USER_DB_URL}
+  username: ${USER_DB_USERNAME}
+  password: ${USER_DB_PASSWORD}
+
+# Fallback Redis
+spring.data.redis:
+  host: ${REDIS_HOST}
+  port: ${REDIS_PORT}
+
+# Fallback management
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  health:
+    consul:
+      enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: ${TEMPO_ENDPOINT:http://localhost:9411/api/v2/spans}
+  opentracing:
+    jaeger:
+      enabled: true
+      endpoint: ${TEMPO_ENDPOINT:http://localhost:14268/api/traces}
+
+# ==========================================
+# PHOTOS DE PROFIL
+# ==========================================
+# `base.url` est l'URL rendue au client par POST /users/me/profile-picture :
+# c'est elle que le frontal mettra dans un <img>. Elle doit donc designer la
+# PASSERELLE (8081), et non le port de ce service (8083) — que l'exterieur ne
+# peut pas atteindre, et qui contournerait l'authentification.
+#
+# Le defaut precedent etait `http://localhost:8083/api/v1/files`, faux deux fois :
+# le port, et le prefixe `/api/v1` que les controleurs de ce service n'attendent
+# pas (la passerelle le retire). La photo etait enregistree, l'API repondait 200
+# avec cette URL, et elle ne menait nulle part.
+file:
+  upload:
+    dir: ${FILE_UPLOAD_DIR:uploads/profiles}
+  base:
+    url: ${FILE_BASE_URL:http://localhost:8081/api/v1/files}

@@ -1,0 +1,162 @@
+# ==========================================
+# USER SERVICE - Configuration DEV
+# ==========================================
+# SECRET INTER-SERVICES
+# ==========================================
+# Exige par auth-service sur /internal/auth/** (X-Internal-Secret), et par
+# interface-service sur /internal/jwt/**. Distinct de gateway.secret.key, qui
+# authentifie le Gateway aupres des services et non un service aupres d'un autre.
+security:
+  internal-secret: ${INTERNAL_SERVICE_SECRET}
+
+# ==========================================
+# APPELS DE SERVICE A SERVICE
+# ==========================================
+# Delais maximaux de l'appel vers auth-service, porte par ClientIdentiteAuth.
+#
+# Il n'y en avait AUCUN a l'origine : les defauts de Feign s'appliquaient, 10 s
+# a la connexion et 60 s a la LECTURE. L'appel part de UserMapper, donc du
+# chemin de chaque reponse utilisateur : une instance d'auth-service figee
+# retenait la requete une minute entiere.
+#
+# Avec WebClient le risque est le meme mais pire sans delai explicite : Netty
+# attend INDEFINIMENT une reponse qui ne vient pas. Les deux valeurs ont un
+# defaut dans le code, le service demarre donc sans ces variables.
+clients:
+  auth-service:
+    delai-connexion-ms: ${AUTH_CLIENT_CONNECT_TIMEOUT_MS:3000}
+    delai-reponse-ms: ${AUTH_CLIENT_RESPONSE_TIMEOUT_MS:5000}
+
+# ==========================================
+# Configuration spécifique au service utilisateur
+# La config commune est dans application-dev.yml
+# ==========================================
+
+server:
+  port: 8083
+  # Pas de context-path car le Gateway gère le routing /api/v1/users/**
+
+spring:
+  application:
+    name: user-service
+  cloud:
+    consul:
+      discovery:
+        health-check-path: /actuator/health
+  
+  # ==========================================
+  # DATABASE CONFIGURATION - PostgreSQL R2DBC
+  # ==========================================
+  # Configuration R2DBC pour accès base de données réactif non-bloquant
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_USER:user_service_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    pool:
+      initial-size: 10
+      max-size: 50
+      max-idle-time: 30m
+      validation-query: SELECT 1
+
+  # ==========================================
+  # SCHÉMA — Flyway
+  # ==========================================
+  # Absent jusqu'ici, et c'était le défaut le plus grave de ce service : quatre
+  # entités, quatre dépôts, et aucune table. `R2dbcConfig` déclarait bien un
+  # `ConnectionFactoryInitializer`, mais son populateur était commenté — un bean
+  # qui existait pour ne rien faire.
+  #
+  # Flyway n'a pas d'API réactive : il passe par JDBC, au démarrage uniquement,
+  # et jamais sur le chemin d'une requête. Même configuration que dans
+  # auth-service, setting-service et security-service.
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_USER:user_service_db}
+    user: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  # ==========================================
+  # KAFKA CONFIGURATION
+  # ==========================================
+  # Note: Configuration Kafka commune dans application-dev.yml
+  # Seul le group-id est spécifique au service
+  kafka:
+    consumer:
+      group-id: user-service-group-dev
+
+  # `spring.cache.redis.time-to-live` a ete RETIRE d'ici.
+  #
+  # Elle annoncait un quart d'heure de retention pour les profils, et elle etait
+  # INERTE : cette propriete configure le CacheManager de l'abstraction Spring
+  # Cache, et ce module n'en a pas — ni @EnableCaching, ni @Cacheable, ni
+  # CacheManager. Il passe directement par ReactiveRedisTemplate.
+  #
+  # La laisser etait pire que de ne rien ecrire : quelqu'un cherchant a ajuster
+  # la retention l'aurait trouvee, modifiee, et n'aurait obtenu aucun effet.
+  # La retention reelle est `CacheDesComptes.RETENTION`, et elle y est seule.
+
+# ==========================================
+# GATEWAY SECURITY
+# ==========================================
+gateway:
+  secret:
+    key: ${GATEWAY_SECRET_KEY}
+
+# Note: JWT/JWKS et Zip Bomb configs sont dans application-dev.yml
+
+# ==========================================
+# LOGGING SPÉCIFIQUE
+# ==========================================
+logging:
+  level:
+    com.abdatytch.user_service: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.kafka: INFO
+
+# ==========================================
+# HEALTH CHECKS SPÉCIFIQUES
+# ==========================================
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: diskSpace,r2dbc,redis
+        liveness:
+          include: ping
+  health:
+    r2dbc:
+      enabled: true
+    redis:
+      enabled: true
+
+# ==========================================
+# CORS CONFIGURATION
+# ==========================================
+cors:
+  allowed-origins: http://localhost:3000,http://localhost:8080,http://localhost:8081,http://localhost:4200
+  allowed-methods: GET,POST,PUT,DELETE,PATCH,OPTIONS
+  allowed-headers: Authorization,Content-Type,Accept,X-Requested-With,X-XSRF-TOKEN,X-Secret-Key
+  exposed-headers: Authorization,X-Total-Count
+  allow-credentials: true
+  max-age: 3600
+
+# ==========================================
+# RESILIENCE4J INSTANCES SPÉCIFIQUES
+# ==========================================
+# Utilise les configs de base de application-dev.yml
+resilience4j:
+  circuitbreaker:
+    instances:
+      userService:
+        baseConfig: default
+  retry:
+    instances:
+      userService:
+        baseConfig: default
+  ratelimiter:
+    instances:
+      userService:
+        baseConfig: default

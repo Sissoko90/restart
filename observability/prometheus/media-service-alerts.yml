@@ -1,0 +1,249 @@
+# ============================================================================
+# media-service — regles d'alerte
+# ============================================================================
+# Ce service etait SCRAPE et n'avait AUCUNE regle. Ses sept metriques etaient
+# collectees, et personne n'etait prevenu quand quoi que ce soit allait mal —
+# y compris le compteur de menaces de securite, le seul ou le silence est
+# dangereux. C'est le service qui detient les pieces d'identite des
+# utilisateurs.
+#
+# Les noms de series employes ici sont ceux que Micrometer EXPOSE reellement,
+# verifies par `NomsDesMetriquesTest` du module. Ce n'est pas une precaution de
+# style : Micrometer renomme, et une requete PromQL sans serie correspondante
+# n'est pas une erreur — c'est un resultat vide. Une alerte ainsi ecrite ne se
+# declenche jamais, en silence.
+#
+# ----------------------------------------------------------------------------
+# LES TROIS METRIQUES AJOUTEES DEPUIS
+# ----------------------------------------------------------------------------
+# Ce fichier documentait ici trois angles morts sans metrique derriere. Les
+# trois existent desormais, et les regles correspondantes sont plus bas :
+#
+#   - documents_quality_rejected_total{raison} — `documents_rejected_total` ne
+#     compte que les rejets d'ADMINISTRATEUR (`rejectDocument`). Un document
+#     refuse sous 70/100 par l'analyse de qualite levait une exception et
+#     n'incrementait RIEN. Les deux raisons sont distinguees parce qu'elles ne
+#     se corrigent pas de la meme facon : ILLISIBLE accuse le client qui
+#     envoie, SCORE_INSUFFISANT accuse d'abord le seuil.
+#
+#   - documents_pending_validation — jauge de la file. Elle compte le statut
+#     UPLOADED, soit EXACTEMENT ce que sert /admin/documents/pending. Les deux
+#     definitions doivent rester identiques : une alerte sur une file que
+#     l'administrateur ne retrouve pas est pire qu'une absence d'alerte.
+#
+#   - documents_storage_failures_total{operation} — `MinioHealthIndicator` dit
+#     si MinIO repond ; il ne dit rien des ecritures qui echouent alors que le
+#     service repond.
+#
+# ATTENTION, limite connue : media-service n'a NI aspectjweaver NI
+# spring-boot-starter-aop a son classpath. Les @CircuitBreaker et @Retry de
+# StorageServiceImpl sont donc INERTES, et ses trois methodes de repli vers un
+# stockage local chiffre ne sont JAMAIS appelees. Une panne MinIO est donc une
+# panne seche, et c'est bien ce que compte documents_storage_failures_total.
+# ============================================================================
+
+groups:
+  - name: media-service
+    interval: 30s
+    rules:
+
+      # ======================================================================
+      # DISPONIBILITE
+      # ======================================================================
+      - alert: MediaServiceDown
+        expr: up{job="media-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: media-service
+        annotations:
+          summary: "media-service est injoignable"
+          description: >-
+            Prometheus ne parvient plus a scraper media-service depuis plus
+            d'une minute. Aucun document ne peut etre deverse ni consulte.
+
+      # ======================================================================
+      # SECURITE — le silence y est dangereux
+      # ======================================================================
+      # Une signature malware connue est un fait grave et rare : elle merite un
+      # reveil. Les autres menaces — tentative XSS dans les metadonnees, type
+      # MIME suspect — sont le bruit de fond d'un service expose, d'ou un seuil
+      # et une severite moindres. Les confondre ferait cesser de lire l'alerte.
+      - alert: MediaServiceSignatureMalwareConnue
+        expr: increase(documents_security_threats_total{job="media-service",type="KNOWN_MALWARE_SIGNATURE"}[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          service: media-service
+        annotations:
+          summary: "Signature malware connue detectee sur un document"
+          description: >-
+            {{ $value }} document(s) portant une signature malware connue en
+            15 minutes. Le document est rejete, mais l'envoi est delibere :
+            verifier le compte emetteur.
+
+      - alert: MediaServiceMenacesEnRafale
+        expr: sum(increase(documents_security_threats_total{job="media-service"}[15m])) > 20
+        for: 0m
+        labels:
+          severity: warning
+          service: media-service
+        annotations:
+          summary: "Rafale de menaces detectees sur les documents"
+          description: >-
+            {{ $value }} menaces en 15 minutes, toutes natures confondues.
+            Au-dela d'une vingtaine, il ne s'agit plus de bruit de fond mais
+            d'un balayage. Type le plus frequent a verifier dans le tableau de
+            bord.
+
+      # ======================================================================
+      # LATENCE — mesurable depuis que les buckets sont publies
+      # ======================================================================
+      # Le pipeline d'envoi fait scan antimalware, analyse de qualite,
+      # compression, filigrane, chiffrement, vignette et stockage. Il est
+      # legitimement lent ; au-dela de trente secondes au P95, c'est une
+      # degradation.
+      - alert: MediaServiceEnvoiLent
+        expr: histogram_quantile(0.95, sum by (le) (rate(documents_upload_duration_seconds_bucket{job="media-service"}[10m]))) > 30
+        for: 10m
+        labels:
+          severity: warning
+          service: media-service
+        annotations:
+          summary: "Les envois de documents sont lents"
+          description: >-
+            P95 de la duree d'envoi a {{ $value | humanizeDuration }} sur
+            10 minutes. Suspects par ordre de probabilite : MinIO, l'analyse de
+            qualite, le chiffrement.
+
+      # ======================================================================
+      # QUALITE — un seuil trop severe bloque des inscriptions
+      # ======================================================================
+      # Le refus sous 70/100 est une decision automatique qui empeche quelqu'un
+      # de s'inscrire. Si elle se declenche sur la majorite des envois, ce n'est
+      # plus une protection, c'est une panne — et personne ne s'en plaint, parce
+      # que la personne refusee n'a aucun recours a offrir.
+      - alert: MediaServiceTropDeRejetsQualite
+        expr: >-
+          sum(rate(documents_quality_rejected_total{job="media-service"}[30m]))
+          / sum(rate(documents_uploaded_total{job="media-service"}[30m])) > 0.4
+        for: 30m
+        labels:
+          severity: warning
+          service: media-service
+        annotations:
+          summary: "Plus de 40 % des documents sont rejetes pour qualite"
+          description: >-
+            Taux de rejet qualite a {{ $value | humanizePercentage }} sur
+            30 minutes. Verifier la repartition par `raison` : ILLISIBLE pointe
+            le client qui envoie, SCORE_INSUFFISANT pointe d'abord le seuil
+            de 70/100.
+
+      # ======================================================================
+      # FILE DE VALIDATION — la panne qui ne leve aucune erreur
+      # ======================================================================
+      # Un empilement ne produit ni 5xx ni latence : le service va bien, et
+      # personne ne traite les dossiers. Ce sont des inscriptions bloquees, donc
+      # des chauffeurs qui ont envoye leur piece d'identite et attendent.
+      - alert: MediaServiceFileDeValidationQuiSEmpile
+        expr: documents_pending_validation{job="media-service"} > 100
+        for: 2h
+        labels:
+          severity: warning
+          service: media-service
+        annotations:
+          summary: "La file de validation des documents s'empile"
+          description: >-
+            {{ $value }} documents en attente depuis plus de deux heures. Meme
+            file que /admin/documents/pending (statut UPLOADED).
+
+      - alert: MediaServiceFileDeValidationAbandonnee
+        expr: documents_pending_validation{job="media-service"} > 500
+        for: 6h
+        labels:
+          severity: critical
+          service: media-service
+        annotations:
+          summary: "La file de validation n'est plus traitee"
+          description: >-
+            {{ $value }} documents en attente depuis six heures. A ce niveau il
+            ne s'agit plus d'un retard mais d'un arret de la validation.
+
+      # ======================================================================
+      # STOCKAGE OBJET
+      # ======================================================================
+      # Rappel : les replis Resilience4j de StorageServiceImpl sont inertes
+      # (ni aspectjweaver ni starter-aop au classpath). Un echec d'ecriture est
+      # donc un document perdu pour la personne qui l'envoyait, pas un document
+      # bascule vers le stockage local.
+      - alert: MediaServiceEchecsEcritureStockage
+        expr: increase(documents_storage_failures_total{job="media-service",operation="DEPOT"}[10m]) > 5
+        for: 0m
+        labels:
+          severity: critical
+          service: media-service
+        annotations:
+          summary: "Les ecritures vers le stockage objet echouent"
+          description: >-
+            {{ $value }} echecs de depot en 10 minutes. Aucun repli n'est actif :
+            ce sont autant d'envois perdus. Verifier MinIO et le bucket.
+
+      - alert: MediaServiceEchecsLectureStockage
+        expr: increase(documents_storage_failures_total{job="media-service",operation="LECTURE"}[10m]) > 5
+        for: 0m
+        labels:
+          severity: warning
+          service: media-service
+        annotations:
+          summary: "Les lectures depuis le stockage objet echouent"
+          description: >-
+            {{ $value }} echecs de lecture en 10 minutes : des documents deja
+            stockes ne sont plus consultables.
+
+      # ======================================================================
+      # ERREURS HTTP
+      # ======================================================================
+      - alert: MediaServiceTauxErreurEleve
+        expr: >-
+          rate(http_server_requests_seconds_count{job="media-service",status=~"5.."}[5m])
+          / rate(http_server_requests_seconds_count{job="media-service"}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          service: media-service
+        annotations:
+          summary: "media-service rend plus de 5 % d'erreurs serveur"
+          description: >-
+            Taux de 5xx a {{ $value | humanizePercentage }} depuis 2 minutes.
+
+      # ======================================================================
+      # RESSOURCES
+      # ======================================================================
+      # Ce service lit des fichiers entiers en memoire pour les analyser, les
+      # compresser et les chiffrer : sa pression memoire est structurellement
+      # plus forte que celle des autres, et c'est elle qui lachera d'abord.
+      - alert: MediaServiceMemoireHaute
+        expr: >-
+          jvm_memory_used_bytes{job="media-service",area="heap"}
+          / jvm_memory_max_bytes{job="media-service",area="heap"} > 0.85
+        for: 5m
+        labels:
+          severity: critical
+          service: media-service
+        annotations:
+          summary: "Memoire haute sur media-service"
+          description: >-
+            Tas a {{ $value | humanizePercentage }} depuis 5 minutes. Ce service
+            charge les documents en memoire pour les traiter.
+
+      - alert: MediaServiceProcesseurHaut
+        expr: rate(process_cpu_usage{job="media-service"}[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: media-service
+        annotations:
+          summary: "Processeur haut sur media-service"
+          description: >-
+            Usage processeur a {{ $value | humanizePercentage }} depuis
+            5 minutes.

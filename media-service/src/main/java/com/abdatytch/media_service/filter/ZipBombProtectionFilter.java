@@ -1,0 +1,119 @@
+package com.abdatytch.media_service.filter;
+
+import com.abdatytch.media_service.security.ZipBombProtection;
+import com.abdatytch.media_service.security.ZipBombProtection.ZipBombCheckResult;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.Ordered;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferUtils;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.http.server.reactive.ServerHttpRequestDecorator;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
+import java.nio.charset.StandardCharsets;
+
+/**
+
+ * Filtre WebFlux pour détecter les attaques Zip Bomb sur les uploads
+ *
+ * Ce filtre intercepte les requêtes multipart/form-data et vérifie
+ * si les fichiers uploadés sont des Zip Bombs potentiels
+ */
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class ZipBombProtectionFilter implements WebFilter, Ordered {
+
+    private final ZipBombProtection zipBombProtection;
+
+    @Override
+    public int getOrder() {
+        return Ordered.HIGHEST_PRECEDENCE + 10;
+    }
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+        ServerHttpRequest request = exchange.getRequest();
+
+        // Ne vérifier que les requêtes POST/PUT avec du contenu
+        String method = request.getMethod().name();
+        if (!("POST".equals(method) || "PUT".equals(method))) {
+            return chain.filter(exchange);
+        }
+
+        MediaType contentType = request.getHeaders().getContentType();
+        if (contentType == null) {
+            return chain.filter(exchange);
+        }
+
+        // Vérifier si c'est un upload de fichier compressé
+        String contentTypeStr = contentType.toString().toLowerCase();
+        boolean isCompressed = zipBombProtection.isCompressedFile(contentTypeStr);
+
+        // Pour les fichiers directement compressés (non multipart)
+        if (isCompressed) {
+            return checkZipBombAndContinue(exchange, chain, request);
+        }
+
+        // Pour les uploads multipart, on laisse passer et on vérifie au niveau du service
+        // car l'extraction des parts est complexe dans un filtre réactif
+        return chain.filter(exchange);
+    }
+
+    private Mono<Void> checkZipBombAndContinue(ServerWebExchange exchange, WebFilterChain chain,
+                                                ServerHttpRequest request) {
+        return DataBufferUtils.join(request.getBody())
+            .flatMap(dataBuffer -> {
+                byte[] bytes = new byte[dataBuffer.readableByteCount()];
+                dataBuffer.read(bytes);
+                DataBufferUtils.release(dataBuffer);
+
+                String filename = request.getHeaders().getContentDisposition().getFilename();
+                if (filename == null) {
+                    filename = "unknown";
+                }
+
+                ZipBombCheckResult result = zipBombProtection.checkForZipBomb(bytes, filename);
+
+                if (!result.isSafe()) {
+                    log.warn(" ZIP BOMB BLOCKED: {} - Reason: {}", filename, result.reason());
+                    return rejectRequest(exchange, result.reason());
+                }
+
+                // Recréer la requête avec le body
+                ServerHttpRequest mutatedRequest = new ServerHttpRequestDecorator(request) {
+                    @Override
+                    public Flux<DataBuffer> getBody() {
+                        DataBuffer buffer = exchange.getResponse().bufferFactory().wrap(bytes);
+                        return Flux.just(buffer);
+                    }
+                };
+
+                return chain.filter(exchange.mutate().request(mutatedRequest).build());
+            })
+            .switchIfEmpty(chain.filter(exchange));
+    }
+
+    private Mono<Void> rejectRequest(ServerWebExchange exchange, String reason) {
+        exchange.getResponse().setStatusCode(HttpStatus.BAD_REQUEST);
+        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
+
+        String errorJson = String.format(
+            "{\"error\":\"ZIP_BOMB_DETECTED\",\"message\":\"File rejected: %s\",\"status\":400}",
+            reason.replace("\"", "'")
+        );
+
+        DataBuffer buffer = exchange.getResponse().bufferFactory()
+            .wrap(errorJson.getBytes(StandardCharsets.UTF_8));
+
+        return exchange.getResponse().writeWith(Mono.just(buffer));
+    }
+}

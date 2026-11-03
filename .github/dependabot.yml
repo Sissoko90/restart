@@ -1,0 +1,57 @@
+﻿# ==========================================================
+# Mises à jour automatiques des dépendances
+# ==========================================================
+# Le POM parent est la seule source de versions (voir README §Build).
+# Dependabot ouvre donc l'essentiel de ses PR dessus, ce qui aligne
+# tous les modules d'un coup.
+# ==========================================================
+version: 2
+
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Africa/Bamako
+    open-pull-requests-limit: 8
+    labels: [dépendances]
+    commit-message:
+      prefix: "deps"
+      include: scope
+    groups:
+      # Spring Boot et Spring Cloud évoluent ensemble : les monter
+      # séparément casse la résolution des versions transitives.
+      spring:
+        patterns:
+          - "org.springframework*"
+          - "org.springframework.boot*"
+          - "org.springframework.cloud*"
+      # Les montées de version de test ne touchent pas la production :
+      # les regrouper évite d'ouvrir six PR pour un même sujet.
+      tests:
+        patterns:
+          - "org.junit*"
+          - "org.mockito*"
+          - "org.assertj*"
+          - "org.testcontainers*"
+          - "io.projectreactor:reactor-test"
+      observabilite:
+        patterns:
+          - "io.micrometer*"
+          - "io.zipkin*"
+          - "com.github.loki4j*"
+    ignore:
+      # Une montée majeure change le comportement : elle se décide, elle
+      # ne se subit pas. Dependabot signale les mineures et correctives.
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: [ci]
+    commit-message:
+      prefix: "ci"

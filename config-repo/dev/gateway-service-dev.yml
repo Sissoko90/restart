@@ -1,0 +1,357 @@
+# ==========================================
+# GATEWAY SERVICE - Configuration DEV
+# ==========================================
+
+server:
+  port: 8081
+  servlet:
+    context-path: /  # Gateway doit être à la racine, pas de /api/v1
+
+spring:
+  application:
+    name: gateway-service
+  
+  # Configuration Redis pour Rate Limiting et IP Blacklist distribués
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      database: 0
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+          max-wait: -1ms
+  
+  # Limites de payload pour protection DoS
+  codec:
+    max-in-memory-size: 10MB
+
+# Note: JWT/JWKS configs sont dans application-dev.yml
+
+# ==========================================
+# GATEWAY SECURITY
+# ==========================================
+gateway:
+  # Delai maximal d'une proxification vers un service aval.
+  #
+  # Il n'y en avait AUCUN, et le disjoncteur pose juste au-dessus etait donc
+  # aveugle au cas de panne le plus courant : un service aval FIGE ne produit
+  # aucun signal terminal, donc rien a compter, donc le disjoncteur ne s'ouvre
+  # jamais. Les requetes s'accumulaient au Gateway sans aboutir ni echouer.
+  #
+  # 30 s, plus long que les delais internes des services (5 s) : le Gateway
+  # attend une reponse COMPLETE, travail du service aval inclus — une connexion
+  # coute a elle seule 241 ms de BCrypt, un televersement bien davantage.
+  proxy:
+    timeout-seconds: ${GATEWAY_PROXY_TIMEOUT_SECONDS:30}
+
+  secret:
+    key: ${GATEWAY_SECRET_KEY}
+
+  # ------------------------------------------------------------------
+  # Proxys de confiance (CIDR, séparés par des virgules)
+  # ------------------------------------------------------------------
+  # Détermine QUAND X-Forwarded-For est cru. Vide = jamais : seule l'adresse
+  # de la socket fait foi. C'est le réglage correct quand le Gateway est
+  # exposé directement, et le seul qui empêche un client de choisir l'IP
+  # sous laquelle il est compté, blacklisté ou géolocalisé.
+  #
+  # ⚠️ En production DERRIÈRE un ALB, Nginx ou Cloudflare, renseigner les
+  # plages du proxy — sinon toutes les requêtes seront comptées sous l'IP
+  # unique du proxy et le rate limiting deviendra un plafond global.
+  #   trusted-proxies: 10.0.0.0/8,172.16.0.0/12
+  trusted-proxies: ${GATEWAY_TRUSTED_PROXIES:}
+
+  # ------------------------------------------------------------------
+  # Espace Redis de sécurité partagé (écrit par interface-service)
+  # ------------------------------------------------------------------
+  # Doit rester ALIGNÉ sur spring.data.redis.database d'interface-service.
+  # Un désalignement ne provoque aucune erreur au démarrage : seulement des
+  # listes vides, donc des révocations et des blocages sans effet.
+  shared-security:
+    redis-database: ${SHARED_SECURITY_REDIS_DB:3}
+
+  revocation:
+    enabled: true
+    # false = un jeton révoqué est refusé même si Redis est injoignable.
+    # Passer à true privilégie la disponibilité au prix du contrôle.
+    fail-open: ${REVOCATION_FAIL_OPEN:false}
+
+# ==========================================
+# GEOLOCATION CONFIGURATION
+# ==========================================
+geolocation:
+  enabled: true  # Activer/désactiver la géolocalisation
+  database:
+    path: /opt/geoip/GeoLite2-Country.mmdb  # Chemin vers la base GeoIP2
+  
+  cloud:
+    consul:
+      discovery:
+        health-check-path: /actuator/health
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      
+      routes:
+        # Interface Service Routes (Développeurs - Public + Protected)
+        - id: interface-service
+          uri: lb://interface-service
+          predicates:
+            - Path=/api/v1/auth/**
+        
+        # User Service Routes (Protected)
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/v1/users/**
+        
+        # Interface Service Admin Routes (Interface Admin Console)
+        - id: interface-admin
+          uri: lb://interface-service
+          predicates:
+            - Path=/api/v1/admin/**
+          filters:
+            - StripPrefix=2
+        
+        # Les routes vers auth-service sont declarees dans le RouterFunction de
+        # GatewayRoutesConfig, et PAS ici.
+        #
+        # Deux mecanismes de routage coexistent dans ce service : le
+        # RouterFunction (Java) et ces routes Spring Cloud Gateway (YAML). Le
+        # RouterFunctionMapping de Spring a une priorite plus forte, donc une
+        # route YAML est silencieusement masquee des qu'un chemin du
+        # RouterFunction la recouvre.
+        #
+        # Les routes auth-admin et auth-user-roles etaient declarees ici SANS
+        # StripPrefix : auth-service recevait /api/v1/auth-admin/x alors que ses
+        # controleurs attendent /admin/x. Elles ne pouvaient rien servir. Le
+        # RouterFunction les remplace, avec la reecriture de chemin faite par
+        # CheminCible — la meme source que le filtre de signature HMAC.
+        
+        # Les routes /api/v1/admin/users/** sont declarees dans le
+        # RouterFunction de GatewayRoutesConfig, et PAS ici.
+        #
+        # Elles etaient ici, et ne pouvaient rien servir : la route
+        # /api/v1/admin/** du RouterFunction a une priorite plus forte et les
+        # masquait, envoyant toute l'administration des comptes a
+        # interface-service. Meme defaut que les routes auth-admin plus haut.
+        #
+        # /api/v1/admin/management/users/** a disparu avec le controleur qui le
+        # portait : lister, chercher, consulter, modifier et supprimer un compte
+        # existaient deux fois, sous deux prefixes, avec deux comportements.
+        # Tout est sous /api/v1/admin/users desormais.
+
+        # Geo Service Routes
+        - id: geo-service
+          uri: lb://geo-service
+          predicates:
+            - Path=/api/v1/geo/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: geoCircuitBreaker
+                fallbackUri: forward:/fallback/geo
+        
+        # Payment Service Routes
+        - id: payment-service
+          uri: lb://payment-service
+          predicates:
+            - Path=/api/v1/payments/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: paymentCircuitBreaker
+                fallbackUri: forward:/fallback/payments
+        
+        # Notification Service Routes
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: notificationCircuitBreaker
+                fallbackUri: forward:/fallback/notifications
+        
+        # Interface Service Routes (Developer Console)
+        - id: interface-service
+          uri: lb://interface-service
+          predicates:
+            - Path=/api/v1/developers/**,/api/v1/projects/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: interfaceCircuitBreaker
+                fallbackUri: forward:/fallback/interface
+        
+        # Interface Service - JWKS Endpoint (Public - pour validation JWT dev)
+        - id: interface-jwks
+          uri: lb://interface-service
+          predicates:
+            - Path=/dev/.well-known/jwks.json
+        
+        # Interface Service - Dev Auth Routes (Public)
+        - id: interface-dev-auth
+          uri: lb://interface-service
+          predicates:
+            - Path=/dev/auth/**
+        
+        # Media Service Routes
+        - id: media-service
+          uri: lb://media-service
+          predicates:
+            - Path=/api/v1/media/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: mediaCircuitBreaker
+                fallbackUri: forward:/fallback/media
+        
+        # Tenant Service Routes (SaaS Multi-Tenant)
+        - id: tenant-service
+          uri: lb://tenant-service
+          predicates:
+            - Path=/api/v1/tenants/**
+          filters:
+            - StripPrefix=2
+            - name: CircuitBreaker
+              args:
+                name: tenantCircuitBreaker
+                fallbackUri: forward:/fallback/tenants
+      
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+        - AddRequestHeader=X-Secret-Key, ${GATEWAY_SECRET_KEY}
+        - name: Retry
+          args:
+            retries: 3
+            statuses: BAD_GATEWAY,GATEWAY_TIMEOUT
+            methods: GET,POST,PUT,DELETE
+            backoff:
+              firstBackoff: 50ms
+              maxBackoff: 500ms
+              factor: 2
+              basedOnPreviousValue: false
+
+# ==========================================
+# SECURITY - GATEWAY ACCESS
+# ==========================================
+# Note: Zip Bomb et JWKS configs sont dans application-dev.yml
+security:
+  gateway:
+    secret-key: ${GATEWAY_SECRET_KEY}
+
+# ==========================================
+# RATE LIMITING - STRICT pour endpoints publics
+# ==========================================
+resilience4j:
+  ratelimiter:
+    instances:
+      publicAuthEndpoints:
+        limitForPeriod: 5  # Max 5 requêtes
+        limitRefreshPeriod: 60s  # Par minute
+        timeoutDuration: 0s
+        registerHealthIndicator: true
+      protectedEndpoints:
+        limitForPeriod: 100  # Max 100 requêtes
+        limitRefreshPeriod: 60s  # Par minute
+        timeoutDuration: 0s
+        registerHealthIndicator: true
+spring.cloud.gateway.filter.request-rate-limiter:
+  enabled: true
+
+# Timeout Configuration - DEV
+spring.cloud.gateway.httpclient:
+  connect-timeout: 10000
+  response-timeout: 60s
+
+# ==========================================
+# CORS CONFIGURATION
+# ==========================================
+cors:
+  allowed-origins: http://localhost:3000,http://localhost:4200,http://localhost:8080
+  allowed-methods: GET,POST,PUT,DELETE,PATCH,OPTIONS
+  allowed-headers: Authorization,Content-Type,Accept,X-Requested-With
+  exposed-headers: Authorization,X-Total-Count,X-Rate-Limit-Remaining
+  allow-credentials: true
+  max-age: 3600
+
+# ==========================================
+# MONITORING - PROMETHEUS
+# ==========================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,circuitbreakers,ratelimiters
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+    prometheus:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+        step: 10s
+    tags:
+      application: ${spring.application.name}
+      environment: dev
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  # Distributed Tracing avec Zipkin + Tempo
+  tracing:
+    sampling:
+      probability: 1.0  # 100% en dev
+  zipkin:
+    enabled: true
+    base-url: ${ZIPKIN_URL:http://localhost:9411}
+    sender:
+      type: web
+  sleuth:
+    enabled: true
+    sampler:
+      probability: 1.0
+    baggage:
+      remote-fields: x-request-id,x-correlation-id
+      correlation-fields: x-request-id,x-correlation-id
+    propagation:
+      type: w3c,b3  # Support W3C Trace Context et B3 (Zipkin/Tempo)
+
+# ==========================================
+# SWAGGER / OPENAPI CONFIGURATION
+# ==========================================
+# Documentation centralisée de tous les microservices
+springdoc:
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    urls:
+      - name: Gateway Service
+        url: /v3/api-docs
+      - name: Auth Service
+        url: http://localhost:8082/api/v1/v3/api-docs
+      - name: User Service
+        url: http://localhost:8083/api/v1/v3/api-docs
+      - name: Notification Service
+        url: http://localhost:8084/api/v1/v3/api-docs
+    urls-primary-name: Gateway Service
+  api-docs:
+    enabled: true
+  show-actuator: false

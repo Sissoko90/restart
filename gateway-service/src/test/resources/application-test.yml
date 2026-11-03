@@ -1,0 +1,41 @@
+# ==========================================================
+# Propriétés de test - gateway-service
+# ==========================================================
+# Le test `contextLoads` ne doit dépendre NI d'un config-server, NI de
+# l'autorité JWT, NI d'un fichier .env.
+#
+# Sans ce fichier, le test héritait du profil `dev` déclaré dans
+# application.yml : il allait chercher sa configuration sur
+# localhost:8888 puis tentait cinq fois de joindre l'autorité JWT sur
+# localhost:8088. Résultat, un `mvn install` dont l'issue dépendait de
+# ce qui tournait sur le poste, et une trentaine de secondes de
+# temporisation pour rien.
+#
+# Aucune valeur réelle ne doit figurer ici.
+# ==========================================================
+
+spring:
+  cloud:
+    config:
+      enabled: false
+    consul:
+      enabled: false
+      discovery:
+        enabled: false
+        register: false
+
+gateway:
+  secret:
+    key: test-gateway-secret-key
+  trusted-proxies: ""
+
+jwt:
+  issuer: interface-service
+  audience: gateway-service
+  jwks:
+    # Le provider reste déclaré — JwtWebFilter en dépend — mais le test le
+    # remplace par un mock, donc aucune requête n'est émise. Les réessais sont
+    # à zéro pour les autres tests du module, qui construisent leur propre
+    # provider.
+    enabled: true
+    retry-attempts: 0

@@ -1,0 +1,131 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # PROMETHEUS - Métriques
+  # ==========================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      # Le REPERTOIRE entier, et non fichier par fichier.
+      #
+      # Avec deux montages nommes, tout nouveau fichier de regles est absent du
+      # conteneur : `rule_files` le cherche, ne le trouve pas, et Prometheus
+      # demarre quand meme. C'est exactement ainsi que
+      # `user-service-alerts.yml` — onze alertes — est reste onze mois sans
+      # etre evalue. Monter le repertoire fait que `*-alerts.yml` trouve
+      # reellement ce qui existe sur le disque.
+      - ./observability/prometheus:/etc/prometheus
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - observability
+    restart: unless-stopped
+
+  # ==========================================
+  # ALERTMANAGER - Gestion des alertes
+  # ==========================================
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      # Le REPERTOIRE, pour la meme raison que Prometheus : le fichier de mot
+      # de passe SMTP doit etre visible du conteneur, et un montage nomme par
+      # fichier l'aurait oublie.
+      - ./observability/alertmanager:/etc/alertmanager
+      - alertmanager-data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    networks:
+      - observability
+    restart: unless-stopped
+
+  # ==========================================
+  # LOKI - Logs centralisés
+  # ==========================================
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/local-config.yaml
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - observability
+    restart: unless-stopped
+
+  # ==========================================
+  # TEMPO - Traces distribuées (compatible Zipkin)
+  # ==========================================
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    user: root
+    ports:
+      - "3200:3200"   # Tempo HTTP
+      - "9411:9411"   # Zipkin compatible endpoint
+      - "14268:14268" # Jaeger ingest
+    volumes:
+      - ./observability/tempo/tempo.yml:/etc/tempo.yaml
+      - tempo-data:/tmp/tempo
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    networks:
+      - observability
+    restart: unless-stopped
+
+  # ==========================================
+  # GRAFANA - Interface unique d'observabilité
+  # ==========================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_INSTALL_PLUGINS=redis-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+      - alertmanager
+    networks:
+      - observability
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+    driver: local
+  alertmanager-data:
+    driver: local
+  loki-data:
+    driver: local
+  tempo-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  observability:
+    driver: bridge
+    name: observability-network

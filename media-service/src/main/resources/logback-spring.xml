@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    
+    <springProperty scope="context" name="appName" source="spring.application.name"/>
+    <springProperty scope="context" name="lokiUrl" source="loki.url" defaultValue="http://localhost:3100/loki/api/v1/push"/>
+
+    <!--
+        Expedition vers Loki : seulement la ou Loki existe.
+
+        Loki est commente dans docker-compose-minimal.yml : il ne tourne ni en
+        developpement, ni sous surefire. Chaque lot de journaux echouait malgre
+        tout, et loki4j deversait une pile complete par tentative, trois fois
+        par lot. Un demarrage normal ressemblait a une panne, et la sortie des
+        tests en etait couverte.
+
+        La regle est une liste blanche, et non « tous les profils sauf dev » :
+        les tests s'executent sans profil actif, donc une exclusion de dev les
+        laissait expedier dans le vide. Un composant d'observabilite doit etre
+        actif la ou son infrastructure est deployee, et muet partout ailleurs.
+
+        L'appender est defini DANS le bloc de profil, et non seulement sa
+        reference : loki4j demarre son fil d'expedition des sa definition.
+    -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Root Logger -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <!-- Application Logger -->
+    <logger name="com.abdatytch.media_service" level="DEBUG"/>
+    <logger name="org.springframework.data.mongodb" level="DEBUG"/>
+    <logger name="io.minio" level="DEBUG"/>
+    <logger name="reactor.netty" level="INFO"/>
+    <!--
+        Expedition vers Loki : hors developpement uniquement.
+
+        Loki est commente dans docker-compose-minimal.yml, donc il ne tourne
+        jamais en developpement, et chaque lot echoue en deversant une pile
+        complete sur la console.
+
+        Ce service employait <if condition='property(...)'>, qui exige janino
+        sur le chemin de classes : absent, logback ignore la condition en
+        silence et l'appender reste actif. Le profil Spring obtient le meme
+        resultat sans dependance supplementaire, et de la meme facon que les
+        autres services.
+    -->
+    <springProfile name="prod | staging | observability">
+        <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+            <http>
+                <url>${lokiUrl}</url>
+            </http>
+            <format>
+                <label>
+                    <pattern>application=${appName},host=${HOSTNAME},level=%level</pattern>
+                </label>
+                <message>
+                    <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+                </message>
+                <sortByTime>true</sortByTime>
+            </format>
+        </appender>
+
+        <appender name="ASYNC_LOKI" class="ch.qos.logback.classic.AsyncAppender">
+            <appender-ref ref="LOKI"/>
+        </appender>
+
+        <root>
+            <appender-ref ref="ASYNC_LOKI"/>
+        </root>
+    </springProfile>
+</configuration>

@@ -1,0 +1,4 @@
+# Plancher de couverture — relevé par ./scripts/coverage-gate.sh --update
+# Ne jamais l'abaisser à la main : ce serait masquer une régression.
+INSTRUCTIONS_FLOOR=21.41
+BRANCHES_FLOOR=13.60

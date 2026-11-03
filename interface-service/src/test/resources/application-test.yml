@@ -1,0 +1,72 @@
+# ==========================================================
+# Propriétés de test - interface-service
+# ==========================================================
+# Valeurs factices pour tous les placeholders sans défaut du code de
+# production. Ces clés n'ont volontairement PAS de valeur par défaut
+# dans le code : une configuration manquante doit faire échouer le
+# démarrage plutôt que retomber sur une valeur connue de quiconque lit
+# le dépôt.
+#
+# AUCUNE valeur réelle ne doit figurer ici.
+# ==========================================================
+
+admin:
+  # Compte administrateur du PORTAIL DÉVELOPPEUR, distinct de celui
+  # d'auth-service qui administre les utilisateurs finaux.
+  default:
+    phone: "+22300000000"
+    email: admin@test.local
+    password: TestAdminPass123!
+    firstName: Test
+    lastName: Admin
+  secret:
+    key: test-admin-secret-key
+  mail:
+    from: noreply@test.local
+
+maintenance:
+  password: TestMaintenancePass123!
+  phone: "+22300000001"
+
+gateway:
+  secret:
+    key: test-gateway-secret-key
+
+MAINTENANCE_SECRET_KEY: test-maintenance-secret-key
+
+app:
+  # Les seeders écrivent en base au démarrage : sans base, on les désactive.
+  seeders:
+    enabled: false
+  # Base publique du portail, pour les liens envoyés par courriel.
+  # Était figée sur localhost:8081 dans le code.
+  public-base-url: http://localhost:8081
+
+jwt:
+  dev:
+    key:
+      # En test, une paire ephemere convient : aucun jeton n'a besoin de
+      # survivre au contexte. Interdit hors developpement — voir
+      # DevKeyRotationServiceImpl.
+      allow-ephemeral: true
+
+security:
+  internal-secret: test-internal-secret
+  # Destinataire des alertes critiques. L'adresse était écrite en
+  # littéral dans AdminController.
+  critical-alert:
+    email: alerte@test.local
+
+email:
+  from: noreply@test.local
+
+# Pas de base PostgreSQL vivante en test : R2DBC et Flyway sont désactivés
+# et les repositories sont remplacés par des mocks dans le test.
+# À remplacer par Testcontainers pour de vrais tests d'intégration.
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.r2dbc.autoconfigure.R2dbcAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.R2dbcDataAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.R2dbcRepositoriesAutoConfiguration
+      - org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration

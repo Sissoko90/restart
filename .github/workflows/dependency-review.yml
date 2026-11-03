@@ -1,0 +1,46 @@
+﻿# ==========================================================
+# Revue des dépendances ajoutées par une PR
+# ==========================================================
+# Complète security.yml, qui analyse l'état du dépôt. Ici on regarde
+# le DELTA : ce que la PR ajoute. C'est le bon moment pour refuser une
+# dépendance — une fois fusionnée, elle est bien plus coûteuse à retirer.
+# ==========================================================
+name: Revue des dépendances
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: Dépendances ajoutées
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/dependency-review-action@v4
+        with:
+          # Aligné sur la politique du projet : bloquer sur critique et élevé.
+          fail-on-severity: high
+
+          # Licences incompatibles avec une distribution propriétaire.
+          # Voir scripts/license-check.sh pour le détail du raisonnement.
+          deny-licenses: >-
+            AGPL-3.0,
+            AGPL-3.0-only,
+            AGPL-3.0-or-later,
+            GPL-2.0,
+            GPL-2.0-only,
+            GPL-2.0-or-later,
+            GPL-3.0,
+            GPL-3.0-only,
+            GPL-3.0-or-later,
+            SSPL-1.0
+
+          comment-summary-in-pr: on-failure

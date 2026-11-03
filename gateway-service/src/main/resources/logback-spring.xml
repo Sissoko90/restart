@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    
+    <springProperty scope="context" name="appName" source="spring.application.name"/>
+    <springProperty scope="context" name="lokiUrl" source="loki.url" defaultValue="http://localhost:3100/loki/api/v1/push"/>
+    
+    <!--
+        Expedition vers Loki : seulement la ou Loki existe.
+
+        Loki est commente dans docker-compose-minimal.yml : il ne tourne ni en
+        developpement, ni sous surefire. Chaque lot de journaux echouait malgre
+        tout, et loki4j deversait une pile complete par tentative, trois fois
+        par lot. Un demarrage normal ressemblait a une panne, et la sortie des
+        tests en etait couverte.
+
+        La regle est une liste blanche, et non « tous les profils sauf dev » :
+        les tests s'executent sans profil actif, donc une exclusion de dev les
+        laissait expedier dans le vide. Un composant d'observabilite doit etre
+        actif la ou son infrastructure est deployee, et muet partout ailleurs.
+
+        L'appender est defini DANS le bloc de profil, et non seulement sa
+        reference : loki4j demarre son fil d'expedition des sa definition.
+    -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [traceId=%X{traceId:-}, spanId=%X{spanId:-}] - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+    
+    
+    <!-- File Appender pour backup local -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/${appName}.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/${appName}-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <maxFileSize>10MB</maxFileSize>
+            </timeBasedFileNamingAndTriggeringPolicy>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [traceId=%X{traceId:-}, spanId=%X{spanId:-}] - %msg%n</pattern>
+        </encoder>
+    </appender>
+    
+    <!-- Root Logger -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+    
+    <!-- Loggers spécifiques -->
+    <logger name="com.abdatytch" level="DEBUG"/>
+    <logger name="org.springframework.web" level="INFO"/>
+    <logger name="org.springframework.security" level="DEBUG"/>
+    <!--
+        Expedition vers Loki : hors developpement uniquement.
+
+        Loki est commente dans docker-compose-minimal.yml, donc il ne tourne
+        jamais en developpement. Chaque lot de journaux echouait malgre tout,
+        et loki4j deversait une pile complete par tentative, trois fois par
+        lot, directement sur la console. Un demarrage normal ressemblait a une
+        panne — au point de masquer les vrais messages.
+
+        L'appender est defini DANS le bloc de profil, et non seulement sa
+        reference : loki4j demarre son fil d'expedition des sa definition,
+        donc le declarer suffirait a produire le bruit.
+    -->
+    <springProfile name="prod | staging | observability">
+        <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+            <http>
+                <url>${lokiUrl}</url>
+            </http>
+            <encoder class="com.github.loki4j.logback.JsonEncoder">
+                <label>
+                    <pattern>service_name=${appName},app=${appName},host=${HOSTNAME},level=%level</pattern>
+                </label>
+            </encoder>
+        </appender>
+
+        <root>
+            <appender-ref ref="LOKI"/>
+        </root>
+    </springProfile>
+</configuration>

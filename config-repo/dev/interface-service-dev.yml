@@ -1,0 +1,176 @@
+# ==========================================
+# INTERFACE SERVICE - Configuration DEV
+# ==========================================
+# Service de gestion des projets pour développeurs AbdaTech
+# Port: 8088 (éviter conflit avec payment-service:8085)
+
+server:
+  port: 8088
+
+spring:
+  application:
+    name: interface-service
+  
+  # Configuration R2DBC PostgreSQL spécifique
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_INTERFACE:interface_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    pool:
+      initial-size: 5
+      max-size: 10
+      max-idle-time: 30m
+      validation-query: SELECT 1
+  
+  # Redis - Base dédiée à interface-service
+  data:
+    redis:
+      database: 3  # Base dédiée (0=gateway, 1=auth, 2=user, 3=interface)
+
+# ==========================================
+# GATEWAY SECURITY
+# ==========================================
+gateway:
+  secret:
+    key: ${GATEWAY_SECRET_KEY}
+  
+  # Configuration Consul spécifique
+  cloud:
+    consul:
+      discovery:
+        health-check-path: /actuator/health/liveness
+        health-check-critical-timeout: 30s
+# Configuration OpenAPI/Swagger spécifique
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+
+# Rate Limiting spécifique à interface-service
+resilience4j:
+  ratelimiter:
+    instances:
+      developer-auth:
+        limitForPeriod: 10
+        limitRefreshPeriod: 60s
+      project-operations:
+        limitForPeriod: 50
+        limitRefreshPeriod: 60s
+  circuitbreaker:
+    instances:
+      quotas-service:
+        baseConfig: default
+      auth-service:
+        baseConfig: default
+
+# Configuration services externes spécifiques
+services:
+  quotas-service:
+    # 8089 = port réel de quotas-service (pointait par erreur sur 8086, notification-service)
+    url: ${QUOTAS_SERVICE_URL:http://localhost:8089}
+    timeout-ms: 2000
+  auth-service:
+    url: http://localhost:8082
+  gateway-service:
+    url: http://localhost:8081
+
+# Configuration métier spécifique
+business:
+  project:
+    id:
+      min-length: 3
+      max-length: 30
+      pattern: "^[a-z0-9-]+$"
+    name:
+      min-length: 3
+      max-length: 50
+    description:
+      max-length: 500
+
+# ==========================================================
+# ADMIN PAR DÉFAUT (SEEDER)
+# ==========================================================
+# interface-service tient son PROPRE registre d'utilisateurs : les
+# administrateurs du portail développeur. Ils sont distincts de ceux
+# d'auth-service, qui administre les utilisateurs finaux — deux tables
+# `users`, deux populations (voir docs/COMPLIANCE.md §1).
+#
+# C'est pourquoi ce bloc est dupliqué depuis auth-service-dev.yml et
+# non partagé : les deux comptes peuvent, et devraient, différer.
+#
+# Aucune valeur par défaut : sans ces variables, le service refuse de
+# démarrer plutôt que de créer un compte administrateur dont les
+# identifiants seraient connus de quiconque lit le dépôt.
+admin:
+  default:
+    phone: ${ADMIN_DEFAULT_PHONE}
+    email: ${ADMIN_DEFAULT_EMAIL}
+    password: ${ADMIN_DEFAULT_PASSWORD}
+    firstName: ${ADMIN_DEFAULT_FIRSTNAME}
+    lastName: ${ADMIN_DEFAULT_LASTNAME}
+
+# ==========================================================
+# COMPTE DE MAINTENANCE
+# ==========================================================
+# MaintenanceSeeder lit ces deux valeurs. Elles n'étaient déclarées
+# nulle part : les littéraux retirés de la classe étaient la seule
+# source, et le service refusait de démarrer sur
+# « Could not resolve placeholder 'maintenance.phone' ».
+#
+# Défaut VIDE, et non absent : le seeder ne crée alors aucun compte,
+# comme SuperAdminSeeder. Un compte de maintenance créé sur des
+# valeurs de repli aurait des identifiants lisibles dans le dépôt,
+# ce qui est pire que pas de compte.
+#
+# À RECONSIDÉRER : ce compte précède la décision de confier la mise
+# en maintenance au SUPER_ADMIN d'auth-service. Un rôle MAINTENANCE
+# dans la table d'interface-service fait doublon avec ce choix, et
+# disparaîtra avec la table `users` de ce service.
+maintenance:
+  phone: ${MAINTENANCE_PHONE:}
+  password: ${MAINTENANCE_PASSWORD:}
+
+# ==========================================================
+# ALERTES CRITIQUES DE SÉCURITÉ
+# ==========================================================
+# Destinataire des alertes d'attaque sur le compte administrateur.
+# L'adresse était écrite en littéral dans AdminController : donnée
+# personnelle dans le dépôt, et destination impossible à changer sans
+# recompiler.
+security:
+  critical-alert:
+    email: ${SECURITY_CRITICAL_ALERT_EMAIL}
+
+# ==========================================================
+# URL PUBLIQUE DU PORTAIL
+# ==========================================================
+# Sert à construire les liens envoyés par courriel. Était figée sur
+# localhost:8081, donc les liens étaient inutilisables hors poste de
+# développement.
+app:
+  public-base-url: ${APP_PUBLIC_BASE_URL:http://localhost:8081}
+
+# ==========================================================
+# CLES DE SIGNATURE JWT
+# ==========================================================
+# La cle privee signe TOUS les jetons de la plateforme.
+#
+# Elle etait auparavant chargee depuis classpath:keys/dev_private.pem,
+# donc empaquetee dans le JAR livre : quiconque disposait de l'artefact
+# pouvait l'extraire et forger n'importe quel jeton, pour n'importe quel
+# role. Le chargement depuis le classpath est desormais refuse.
+#
+# Aucune valeur par defaut : sans cle, le service refuse de demarrer.
+jwt:
+  dev:
+    private-key: ${JWT_DEV_PRIVATE_KEY:}
+    public-key: ${JWT_DEV_PUBLIC_KEY:}
+    private-key-path: ${JWT_DEV_PRIVATE_KEY_PATH:}
+    public-key-path: ${JWT_DEV_PUBLIC_KEY_PATH:}
+    key:
+      # Poste de developpement uniquement. Une paire ephemere change a
+      # chaque redemarrage et differe d'une instance a l'autre.
+      allow-ephemeral: ${JWT_DEV_KEY_ALLOW_EPHEMERAL:false}

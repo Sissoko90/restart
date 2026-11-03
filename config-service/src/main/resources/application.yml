@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: config-service
+  profiles:
+    active: dev,native
+  main:
+    allow-bean-definition-overriding: true
+  cloud:
+    config:
+      server:
+        native:
+          search-locations: file://${user.home}/Documents/Restart/config-repo/dev
+
+server:
+  port: 8888
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # env et configprops ont ete RETIRES.
+        #
+        # Ce service n'a ni SecurityConfig ni filtre d'acces Gateway : ses deux
+        # seules classes sont l'application et le chargeur .env. Tout ce qui est
+        # expose ici est donc joignable sans aucune authentification, par
+        # quiconque atteint le port 8888.
+        #
+        # Spring masque les valeurs (show-values vaut never par defaut), mais
+        # /actuator/env livrait tout de meme la liste des noms de proprietes et
+        # de leurs sources — c'est-a-dire la cartographie complete de la
+        # configuration de la plateforme, et la confirmation de quels secrets
+        # existent. /actuator/configprops en fait autant.
+        #
+        # refresh est conserve : il est necessaire pour recharger config-repo
+        # sans redemarrer.
+        include: health,info,refresh
+  endpoint:
+    health:
+      show-details: always

@@ -1,0 +1,650 @@
+{
+  "info": {
+    "name": "AbdaTech — setting-service",
+    "description": "Collection générée depuis le code source (9 endpoints).\n\n**Appels via le Gateway** : `baseUrl` = `http://localhost:8081/api/v1`.\n\nL'appel en direct sur `http://localhost:8090` est refusé : les services exigent la signature HMAC du Gateway, qu'un client ne peut pas produire.\n\nLe jeton est capturé automatiquement après une connexion réussie et réinjecté dans `{{accessToken}}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Calcule {{totpCode}} a partir de totpSecret, avant chaque requete.",
+          "//",
+          "// AUCUN `return` au niveau superieur : le bac a sable de Postman n'encadre pas",
+          "// toujours le script dans une fonction, et un `return` hors fonction y est une",
+          "// erreur de syntaxe. Le script s'interrompait alors AVANT de poser totpCode,",
+          "// la connexion partait avec un code vide, et le serveur repondait",
+          "// « Identifiants invalides » — un message qui ne desigpas le script.",
+          "//",
+          "// Tout est donc dans une fonction, appelee a la fin, et le resultat est",
+          "// journalise : sans trace dans la console, un script de pre-requete qui echoue",
+          "// est indistinguable d'un mauvais mot de passe.",
+          "function codeTotp(secretBrut) {",
+          "    const secret = (secretBrut || \"\").replace(/[^A-Za-z2-7]/g, \"\").toUpperCase();",
+          "    if (!secret) { return \"\"; }",
+          "",
+          "    // Base32 -> octets. CryptoJS ne sait pas lire le base32.",
+          "    const ALPHABET = \"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567\";",
+          "    let bits = \"\";",
+          "    for (let i = 0; i < secret.length; i++) {",
+          "        const j = ALPHABET.indexOf(secret.charAt(i));",
+          "        if (j >= 0) { bits += j.toString(2).padStart(5, \"0\"); }",
+          "    }",
+          "    let hex = \"\";",
+          "    for (let i = 0; i + 8 <= bits.length; i += 8) {",
+          "        hex += parseInt(bits.substring(i, i + 8), 2).toString(16).padStart(2, \"0\");",
+          "    }",
+          "    if (!hex) { return \"\"; }",
+          "",
+          "    // Compteur : pas de 30 secondes depuis l'epoque, sur 8 octets.",
+          "    const pas = Math.floor(Date.now() / 1000 / 30);",
+          "    const compteur = pas.toString(16).padStart(16, \"0\");",
+          "",
+          "    const hmac = CryptoJS.HmacSHA1(",
+          "        CryptoJS.enc.Hex.parse(compteur),",
+          "        CryptoJS.enc.Hex.parse(hex)).toString();",
+          "",
+          "    // Troncature dynamique, RFC 4226.",
+          "    const decalage = parseInt(hmac.substring(hmac.length - 1), 16) * 2;",
+          "    const tronque = parseInt(hmac.substring(decalage, decalage + 8), 16) & 0x7fffffff;",
+          "    return String(tronque % 1000000).padStart(6, \"0\");",
+          "}",
+          "",
+          "// Le secret peut etre dans l'environnement OU dans la collection : chercher",
+          "// dans les deux evite le piege du mauvais environnement selectionne.",
+          "const brut = pm.environment.get(\"totpSecret\") || pm.collectionVariables.get(\"totpSecret\") || \"\";",
+          "const code = codeTotp(brut);",
+          "pm.collectionVariables.set(\"totpCode\", code);",
+          "",
+          "if (!brut) {",
+          "    console.log(\"totpSecret VIDE : totpCode laisse vide. Normal si le second \"",
+          "        + \"facteur n'est pas encore enrole ; sinon, renseignez-le dans \"",
+          "        + \"l'environnement.\");",
+          "} else if (!code) {",
+          "    console.log(\"totpSecret present mais illisible (base32 attendu) : \" + brut.length",
+          "        + \" caracteres.\");",
+          "} else {",
+          "    console.log(\"totpCode = \" + code);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "AdminSetting",
+      "description": "Contrôleur `AdminSettingController` — base `/admin/settings`",
+      "item": [
+        {
+          "name": "PUT /admin/settings/system/{key}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/settings/system/:key",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "settings",
+                "system",
+                ":key"
+              ],
+              "variable": [
+                {
+                  "key": "key",
+                  "value": "{{key}}",
+                  "description": "Valeur de key"
+                }
+              ]
+            },
+            "description": "Handler : updateSystemSetting\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": \"true\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /admin/settings/system/{key}",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/settings/system/:key",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "settings",
+                "system",
+                ":key"
+              ],
+              "variable": [
+                {
+                  "key": "key",
+                  "value": "{{key}}",
+                  "description": "Valeur de key"
+                }
+              ]
+            },
+            "description": "Handler : resetSystemSetting\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /admin/settings/users/{userId}",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/settings/users/:userId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "settings",
+                "users",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}",
+                  "description": "Valeur de userId"
+                }
+              ]
+            },
+            "description": "Handler : deleteAllUserSettings\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Setting",
+      "description": "Contrôleur `SettingController` — base `/settings`",
+      "item": [
+        {
+          "name": "GET /settings/system",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/system",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "system"
+              ]
+            },
+            "description": "Handler : getSystemSettings"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /settings/system/{key}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/system/:key",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "system",
+                ":key"
+              ],
+              "variable": [
+                {
+                  "key": "key",
+                  "value": "{{key}}",
+                  "description": "Valeur de key"
+                }
+              ]
+            },
+            "description": "Handler : getSystemSetting"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /settings/users/{userId}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/users/:userId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "users",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}",
+                  "description": "Valeur de userId"
+                }
+              ]
+            },
+            "description": "Handler : getUserSettings"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /settings/users/{userId}/{key}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/users/:userId/:key",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "users",
+                ":userId",
+                ":key"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}",
+                  "description": "Valeur de userId"
+                },
+                {
+                  "key": "key",
+                  "value": "{{key}}",
+                  "description": "Valeur de key"
+                }
+              ]
+            },
+            "description": "Handler : getUserSetting"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /settings/users/{userId}/{key}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/users/:userId/:key",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "users",
+                ":userId",
+                ":key"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}",
+                  "description": "Valeur de userId"
+                },
+                {
+                  "key": "key",
+                  "value": "{{key}}",
+                  "description": "Valeur de key"
+                }
+              ]
+            },
+            "description": "Handler : updateUserSetting",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": \"dark\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /settings/users/{userId}/{key}",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/users/:userId/:key",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "users",
+                ":userId",
+                ":key"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}",
+                  "description": "Valeur de userId"
+                },
+                {
+                  "key": "key",
+                  "value": "{{key}}",
+                  "description": "Valeur de key"
+                }
+              ]
+            },
+            "description": "Handler : deleteUserSetting"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081/api/v1"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "maintenanceToken",
+      "value": ""
+    },
+    {
+      "key": "email",
+      "value": "dev@example.com"
+    },
+    {
+      "key": "password",
+      "value": "SecurePass123!"
+    },
+    {
+      "key": "phoneNumber",
+      "value": "+22300000000"
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "adminPhone",
+      "value": ""
+    },
+    {
+      "key": "adminIdentifier",
+      "value": ""
+    },
+    {
+      "key": "adminPassword",
+      "value": ""
+    },
+    {
+      "key": "totpCode",
+      "value": ""
+    },
+    {
+      "key": "tempToken",
+      "value": ""
+    },
+    {
+      "key": "adminSecret",
+      "value": ""
+    },
+    {
+      "key": "maintenanceSecret",
+      "value": ""
+    }
+  ]
+}

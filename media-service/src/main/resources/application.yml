@@ -1,0 +1,305 @@
+spring:
+  application:
+    name: media-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  
+  # Configuration centralisée depuis config-repo
+  config:
+    import: "optional:configserver:http://localhost:8888"
+  
+  # Consul Service Discovery
+  cloud:
+    consul:
+      host: ${CONSUL_HOST:localhost}
+      port: ${CONSUL_PORT:8500}
+      discovery:
+        enabled: true
+        prefer-ip-address: true
+        instance-id: ${spring.application.name}:${random.value}
+        health-check-path: /actuator/health
+        health-check-interval: 10s
+        register: true
+        service-name: ${spring.application.name}
+        tags:
+          - media
+          - reactive
+          - mongodb
+          - minio
+
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/media_service_db}
+      auto-index-creation: true
+    
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 600000
+      cache-null-values: false
+      use-key-prefix: true
+
+server:
+  port: 8087
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/plain,text/html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: 0.5, 0.95, 0.99
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: 1.0
+  observations:
+    key-values:
+      application: media-service
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+        
+security:
+  jwt:
+    issuer: auth-service
+    audience: media-service
+
+# ==========================================
+# ENCRYPTION CONFIGURATION
+# ==========================================
+encryption:
+  master-key: ${ENCRYPTION_MASTER_KEY}
+  enabled: ${ENCRYPTION_ENABLED:true}
+
+# ==========================================
+# STORAGE CONFIGURATION
+# ==========================================
+storage:
+  fallback:
+    path: ${FALLBACK_STORAGE_PATH:./fallback-storage}
+  encryption:
+    key: ${STORAGE_ENCRYPTION_KEY:}
+
+# ==========================================
+# MINIO CONFIGURATION
+# ==========================================
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY}
+  secret-key: ${MINIO_SECRET_KEY}
+  bucket-name: ${MINIO_BUCKET:media-files}
+
+# ==========================================
+# KAFKA CONFIGURATION
+# ==========================================
+kafka:
+  bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  producer:
+    key-serializer: org.apache.kafka.common.serialization.StringSerializer
+    value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    acks: all
+    retries: 3
+  enabled: ${KAFKA_ENABLED:true}
+  topics:
+    document-events: ${KAFKA_TOPIC_EVENTS:document-events}
+
+# ==========================================
+# GEOLOCATION CONFIGURATION
+# ==========================================
+geolocation:
+  database:
+    path: ${GEOLOCATION_DB_PATH:/opt/geoip/GeoLite2-City.mmdb}
+  enabled: ${GEOLOCATION_ENABLED:true}
+
+# ==========================================
+# RESILIENCE4J CONFIGURATION
+# ==========================================
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+        eventConsumerBufferSize: 10
+        recordExceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.client.ResourceAccessException
+    instances:
+      minio-storage:
+        baseConfig: default
+        waitDurationInOpenState: 15s
+        failureRateThreshold: 60
+      malware-detection:
+        baseConfig: default
+        waitDurationInOpenState: 20s
+        slidingWindowSize: 15
+      document-quality:
+        baseConfig: default
+        waitDurationInOpenState: 10s
+      mongodb-operations:
+        baseConfig: default
+        waitDurationInOpenState: 5s
+        failureRateThreshold: 40
+      geolocation-service:
+        baseConfig: default
+        waitDurationInOpenState: 30s
+
+  retry:
+    configs:
+      default:
+        maxAttempts: 3
+        waitDuration: 500ms
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2
+        retryExceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+    instances:
+      minio-storage:
+        maxAttempts: 3
+        waitDuration: 1000ms
+      mongodb-operations:
+        maxAttempts: 4
+        waitDuration: 500ms
+      malware-detection:
+        maxAttempts: 2
+        waitDuration: 2000ms
+
+  bulkhead:
+    configs:
+      default:
+        maxConcurrentCalls: 10
+        maxWaitDuration: 1000ms
+    instances:
+      image-processing:
+        maxConcurrentCalls: 5
+        maxWaitDuration: 2000ms
+      document-upload:
+        maxConcurrentCalls: 20
+        maxWaitDuration: 1500ms
+
+  timelimiter:
+    configs:
+      default:
+        timeoutDuration: 10s
+        cancelRunningFuture: true
+    instances:
+      minio-storage:
+        timeoutDuration: 30s
+      malware-detection:
+        timeoutDuration: 60s
+      document-quality:
+        timeoutDuration: 20s
+
+  ratelimiter:
+    configs:
+      default:
+        limitForPeriod: 50
+        limitRefreshPeriod: 1s
+        timeoutDuration: 0s
+    instances:
+      document-upload:
+        limitForPeriod: 10
+        limitRefreshPeriod: 1s
+      admin-operations:
+        limitForPeriod: 100
+        limitRefreshPeriod: 1s
+      document-read:
+        limitForPeriod: 200
+        limitRefreshPeriod: 1s
+
+# ==========================================
+# CACHE CONFIGURATION
+# ==========================================
+cache:
+  redis:
+    enabled: true
+    ttl:
+      document: 600
+      user-documents: 300
+      geolocation: 86400
+    key-prefix: "media-service:"
+
+# ==========================================
+# SCHEDULER CONFIGURATION
+# ==========================================
+scheduler:
+  expiration:
+    cron: ${EXPIRATION_CRON:0 0 2 * * *}
+
+# ==========================================
+# RATE LIMITING CONFIGURATION
+# ==========================================
+rate-limit:
+  max-requests-per-minute: ${RATE_LIMIT_MAX:100}
+  
+# ==========================================
+# IMAGE PROCESSING CONFIGURATION
+# ==========================================
+media:
+  compression:
+    enabled: ${IMAGE_COMPRESSION_ENABLED:true}
+    default-quality: ${IMAGE_COMPRESSION_QUALITY:0.85}
+  watermark:
+    enabled: ${WATERMARK_ENABLED:true}
+    text: ${WATERMARK_TEXT:CONFIDENTIAL}
+  thumbnail:
+    enabled: ${THUMBNAIL_ENABLED:true}
+    width: ${THUMBNAIL_WIDTH:200}
+    height: ${THUMBNAIL_HEIGHT:200}
+    max-image-width: ${MAX_IMAGE_WIDTH:4096}
+    max-image-height: ${MAX_IMAGE_HEIGHT:4096}
+
+# ==========================================
+# LOKI CONFIGURATION
+# ==========================================
+loki:
+  url: ${LOKI_URL:http://localhost:3100/loki/api/v1/push}
+  enabled: ${LOKI_ENABLED:false}
+
+# ==========================================
+# OPENFEIGN CONFIGURATION
+# ==========================================
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 5000
+        readTimeout: 5000
+        loggerLevel: basic
+  circuitbreaker:
+    enabled: true
+    alphanumeric-ids:
+      enabled: true

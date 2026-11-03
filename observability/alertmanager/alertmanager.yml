@@ -1,0 +1,127 @@
+global:
+  resolve_timeout: 5m
+  # Configuration SMTP pour les emails
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'abdaty11@gmail.com'
+  smtp_auth_username: 'abdaty11@gmail.com'
+  # Mot de passe lu dans un FICHIER, jamais en clair ici.
+  #
+  # Un mot de passe d'application Gmail etait ecrit en dur dans ce fichier
+  # suivi par git. Alertmanager ne substitue pas les variables d'environnement
+  # dans sa configuration — c'est pourquoi un fichier, et non ${VAR} : la
+  # substitution echouerait silencieusement et l'authentification SMTP
+  # tomberait, donc plus aucune alerte par courriel.
+  #
+  # Le fichier est produit au deploiement depuis SMTP_PASSWORD et ignore par
+  # git (voir .gitignore). Modele : smtp-password.example
+  smtp_auth_password_file: '/etc/alertmanager/smtp-password'
+  smtp_require_tls: true
+
+# Templates pour les notifications
+templates:
+  - '/etc/alertmanager/*.tmpl'
+
+# Route principale
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'default-receiver'
+  
+  routes:
+    # Alertes critiques - notification immédiate
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 0s
+      repeat_interval: 5m
+    
+    # Alertes de sécurité
+    - match:
+        category: security
+      receiver: 'security-team'
+      group_wait: 0s
+      repeat_interval: 15m
+    
+    # Alertes de performance
+    - match:
+        category: performance
+      receiver: 'ops-team'
+      repeat_interval: 1h
+    
+    # Alertes de base de données
+    - match:
+        category: database
+      receiver: 'database-team'
+      repeat_interval: 30m
+
+# Receivers (destinations des alertes)
+receivers:
+  # Receiver par défaut
+  - name: 'default-receiver'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook'
+        send_resolved: true
+
+  # Alertes critiques - Email + Slack
+  - name: 'critical-alerts'
+    email_configs:
+      - to: 'abdaty11@gmail.com'
+        headers:
+          Subject: '🚨 CRITICAL ALERT: {{ .GroupLabels.alertname }}'
+        html: |
+          <h2>🚨 Critical Alert</h2>
+          <p><strong>Alert:</strong> {{ .GroupLabels.alertname }}</p>
+          <p><strong>Service:</strong> {{ range .Alerts }}{{ .Labels.job }}{{ end }}</p>
+          <p><strong>Instance:</strong> {{ range .Alerts }}{{ .Labels.instance }}{{ end }}</p>
+          <p><strong>Severity:</strong> {{ range .Alerts }}{{ .Labels.severity }}{{ end }}</p>
+          <p><strong>Description:</strong> {{ range .Alerts }}{{ .Annotations.description }}{{ end }}</p>
+          <p><strong>Summary:</strong> {{ range .Alerts }}{{ .Annotations.summary }}{{ end }}</p>
+          <hr>
+          <p><em>Triggered at: {{ range .Alerts }}{{ .StartsAt }}{{ end }}</em></p>
+    # Slack DESACTIVE : l'URL etait le gabarit 'YOUR/SLACK/WEBHOOK'.
+    #
+    # Alertmanager considere un recepteur en echec si l'un de ses canaux
+    # echoue : chaque alerte critique produisait donc une erreur de livraison
+    # et des reessais, pour une URL qui n'existe pas. Le courriel partait quand
+    # meme, mais les journaux d'Alertmanager etaient pollues au point de
+    # masquer une vraie panne de livraison.
+    #
+    # A reactiver en renseignant une URL reelle, par fichier comme le SMTP.
+    # slack_configs:
+    #   - api_url_file: '/etc/alertmanager/slack-webhook'
+    #     channel: '#alerts-critical'
+    #     title: 'Alerte critique'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    #     send_resolved: true
+
+  # Équipe sécurité
+  - name: 'security-team'
+    email_configs:
+      - to: 'abdaty11@gmail.com'
+        headers:
+          Subject: '🔐 SECURITY ALERT: {{ .GroupLabels.alertname }}'
+
+  # Équipe ops
+  - name: 'ops-team'
+    email_configs:
+      - to: 'abdaty11@gmail.com'
+        headers:
+          Subject: '⚠️ Performance Alert: {{ .GroupLabels.alertname }}'
+
+  # Équipe database
+  - name: 'database-team'
+    email_configs:
+      - to: 'abdaty11@gmail.com'
+        headers:
+          Subject: '💾 Database Alert: {{ .GroupLabels.alertname }}'
+
+# Inhibition rules (empêcher certaines alertes si d'autres sont actives)
+inhibit_rules:
+  # Si un service est down, ne pas alerter sur les autres métriques
+  - source_match:
+      alertname: 'ServiceDown'
+    target_match_re:
+      alertname: '(HighCPUUsage|HighMemoryUsage|SlowResponseTime)'
+    equal: ['application', 'instance']

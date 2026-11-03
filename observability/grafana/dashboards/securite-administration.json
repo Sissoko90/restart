@@ -1,0 +1,825 @@
+{
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "refresh": "30s",
+  "schemaVersion": 27,
+  "style": "dark",
+  "tags": [
+    "securite",
+    "administration",
+    "alertes"
+  ],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Securite et surfaces d'administration",
+  "uid": "securite-administration",
+  "version": 1,
+  "description": "Surveillance des surfaces sensibles : connexion administrateur, second facteur, endpoints /admin, refus du Gateway. Chaque panneau porte en description la source de sa metrique. Toutes sont verifiees presentes par MetriquesDesAlertesTest.",
+  "panels": [
+    {
+      "type": "row",
+      "title": "Evenements critiques — une seule occurrence compte",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Second facteur RETIRE (24 h)",
+      "description": "Un super administrateur a desactive le second facteur d'un autre administrateur. Legitime uniquement sur appareil perdu. Une seule occurrence suffit a ouvrir un compte d'administration.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(auth_second_facteur_operation_total{operation=\"retrait\"}[24h]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Second facteur remplace (24 h)",
+      "description": "Exige le mot de passe ET le code de l'appareil courant. Moins grave qu'un retrait, mais l'ancien appareil cesse immediatement de fonctionner.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(auth_second_facteur_operation_total{operation=\"reinitialisation\"}[24h]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Adresses en liste noire (24 h)",
+      "description": "Dix violations en cinq minutes depuis la meme adresse. L'adresse n'est pas dans la metrique (donnee personnelle) : elle est dans les journaux du Gateway.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(gateway_security_ip_blacklisted_total[24h]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Connexions admin sans second facteur (24 h)",
+      "description": "Comptes d'administration proteges par un mot de passe SEUL. Ce n'est pas une attaque : c'est une dette. Enroler via /auth/admin/totp/enroll.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(auth_second_facteur_total{resultat=\"non_enrole\"}[24h]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Ce qui est bloque",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Verrouillages et tentatives bloquees",
+      "description": "Les deux courbes se lisent ENSEMBLE. Verrouillages qui montent = attaque par force brute. Refus qui montent SANS nouveau verrouillage = utilisateur legitime enferme. Une seule des deux ne permet pas de trancher.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(auth_account_lockout_total[5m])) * 60",
+          "legendFormat": "verrouillages / min",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(auth_tentative_bloquee_total[5m])) * 60",
+          "legendFormat": "tentatives refusees / min",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Connexions : reussies contre echouees",
+      "description": "auth_login_failure_total est la metrique REELLE. L'alerte d'origine interrogeait authentication_failures_total, que rien n'emet.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(auth_login_success_total[5m])) * 60",
+          "legendFormat": "reussies / min",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(auth_login_failure_total[5m])) * 60",
+          "legendFormat": "echouees / min",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Second facteur (TOTP)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Issues du second facteur",
+      "description": "« code FAUX » qui monte est CRITIQUE : pour en arriver la, l'appelant a deja franchi le mot de passe. Six chiffres font un million de possibilites, epuisables en quelques heures sans comptage des echecs.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(auth_second_facteur_total{resultat=\"valide\"}[5m])) * 60",
+          "legendFormat": "valide",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(auth_second_facteur_total{resultat=\"code_faux\"}[5m])) * 60",
+          "legendFormat": "code FAUX",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(auth_second_facteur_total{resultat=\"code_absent\"}[5m])) * 60",
+          "legendFormat": "code absent",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(auth_second_facteur_total{resultat=\"non_enrole\"}[5m])) * 60",
+          "legendFormat": "non enrole",
+          "refId": "D"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Revocations de jeton par portee",
+      "description": "Metrique qui etait DEFINIE et jamais incrementee : aucune serie n'existait, et rien ne distinguait cette absence d'une absence de revocation.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(auth_token_revocation_total[5m])) by (portee) * 60",
+          "legendFormat": "{{portee}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Surfaces d'administration",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Connexion administrateur : refus et succes",
+      "description": "Mesure sur les metriques HTTP existantes, cote SERVICE : l'etiquette uri y est le gabarit concret. Au Gateway elle vaut le motif de route (/api/v1/auth-sdk/**), ou /auth/admin/login est indistinguable de /auth/login.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{uri=\"/auth/admin/login\",status=\"401\"}[5m])) * 60",
+          "legendFormat": "refus / min",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{uri=\"/auth/admin/login\",status=\"200\"}[5m])) * 60",
+          "legendFormat": "succes / min",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Appels sur /admin/** par statut",
+      "description": "401 et 403 : un jeton d'utilisateur final n'a aucune raison de frapper /admin/**. 5xx : une operation d'administration qui echoue laisse l'administrateur dans le doute sur ce qui a ete fait.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{uri=~\"/admin/.*\"}[5m])) by (status) * 60",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Refus a la peripherie (Gateway)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Violations de securite par motif",
+      "description": "Compteur unique pose au point de convergence des quatre filtres qui detectent (traversee de repertoire, XSS URL, XSS corps, depassement de debit). Un compteur par filtre aurait fait quatre copies a maintenir.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(gateway_security_violations_total[5m])) by (motif) * 60",
+          "legendFormat": "{{motif}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Requetes bloquees par geolocalisation",
+      "description": "Les erreurs de lookup comptent : un lookup en echec laisse passer la requete, donc le geo-blocage ne bloque plus pendant la panne.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(geo_blocked_requests_total[5m])) * 60",
+          "legendFormat": "bloquees / min",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(geo_lookup_errors_total[5m])) * 60",
+          "legendFormat": "erreurs de lookup / min",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Disjoncteurs des appels sortants",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 37
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Etat des disjoncteurs",
+      "description": "0 = ferme (nominal), 1 = ouvert (appels refuses SANS tentative), 2 = demi-ouvert (reprise a l'essai). Poses explicitement par operateurs Reactor, pas par annotation : les annotations de ce module ne faisaient rien. Un refus metier n'ouvre jamais un disjoncteur — sinon une rafale de mauvais mots de passe fermerait la connexion pour tous.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 38
+      },
+      "targets": [
+        {
+          "expr": "max by (name, state) (resilience4j_circuitbreaker_state)",
+          "legendFormat": "{{name}} / {{state}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Appels refuses par un disjoncteur ouvert",
+      "description": "Ce que le disjoncteur economise : sans lui, chacun de ces appels aurait attendu le delai maximal entier avant d'echouer, pour un resultat connu d'avance.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 38
+      },
+      "targets": [
+        {
+          "expr": "sum by (name) (rate(resilience4j_circuitbreaker_not_permitted_calls_total[5m])) * 60",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Base de donnees",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 45
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Duree des requetes base (p50 / p95)",
+      "description": "Il n'existait AUCUNE mesure de duree de requete dans auth-service. Sans elle, toute decision de cache est une opinion : le pool a 1 connexion allouee sur 50 ne prouve que l'absence de trafic. A comparer aux 241 ms de BCrypt par connexion, qui dominent la latence du chemin d'authentification.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 46
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(r2dbc_query_seconds_bucket[5m])) by (le)) * 1000",
+          "legendFormat": "p50 (ms)",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(r2dbc_query_seconds_bucket[5m])) by (le)) * 1000",
+          "legendFormat": "p95 (ms)",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Requetes par minute et occupation du pool",
+      "description": "Le volume de requetes et les connexions reellement acquises. C'est ce couple qui dit si la base est sollicitee — pas une intuition.",
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 46
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(r2dbc_query_seconds_count[5m])) * 60",
+          "legendFormat": "requetes / min",
+          "refId": "A"
+        },
+        {
+          "expr": "max(r2dbc_pool_acquired_connections)",
+          "legendFormat": "connexions acquises",
+          "refId": "B"
+        },
+        {
+          "expr": "max(r2dbc_pool_max_allocated_connections)",
+          "legendFormat": "plafond du pool",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    }
+  ]
+}

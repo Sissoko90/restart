@@ -1,0 +1,116 @@
+# ============================================
+# .gitignore - Microservices Architecture
+# ============================================
+
+# ⚠️ SECRETS - Ne JAMAIS committer ces fichiers
+.env
+.env.*
+# La negation etait COMMENTEE (`#!.env.example`), donc la regle `.env.*`
+# ci-dessus ignorait aussi le gabarit — qui etait absent de l'index.
+#
+# Consequence : le seul document qui enumere les 195 variables requises
+# n'existait que sur la machine de celui qui l'a ecrit. Un clone neuf ne savait
+# pas quoi configurer, et une variable ajoutee au gabarit restait invisible des
+# autres — le genre de panne silencieuse que ce depot traque ailleurs.
+#
+# Le gabarit ne porte aucune valeur sensible : 195 variables declarees, 4 seules
+# renseignees, et ce sont `false`, `localhost` et deux URL locales. Verifie
+# avant de lever l'exclusion.
+#
+# L'ordre compte : une negation git ne s'applique que si elle SUIT la regle
+# qu'elle contredit.
+!.env.example
+.env.local
+.env.*.local
+.vault-token
+*.pem
+# Cles de signature : jamais dans le depot, jamais dans le JAR
+secrets/
+*.key
+*.p12
+*.jks
+# Secrets OAuth2 téléchargés depuis les consoles fournisseurs
+client_secret*.json
+
+# Scripts d'insertion de secrets dans Vault.
+#
+# scripts/vault-secrets-complete.sh portait les VRAIES valeurs de ~25
+# identifiants : mots de passe de six bases, le secret JWT, Twilio, Stripe,
+# Firebase, S3, Cloudinary, Google Maps, Kafka, SMTP — plus un VAULT_TOKEN en
+# dur. Il était dans l'historique de l'ancien dépôt depuis des mois.
+#
+# C'est la PROTECTION DE PUSH DE GITHUB qui l'a arrêté, pas nos propres
+# vérifications : elles contrôlaient des noms de fichiers et quelques motifs
+# (clés AWS, en-têtes PEM, jetons GitHub), et ne connaissaient ni Twilio ni
+# Stripe. Un contrôle maison ne remplace pas un analyseur qui suit les formats
+# de centaines de fournisseurs — il le complète.
+#
+# Le fichier reste sur le disque : il est peut-être le seul relevé de ces
+# valeurs. Il n'a simplement rien à faire sous gestion de version.
+vault-secrets*.sh
+*secrets-complete.sh
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+.windsurf/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+
+# Spring Boot
+spring-boot-devtools.properties
+
+# Vault tokens (si stockés localement)
+.vault-token
+
+# Docker volumes data
+postgres-data/
+postgres-keycloak-data/
+
+# JaCoCo
+jacoco.exec
+backups/
+
+# Environnements Postman : ils portent les VRAIES valeurs (mot de passe
+# administrateur, secret TOTP, cle des accuses de reception SMS), au meme titre
+# que .env. Les collections, elles, sont suivies : elles sont generees depuis le
+# code et ne contiennent aucun secret.
+postman/**/*.postman_environment.json
+
+# Secrets de supervision : le modele est suivi, la vraie valeur jamais.
+observability/alertmanager/smtp-password
+observability/alertmanager/slack-webhook
+__pycache__/

@@ -1,0 +1,472 @@
+# ==========================================
+# AUTH SERVICE - Configuration DEV
+# ==========================================
+# Configuration spécifique au service d'authentification
+# La config commune est dans application-dev.yml
+# ==========================================
+
+server:
+  port: 8082
+
+# Pas de context-path car le Gateway gère le routing /api/v1/auth/**
+# Auth-service expose directement /auth/**, le Gateway ajoute /api/v1
+
+spring:
+  application:
+    name: auth-service
+  cloud:
+    consul:
+      discovery:
+        health-check-path: /actuator/health
+
+    # Delais maximaux des appels Feign.
+    #
+    # Il n'y en avait AUCUN, donc les defauts s'appliquaient : 10 s a la
+    # connexion et 60 s a la lecture. UserServiceClient est appele par
+    # OAuth2ServiceImpl, donc sur le chemin de connexion : une instance de
+    # user-service figee retenait une connexion OAuth2 pendant une MINUTE.
+    #
+    # Meme trou que celui trouve sur InterfaceServiceClient, par la meme
+    # question — « cet appel sortant est-il borne ? » — et il faut la poser a
+    # chaque transport, pas une fois. Feign n'expose pas de `.timeout(...)`
+    # dans le code : son delai vit ici, et nulle part ailleurs.
+    #
+    # Prefixe verifie dans les metadonnees de spring-cloud-openfeign-core 5.0.0,
+    # et non suppose : l'ancien prefixe `feign.client.config` ne serait pas lu,
+    # silencieusement.
+    openfeign:
+      client:
+        config:
+          default:
+            connectTimeout: ${FEIGN_CONNECT_TIMEOUT_MS:3000}
+            readTimeout: ${FEIGN_READ_TIMEOUT_MS:5000}
+  mail:
+    host: ${EMAIL_HOST}
+    port: ${EMAIL_PORT}
+    username: ${EMAIL_USERNAME}
+    password: ${EMAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 30000  # 30 secondes au lieu de 5
+          timeout: 30000
+          writetimeout: 30000
+    test-connection: false  # Ne pas tester la connexion au démarrage
+  
+  # ==========================================
+  # DATABASE CONFIGURATION - PostgreSQL R2DBC
+  # ==========================================
+  # Migration MySQL/JPA -> PostgreSQL/R2DBC : accès non bloquant, aligné sur
+  # user-service, interface-service et setting-service.
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_AUTH:auth_service_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    pool:
+      initial-size: 10
+      max-size: 50
+      max-idle-time: 30m
+      validation-query: SELECT 1
+
+  # Le schéma n'est plus généré par Hibernate (ddl-auto) mais versionné par Flyway.
+  # Flyway n'a pas d'API réactive : il passe par JDBC, uniquement au démarrage.
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_AUTH:auth_service_db}
+    user: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  # ==========================================
+  # KAFKA CONFIGURATION
+  # ==========================================
+  # Note: Configuration Kafka commune dans application-dev.yml
+  # Aucune config spécifique nécessaire pour auth-service (producer uniquement)
+  
+  # ==========================================
+  # REDIS CACHE CONFIGURATION
+  # ==========================================
+  cache:
+    type: redis
+    redis:
+      time-to-live: 600000  # 10 minutes pour oauth2Users
+    cache-names:
+      - oauth2Users
+      - oauth2Tokens
+
+# ==========================================
+# EMAIL CONFIGURATION
+# ==========================================
+# Note: email.enabled est géré par @Value dans EmailService.java
+# car DotenvConfig charge après Config Server
+email:
+  enabled: ${EMAIL_ENABLED}
+  from: ${EMAIL_FROM}
+
+# ==========================================
+# GATEWAY SECURITY
+# ==========================================
+gateway:
+  secret:
+    key: ${GATEWAY_SECRET_KEY}
+
+# ==========================================
+# HEALTH CHECKS SPÉCIFIQUES
+# ==========================================
+# ==========================================
+# MESURE DES REQUETES BASE
+# ==========================================
+# r2dbc-proxy declenche R2dbcProxyAutoConfiguration et
+# R2dbcObservationAutoConfiguration, fournies par Spring Boot 4 : la seule
+# dependance suffit, et Boot enveloppe le pool dans le bon ordre. L'observation
+# s'appelle `r2dbc.query`, donc la metrique est `r2dbc_query_seconds_*`.
+#
+# Il n'existait AUCUNE mesure de duree de requete dans ce module, alors que
+# user-service en a une. Sans elle, toute decision de cache est une opinion :
+# le pool a 1 connexion allouee sur 50 ne prouve que l'absence de trafic en
+# developpement.
+management:
+  observations:
+    r2dbc:
+      # NE JAMAIS passer a true.
+      #
+      # Cette option etiquette les observations avec les VALEURS des parametres
+      # de requete. Dans ce service, ces valeurs sont des codes de verification
+      # a usage unique, des numeros de telephone, des adresses et des empreintes
+      # de mot de passe. Les mettre en etiquette les ecrit dans les traces et
+      # dans Prometheus — ou elles sont indefiniment conservees et, contrairement
+      # aux journaux, NON effaçables par AccountErasureService.
+      #
+      # C'est deja la valeur par defaut ; elle est ecrite ici explicitement pour
+      # que la regle soit visible a cote de la configuration, et
+      # ObservationsSansParametresTest refuse qu'elle devienne vraie.
+      include-parameter-values: false
+
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: diskSpace,r2dbc,redis
+  health:
+    r2dbc:
+      enabled: true
+    redis:
+      enabled: true
+    mail:
+      enabled: false  # Désactiver le health check mail (pas l'envoi)
+
+# ==========================================
+# JWT CONFIGURATION
+# ==========================================
+# Auth-service délègue la signature JWT à interface-service
+# Les clés RSA sont centralisées dans interface-service
+jwt:
+  # JWKS pour valider les tokens (récupère les clés publiques depuis interface-service)
+  jwks:
+    url: ${JWKS_URL:http://localhost:8088/dev/.well-known/jwks.json}
+    refresh-interval-seconds: ${JWKS_REFRESH_INTERVAL_SECONDS:300}
+
+# ==========================================
+# INTERFACE-SERVICE CLIENT
+# ==========================================
+# Configuration pour communiquer avec interface-service (signature JWT)
+interface-service:
+  url: ${INTERFACE_SERVICE_URL:http://localhost:8088}
+
+  # Delai maximal des appels a l'autorite JWT.
+  #
+  # Les trois appels d'InterfaceServiceClient n'en avaient AUCUN. Or
+  # interface-service signe les jetons de toute la plateforme et se trouve sur
+  # le chemin de chaque connexion : une instance FIGEE — pas tombee, figee —
+  # retenait indefiniment la chaine reactive appelante, et les connexions
+  # s'accumulaient sans aboutir ni echouer.
+  #
+  # Cinq secondes : une signature RSA et un aller-retour local se comptent en
+  # millisecondes. Au-dela, ce n'est plus de la lenteur, c'est une panne.
+  timeout-seconds: ${INTERFACE_SERVICE_TIMEOUT_SECONDS:5}
+
+# ==========================================
+# DISJONCTEURS DES APPELS SORTANTS
+# ==========================================
+# Poses EXPLICITEMENT au point d'appel, par les operateurs Reactor, et non par
+# annotation : les annotations @CircuitBreaker de ce module ne faisaient rien
+# (aspectjweaver absent, recordExceptions listant des exceptions de
+# RestTemplate sur une pile WebClient, noms d'instances sans correspondance).
+#
+# Ce qui compte comme un echec est decide en CODE et non ici : une liste de
+# noms de classes d'exceptions en YAML ne se verifie pas a la compilation et ne
+# suit pas un changement de client HTTP. Voir
+# DisjoncteurSortantServiceImpl.estUneIndisponibilite.
+resilience:
+  sortant:
+    # Ouvre au-dela de ce pourcentage d'echecs sur la fenetre.
+    taux-echec-pourcent: ${RESILIENCE_SORTANT_TAUX_ECHEC:50}
+    # Fenetre glissante, en nombre d'appels.
+    fenetre-appels: ${RESILIENCE_SORTANT_FENETRE:10}
+    # En dessous, le taux n'est pas calcule : deux echecs sur deux appels ne
+    # doivent pas ouvrir un disjoncteur.
+    appels-minimum: ${RESILIENCE_SORTANT_APPELS_MINIMUM:5}
+    # Duree pendant laquelle les appels sont refuses sans tentative, avant un
+    # essai de reprise.
+    attente-ouvert-secondes: ${RESILIENCE_SORTANT_ATTENTE_OUVERT:30}
+
+security:
+  internal-secret: ${INTERNAL_SERVICE_SECRET}
+
+# ==========================================
+# SMS CONFIGURATION
+# ==========================================
+# Note: Les credentials SMS sont chargés depuis .env via DotenvConfig.
+#
+# Deux fournisseurs sont implémentés, et SMS_PROVIDER désigne celui qui sert,
+# sans recompilation :
+#   afriksms (défaut) -- réactif, par WebClient
+#   twilio            -- conservé, SDK bloquant isolé sur boundedElastic
+#
+# Deux réglages, et ils ne disent pas la même chose :
+#   sms.enabled   coupe TOUT envoi, quel que soit le fournisseur
+#   sms.provider  désigne le fournisseur qui sert ; l'autre ne sert pas
+#
+# C'est donc sms.provider qui désactive un fournisseur. Pas d'interrupteur par
+# fournisseur en plus : il ferait double emploi, et les deux pourraient se
+# contredire.
+#
+# Un SMS_PROVIDER inconnu empêche auth-service de démarrer, avec la liste des
+# valeurs acceptées : le fournisseur est sur le chemin de l'inscription, et une
+# faute de frappe ne doit pas se traduire par des SMS qui cessent de partir en
+# silence.
+#
+# Toutes les autres valeurs portent un défaut : une variable absente ne doit pas
+# empêcher le service de démarrer, elle doit produire un avertissement explicite
+# au démarrage (voir SmsServiceImpl.verifierLaConfiguration).
+sms:
+  enabled: ${SMS_ENABLED:false}
+  provider: ${SMS_PROVIDER:afriksms}
+
+  afriksms:
+    # Aucune URL n'est écrite dans le code : les trois appartiennent à la
+    # configuration. Les trois points d'entrée d'AfrikSMS sont déclarés
+    # séparément plutôt que dérivés d'une base, pour qu'aucun chemin d'API ne
+    # vive dans le code Java.
+    url: ${SMS_AFRIKSMS_URL:https://api.afriksms.com/api/web/web_v1/outbounds/send}
+    callback-url: ${SMS_AFRIKSMS_CALLBACK_URL:https://api.afriksms.com/api/web/web_v1/outbounds/callback_url}
+    balance-url: ${SMS_AFRIKSMS_BALANCE_URL:https://api.afriksms.com/api/web/web_v1/outbounds/solde}
+    client-id: ${SMS_AFRIKSMS_CLIENT_ID:}
+    api-key: ${SMS_AFRIKSMS_API_KEY:}
+    # 11 caractères au maximum, imposé par AfrikSMS. Au-delà, tronqué avec un
+    # avertissement au démarrage.
+    sender-id: ${SMS_AFRIKSMS_SENDER_ID:}
+    timeout-seconds: ${SMS_AFRIKSMS_TIMEOUT_SECONDS:10}
+
+    # --- Accusés de réception (delivery receipts) ---
+    #
+    # notify-url est l'URL que POST /admin/sms/url-de-rappel déclare chez
+    # AfrikSMS. Elle vient d'ICI et non du corps de la requête admin : accepter
+    # une URL arbitraire permettrait de rediriger nos accusés vers un serveur
+    # quelconque.
+    #
+    # Elle doit pointer sur le Gateway, pas sur auth-service : celui-ci n'accepte
+    # que des requêtes signées venant du Gateway.
+    #
+    # notify-secret est le seul moyen d'authentifier AfrikSMS, qui ne signe rien
+    # et n'envoie aucun en-tête de notre choix. Vide, TOUS les accusés sont
+    # refusés — c'est voulu : un défaut utilisable laisserait le point d'entrée
+    # ouvert là où personne n'a renseigné la variable.
+    #
+    # notify-type : 1 = POST, 2 = GET. Les deux formes sont acceptées à la
+    # réception, quelle que soit la valeur déclarée.
+    notify-url: ${SMS_AFRIKSMS_NOTIFY_URL:}
+    notify-secret: ${SMS_AFRIKSMS_NOTIFY_SECRET:}
+    notify-type: ${SMS_AFRIKSMS_NOTIFY_TYPE:1}
+
+  # Surveillance du solde chez le fournisseur.
+  #
+  # Un credit epuise ne produit AUCUNE erreur HTTP : l'envoi repond 200 avec un
+  # code de refus. Sans ce releve, la panne se manifeste seulement par des
+  # utilisateurs qui ne recoivent plus leur code.
+  #
+  # Deux seuils : solde <= 0 est un incident (ERROR, les SMS ne partent plus),
+  # solde <= seuil-alerte est un avertissement (WARN, il reste du temps pour
+  # recharger).
+  #
+  # Propre a AfrikSMS : la tache ne fait rien si sms.provider designe Twilio, ni
+  # si sms.enabled est faux.
+  solde:
+    surveillance:
+      enabled: ${SMS_SOLDE_SURVEILLANCE_ENABLED:true}
+      # Une fois par jour. Repetee toutes les heures, l'alerte cesserait d'etre lue.
+      cron: ${SMS_SOLDE_SURVEILLANCE_CRON:0 0 8 * * *}
+      seuil-alerte: ${SMS_SOLDE_SEUIL_ALERTE:100}
+
+  # Durée de conservation de la correspondance resourceId -> numéro, qui rend
+  # les accusés de réception interprétables. Courte par nature : un accusé
+  # arrive en quelques minutes.
+  registre:
+    duree-de-vie-heures: ${SMS_REGISTRE_DUREE_HEURES:48}
+
+  twilio:
+    # Conservé et complet, mais inactif tant que sms.provider ne le désigne pas.
+    account-sid: ${SMS_ACCOUNT_SID:}
+    auth-token: ${SMS_AUTH_TOKEN:}
+    sender-id: ${SMS_SENDER_ID:}
+
+# ==========================================
+# EMAIL CONFIGURATION (SMTP)
+# ==========================================
+# Note: Les credentials Email sont chargés depuis .env via DotenvConfig
+
+# ==========================================
+# RESILIENCE4J SPÉCIFIQUE AUTH
+# ==========================================
+# Override pour ajouter AuthException aux exceptions ignorées
+resilience4j:
+  retry:
+    configs:
+      default:
+        ignoreExceptions:
+          - java.lang.IllegalArgumentException
+          - com.abdatytch.auth_service.exception.AuthException
+
+# ==========================================
+# RATE LIMITING SPÉCIFIQUE AUTH
+# ==========================================
+# Utilise les instances définies dans application-dev.yml
+# auth: 20 requêtes/s
+# otp: 5 requêtes/minute
+
+# ==========================================
+# OAUTH2 CONFIGURATION
+# ==========================================
+oauth2:
+  google:
+    client-id: ${OAUTH2_GOOGLE_CLIENT_ID}
+    client-secret: ${OAUTH2_GOOGLE_CLIENT_SECRET}
+    redirect-uri: ${OAUTH2_GOOGLE_REDIRECT_URI}
+  facebook:
+    client-id: ${OAUTH2_FACEBOOK_CLIENT_ID}
+    client-secret: ${OAUTH2_FACEBOOK_CLIENT_SECRET}
+    redirect-uri: ${OAUTH2_FACEBOOK_REDIRECT_URI}
+
+  # ------------------------------------------------------------------
+  # Sign in with Apple
+  # ------------------------------------------------------------------
+  # Les valeurs par defaut sont VIDES, contrairement a Google et Facebook
+  # ci-dessus qui utilisent ${VAR} sans repli. C'est deliberе : un
+  # fournisseur social non active est un etat normal, et une variable Apple
+  # absente ne doit pas empecher le service de demarrer — sinon les
+  # connexions par telephone, par courriel et par mot de passe tombent
+  # aussi, pour une cause sans aucun rapport.
+  #
+  # Sans ces valeurs, FournisseurApple reste un bean, estConfigure() rend
+  # faux, et seul un parcours Apple est refuse — avec une erreur nommee, au
+  # moment de l'appel.
+  #
+  # Aucune de ces quatre valeurs n'est publique : elles vont dans l'env (ou
+  # dans Vault lorsqu'il sera branche), jamais dans ce fichier.
+  apple:
+    # Identifiant de l'equipe, visible en haut a droite de la console Apple.
+    team-id: ${APPLE_TEAM_ID:}
+    # Le Services ID, et NON l'App ID : c'est lui qui joue le role de
+    # client_id cote web. La confusion entre les deux est la premiere cause
+    # d'echec de cette integration, et Apple n'y repond que par un
+    # « invalid_client » qui ne designe pas la cause.
+    services-id: ${APPLE_SERVICES_ID:}
+    # Identifiant de la cle de signature, affiche a la creation de la cle.
+    key-id: ${APPLE_KEY_ID:}
+    # Contenu du fichier .p8, telechargeable UNE SEULE FOIS depuis la
+    # console. Les en-tetes PEM et les \n litteraux sont tolleres.
+    private-key: ${APPLE_PRIVATE_KEY:}
+    # Apple impose un rappel en POST (response_mode=form_post) des que le
+    # perimetre demande name ou email, et refuse localhost : en
+    # developpement il faut donc un domaine joignable, pas 127.0.0.1.
+    redirect-uri: ${APPLE_REDIRECT_URI:}
+    # Delai maximal des appels sortants vers Apple. Un appel sortant sans
+    # borne rend le disjoncteur aveugle : il ne voit jamais d'echec, donc
+    # ne s'ouvre jamais.
+    timeout-seconds: ${APPLE_TIMEOUT_SECONDS:5}
+
+# ==========================================
+# ADMIN PAR DÉFAUT (SEEDER)
+# ==========================================
+admin:
+  default:
+    phone: ${ADMIN_DEFAULT_PHONE}
+    email: ${ADMIN_DEFAULT_EMAIL}
+    password: ${ADMIN_DEFAULT_PASSWORD}
+    firstName: ${ADMIN_DEFAULT_FIRSTNAME}
+    lastName: ${ADMIN_DEFAULT_LASTNAME}
+
+# ==========================================================
+# SUPER ADMIN (SEEDER DE DEPLOIEMENT)
+# ==========================================================
+# Responsable technique de la plateforme : maintenance, rotation des
+# cles de signature, effacement administratif, parametres systeme.
+# Voir docs/ROLES.md.
+#
+# Ce role n'est PAS attribuable par l'API : ce seeder est le seul
+# chemin par lequel il existe. Sans cela, un ADMIN compromis se
+# promouvrait lui-meme.
+#
+# Identifiants VOLONTAIREMENT distincts des admin.default.* :
+# partager les identifiants entre le responsable technique et
+# l'administrateur fonctionnel annulerait la separation que ces deux
+# roles etablissent.
+#
+# Aucune valeur par defaut : sans ces variables, le seeder ne cree
+# rien et le signale. Un compte administrateur aux identifiants
+# lisibles dans le depot est pire que pas de compte du tout.
+super-admin:
+  email: ${SUPER_ADMIN_EMAIL:}
+  phone: ${SUPER_ADMIN_PHONE:}
+  password: ${SUPER_ADMIN_PASSWORD:}
+  country-code: ${SUPER_ADMIN_COUNTRY_CODE:ML}
+  first-name: ${SUPER_ADMIN_FIRSTNAME:Super}
+  last-name: ${SUPER_ADMIN_LASTNAME:Admin}
+
+# ==========================================================
+# AUTHENTIFICATION BIOMETRIQUE
+# ==========================================================
+# FAUX par defaut, et ce n'est pas un reglage de confort.
+#
+# POST /auth/biometric/authenticate/verify emet un jeton JWT pour le
+# proprietaire de la credential, identifie uniquement par le credentialId
+# du corps de la requete. La verification de signature est un
+# PLACEHOLDER : un Base64 de la concatenation
+# publicKey + authenticatorData + clientDataJSON + challenge.
+#
+# L'appelant fournit tout sauf publicKey — qui n'est pas un secret, et que
+# GET /auth/biometric/credentials rend en entier. Le challenge n'est pas
+# verifie (il n'est jamais enregistre) et le compteur n'est pas controle.
+#
+# Ne passer a true qu'apres implementation reelle via webauthn4j,
+# deja present au classpath.
+biometric:
+  authentication:
+    enabled: true
+
+# ==========================================================
+# WEBAUTHN / FIDO2
+# ==========================================================
+# rp-id : le DOMAINE, sans schema ni port. L'authentificateur signe le
+#         hachage de cette valeur. Une valeur trop large permettrait a un
+#         sous-domaine de rejouer des assertions.
+# origin : l'origine attendue dans clientDataJSON, schema et port compris.
+#          C'est ce qui empeche un site tiers de collecter une assertion
+#          chez lui et de la presenter ici.
+#
+# Ces deux valeurs doivent correspondre exactement a celles du navigateur,
+# sans quoi toute verification echoue — ce qui est le bon sens de l'echec.
+webauthn:
+  rp-id: ${WEBAUTHN_RP_ID:localhost}
+  origin: ${WEBAUTHN_ORIGIN:http://localhost:8081}
+
+# Application frontale vers laquelle le rappel OAuth2 redirige.
+# Sans valeur par defaut dans le code : un repli silencieux sur localhost
+# faisait rediriger la connexion OAuth2 vers localhost en production.
+app:
+  frontend-url: ${FRONTEND_BASE_URL}

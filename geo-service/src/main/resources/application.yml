@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: geo-service
+  profiles:
+    active: dev
+  config:
+    import: "optional:configserver:http://localhost:8888"
+  cloud:
+    consul:
+      host: localhost
+      port: 8500
+      discovery:
+        enabled: true
+        prefer-ip-address: true
+        instance-id: ${spring.application.name}:${server.port:8084}
+        health-check-path: /api/v1/actuator/health
+        health-check-interval: 10s
+        register: true
+        service-name: ${spring.application.name}
+
+server:
+  port: 8084

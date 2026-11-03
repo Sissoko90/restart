@@ -1,0 +1,213 @@
+﻿# ==========================================================
+# Analyse de sécurité
+# ==========================================================
+# Séparé de la CI parce que plus lent, et parce que certaines
+# analyses n'ont de sens que périodiquement : une dépendance
+# saine aujourd'hui peut devenir vulnérable demain sans qu'une
+# seule ligne du dépôt ne change.
+#
+# Politique de blocage (décidée le 2026-09-04) :
+#   - BLOQUE : secrets détectés, vulnérabilités CRITICAL/HIGH,
+#              licences incompatibles avec une distribution propriétaire
+#   - SIGNALE : le reste
+# ==========================================================
+name: Sécurité
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Tous les lundis à 4h UTC : détecte les CVE publiées depuis
+    # le dernier commit, sans attendre une modification du code.
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ------------------------------------------------------------------
+  # 1. Secrets — la première chose à vérifier
+  # ------------------------------------------------------------------
+  secrets:
+    name: Fuite de secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # L'historique complet est nécessaire : un secret retiré d'un commit
+          # reste dans les commits précédents, et reste donc compromis.
+          fetch-depth: 0
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ------------------------------------------------------------------
+  # 2. Analyse statique du code (SAST) — CWE / OWASP
+  # ------------------------------------------------------------------
+  codeql:
+    name: CodeQL (SAST)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      - name: Initialiser CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+          # `security-and-quality` couvre les requêtes CWE, dont celles
+          # correspondant au Top 10 OWASP et au CWE Top 25 du MITRE.
+          queries: security-and-quality
+
+      - name: Compiler
+        run: mvn -B -ntp -DskipTests package
+
+      - name: Analyser
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:java-kotlin
+
+  # ------------------------------------------------------------------
+  # 3. Vulnérabilités des dépendances
+  # ------------------------------------------------------------------
+  dependances:
+    name: Vulnérabilités des dépendances
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      # Trivy lit directement les pom.xml : pas de clé d'API à gérer,
+      # contrairement à OWASP Dependency-Check qui dépend du NVD.
+      - name: Trivy — analyse du dépôt
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+          scanners: vuln,secret,misconfig
+
+      - name: Publier dans l'onglet Sécurité
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
+
+      # Second passage, bloquant celui-là, restreint aux severités retenues.
+      - name: Trivy — blocage sur CRITICAL/HIGH
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          scanners: vuln
+
+  # ------------------------------------------------------------------
+  # 4. OWASP Dependency-Check — second avis, hebdomadaire
+  # ------------------------------------------------------------------
+  # Deux outils sur le même périmètre n'est pas redondant : leurs bases
+  # de correspondance diffèrent, et chacun voit des paquets que l'autre
+  # manque. Celui-ci dépend du NVD, plus lent, d'où l'exécution planifiée.
+  owasp:
+    name: OWASP Dependency-Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      - name: Analyser
+        # Sans NVD_API_KEY le téléchargement de la base est fortement limité
+        # par le NVD et peut dépasser l'heure. La clé est gratuite :
+        # https://nvd.nist.gov/developers/request-an-api-key
+        run: |
+          if [ -z "${{ secrets.NVD_API_KEY }}" ]; then
+            echo "::warning::NVD_API_KEY absent — analyse ignorée."
+            echo "Ajouter le secret NVD_API_KEY pour activer ce second avis."
+            exit 0
+          fi
+          mvn -B -ntp org.owasp:dependency-check-maven:check \
+            -DnvdApiKey='${{ secrets.NVD_API_KEY }}' \
+            -DfailBuildOnCVSS=7 \
+            -Dformats=HTML,SARIF
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rapport-owasp
+          path: '**/target/dependency-check-report.*'
+          retention-days: 30
+
+  # ------------------------------------------------------------------
+  # 5. Licences des dépendances
+  # ------------------------------------------------------------------
+  licences:
+    name: Conformité des licences
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      - name: Inventorier les licences tierces
+        run: mvn -B -ntp license:aggregate-download-licenses license:aggregate-add-third-party
+
+      - name: Vérifier la compatibilité avec une distribution propriétaire
+        run: ./scripts/license-check.sh
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: inventaire-licences
+          path: target/generated-sources/license/
+          retention-days: 30

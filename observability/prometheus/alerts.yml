@@ -1,0 +1,196 @@
+groups:
+  # ==========================================
+  # ALERTES MICROSERVICES
+  # ==========================================
+  - name: microservices_alerts
+    interval: 30s
+    rules:
+      # Service Down
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Service {{ $labels.application }} is down"
+          description: "{{ $labels.application }} on {{ $labels.instance }} has been down for more than 1 minute."
+
+      # High CPU Usage
+      - alert: HighCPUUsage
+        expr: process_cpu_usage > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High CPU usage on {{ $labels.application }}"
+          description: "CPU usage is above 80% for {{ $labels.application }} (current: {{ $value | humanizePercentage }})"
+
+      # High Memory Usage
+      - alert: HighMemoryUsage
+        expr: (jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"}) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High memory usage on {{ $labels.application }}"
+          description: "Memory usage is above 85% for {{ $labels.application }} (current: {{ $value | humanizePercentage }})"
+
+      # High Error Rate
+      - alert: HighErrorRate
+        expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          category: errors
+        annotations:
+          summary: "High error rate on {{ $labels.application }}"
+          description: "Error rate is above 5% for {{ $labels.application }} (current: {{ $value | humanizePercentage }})"
+
+      # Slow Response Time
+      - alert: SlowResponseTime
+        expr: histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Slow response time on {{ $labels.application }}"
+          description: "95th percentile response time is above 2s for {{ $labels.application }} (current: {{ $value }}s)"
+
+      # Database Connection Pool Exhaustion
+      # METRIQUE CORRIGEE : hikaricp_* -> r2dbc_pool_*
+      #
+      # Les services de cette plateforme sont REACTIFS et utilisent R2DBC, pas
+      # JDBC : aucun `hikaricp_connections_*` n'est expose. Verifie sur
+      # l'endpoint reel d'auth-service — absent, tandis que
+      # `r2dbc_pool_acquired_connections` et `r2dbc_pool_max_allocated_connections`
+      # y sont. Cette alerte ne pouvait donc jamais se declencher, et le panneau
+      # correspondant du tableau de bord auth-service restait vide en
+      # permanence.
+      - alert: DatabaseConnectionPoolExhaustion
+        expr: >-
+          r2dbc_pool_acquired_connections
+          / r2dbc_pool_max_allocated_connections > 0.9
+        for: 2m
+        labels:
+          severity: critical
+          category: database
+        annotations:
+          summary: "Database connection pool near exhaustion on {{ $labels.application }}"
+          description: "Connection pool usage is above 90% for {{ $labels.application }}"
+
+      # ALERTE RETIREE : RedisConnectionIssues
+      #
+      # Elle portait sur `redis_commands_failed_total`, que RIEN n'emet. Le
+      # client Redis de cette plateforme est Lettuce, dont l'integration
+      # Micrometer expose des latences de commande (`lettuce_seconds_*`,
+      # verifiees presentes) et AUCUN compteur d'echec.
+      #
+      # Elle n'est pas remplacee par une approximation : une alerte de cache
+      # qui se declenche sur de la latence produirait du bruit, et c'est le
+      # bruit qui fait ignorer les alertes. Pour la retablir correctement il
+      # faut un compteur explicite au point ou une commande Redis echoue — le
+      # candidat naturel est le `onErrorResume` de
+      # `SecurityViolationRecorder`, qui avale deja ces erreurs.
+
+  # ==========================================
+  # ALERTES JWT & SÉCURITÉ
+  # ==========================================
+  # GROUPE DEPLACE vers security-admin-alerts.yml
+  #
+  # Il contenait les deux SEULES alertes de securite de la plateforme, et
+  # toutes deux portaient sur des metriques QUE RIEN N'EMET :
+  #
+  #   rate(jwt_validation_failures_total[5m]) > 0.1
+  #   rate(authentication_failures_total[5m]) > 0.5
+  #
+  # Verifie sur l'endpoint reel d'auth-service (610 series) : aucune de ces
+  # familles n'existe, et aucun code du depot ne les cree. Prometheus evalue
+  # sans erreur une regle portant sur une metrique absente — elle reste
+  # simplement toujours fausse. Le fichier donnait donc l'apparence d'une
+  # couverture.
+  #
+  # Les remplaçantes sont dans security-admin-alerts.yml et portent chacune le
+  # nom de la classe qui emet la metrique. Elles ne sont PAS redeclarees ici :
+  # deux definitions du meme garde-fou finissent toujours par diverger.
+
+  # ==========================================
+  # ALERTES INFRASTRUCTURE
+  # ==========================================
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      # Prometheus Target Down
+      - alert: PrometheusTargetDown
+        expr: up{job!="prometheus"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: monitoring
+        annotations:
+          summary: "Prometheus target {{ $labels.job }} is down"
+          description: "Prometheus cannot scrape {{ $labels.job }} on {{ $labels.instance }}"
+
+      # Disk Space Low
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Disk space low on {{ $labels.instance }}"
+          description: "Available disk space is below 10% on {{ $labels.instance }}"
+
+  # ==========================================
+  # ALERTES GÉOLOCALISATION
+  # ==========================================
+  - name: geolocation_alerts
+    interval: 30s
+    rules:
+      # High Geolocation Blocked Requests
+      - alert: HighGeoBlockedRequests
+        expr: rate(geo_blocked_requests_total[5m]) > 1
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "High rate of geo-blocked requests on {{ $labels.application }}"
+          description: "More than 1 request per second is being blocked by geolocation (current: {{ $value | humanize }})"
+
+      # Geolocation Lookup Errors
+      - alert: GeoLocationLookupErrors
+        expr: rate(geo_lookup_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          category: geolocation
+        annotations:
+          summary: "Geolocation lookup errors on {{ $labels.application }}"
+          description: "Geolocation database lookup errors detected (rate: {{ $value | humanize }}/s)"
+
+      # Suspicious Country Activity
+      - alert: SuspiciousCountryActivity
+        expr: rate(geo_blocked_by_country_total[10m]) > 10
+        for: 5m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Suspicious activity from blocked country {{ $labels.country }}"
+          description: "High rate of blocked requests from {{ $labels.country }} ({{ $value | humanize }} requests in 10 minutes)"
+
+      # Too Many Blocked Countries
+      - alert: TooManyBlockedCountries
+        expr: geo_blocked_countries_count > 50
+        for: 5m
+        labels:
+          severity: warning
+          category: configuration
+        annotations:
+          summary: "Too many countries blocked ({{ $value }})"
+          description: "More than 50 countries are currently blocked, this may impact legitimate traffic"

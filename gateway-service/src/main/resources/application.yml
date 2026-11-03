@@ -1,0 +1,101 @@
+# ==========================================
+# GATEWAY SERVICE - Bootstrap Configuration
+# ==========================================
+# Ce fichier contient uniquement la config de démarrage
+# Toute la config métier est dans config-repo/dev/
+# ==========================================
+
+spring:
+  application:
+    name: gateway-service
+  profiles:
+    active: dev
+  config:
+    import: "optional:configserver:http://localhost:8888"
+    fail-fast: false
+    retry:
+      max-attempts: 6
+      initial-interval: 1000
+      multiplier: 1.1
+      max-interval: 2000
+
+server:
+  port: 8081
+  servlet:
+    context-path: /  # Gateway à la racine, pas de context-path
+
+# ==========================================
+# FALLBACK CONFIGURATION
+# ==========================================
+# Utilisé uniquement si config-server est indisponible
+# ==========================================
+
+# Fallback JWT
+jwt:
+  secret: ${JWT_SECRET}
+
+# Fallback Gateway Security
+gateway:
+  secret:
+    key: ${GATEWAY_SECRET_KEY}
+  # Identifiants de lecture de la documentation agregee.
+  #
+  # Dedies : ils ne correspondent a aucun compte de la plateforme, donc les
+  # compromettre ne donne acces a aucune donnee.
+  #
+  # Defaut VIDE, delibere. Absents, le service demarre normalement et la
+  # documentation est FERMEE (404), avec un avertissement unique au demarrage.
+  # Jamais de refus de demarrage pour une variable absente ; jamais non plus
+  # d'ouverture par defaut.
+  documentation:
+    utilisateur: ${GATEWAY_DOCS_USER:}
+    mot-de-passe: ${GATEWAY_DOCS_PASSWORD:}
+
+# ---------------------------------------------------------------------------
+# Documentation agregee des sept services
+# ---------------------------------------------------------------------------
+# L'interface Swagger de la passerelle propose un document par service. Chaque
+# URL pointe sur /api/v1/docs/<service>, que CheminCible ramene sur /v3/api-docs
+# du service visé, et que la passerelle SIGNE.
+#
+# Les services n'exemptent leur documentation que du JETON, jamais de la
+# signature : elle n'est donc lisible qu'a travers cette passerelle. Un appel
+# direct au port d'un service echoue.
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    # L'ordre d'affichage est celui de cette liste, pas alphabetique.
+    urls:
+      - name: Gateway
+        url: /v3/api-docs
+      - name: Auth
+        url: /api/v1/docs/auth
+      - name: Interface
+        url: /api/v1/docs/interface
+      - name: Users
+        url: /api/v1/docs/users
+      - name: Media
+        url: /api/v1/docs/media
+      - name: Quotas
+        url: /api/v1/docs/quotas
+      - name: Settings
+        url: /api/v1/docs/settings
+      - name: Security
+        url: /api/v1/docs/security
+
+# Configuration pour sécuriser les endpoints admin
+admin:
+  secret:
+    key: ${ADMIN_SECRET_KEY:}
+  api:
+    key: ${GATEWAY_API_KEY}
+
+# Fallback management
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always

@@ -1,0 +1,5513 @@
+{
+  "info": {
+    "name": "AbdaTech — auth-service",
+    "description": "Collection générée depuis le code source (101 endpoints).\n\n**Appels via le Gateway** : `baseUrl` = `http://localhost:8081/api/v1`.\n\nL'appel en direct sur `http://localhost:8082` est refusé : les services exigent la signature HMAC du Gateway, qu'un client ne peut pas produire.\n\n**Préfixes propres à auth-service.** interface-service occupe `/api/v1/auth/**` et `/api/v1/admin/**` ; auth-service est donc joignable sous `/api/v1/auth-sdk/**` (ses endpoints `/auth/**`), `/api/v1/auth-admin/**` (ses endpoints `/admin/**`) et `/api/v1/auth-users/**`. Le Gateway réécrit le chemin et signe le chemin réécrit.\n\nLe jeton est capturé automatiquement après une connexion réussie et réinjecté dans `{{accessToken}}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Calcule {{totpCode}} a partir de totpSecret, avant chaque requete.",
+          "//",
+          "// AUCUN `return` au niveau superieur : le bac a sable de Postman n'encadre pas",
+          "// toujours le script dans une fonction, et un `return` hors fonction y est une",
+          "// erreur de syntaxe. Le script s'interrompait alors AVANT de poser totpCode,",
+          "// la connexion partait avec un code vide, et le serveur repondait",
+          "// « Identifiants invalides » — un message qui ne desigpas le script.",
+          "//",
+          "// Tout est donc dans une fonction, appelee a la fin, et le resultat est",
+          "// journalise : sans trace dans la console, un script de pre-requete qui echoue",
+          "// est indistinguable d'un mauvais mot de passe.",
+          "function codeTotp(secretBrut) {",
+          "    const secret = (secretBrut || \"\").replace(/[^A-Za-z2-7]/g, \"\").toUpperCase();",
+          "    if (!secret) { return \"\"; }",
+          "",
+          "    // Base32 -> octets. CryptoJS ne sait pas lire le base32.",
+          "    const ALPHABET = \"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567\";",
+          "    let bits = \"\";",
+          "    for (let i = 0; i < secret.length; i++) {",
+          "        const j = ALPHABET.indexOf(secret.charAt(i));",
+          "        if (j >= 0) { bits += j.toString(2).padStart(5, \"0\"); }",
+          "    }",
+          "    let hex = \"\";",
+          "    for (let i = 0; i + 8 <= bits.length; i += 8) {",
+          "        hex += parseInt(bits.substring(i, i + 8), 2).toString(16).padStart(2, \"0\");",
+          "    }",
+          "    if (!hex) { return \"\"; }",
+          "",
+          "    // Compteur : pas de 30 secondes depuis l'epoque, sur 8 octets.",
+          "    const pas = Math.floor(Date.now() / 1000 / 30);",
+          "    const compteur = pas.toString(16).padStart(16, \"0\");",
+          "",
+          "    const hmac = CryptoJS.HmacSHA1(",
+          "        CryptoJS.enc.Hex.parse(compteur),",
+          "        CryptoJS.enc.Hex.parse(hex)).toString();",
+          "",
+          "    // Troncature dynamique, RFC 4226.",
+          "    const decalage = parseInt(hmac.substring(hmac.length - 1), 16) * 2;",
+          "    const tronque = parseInt(hmac.substring(decalage, decalage + 8), 16) & 0x7fffffff;",
+          "    return String(tronque % 1000000).padStart(6, \"0\");",
+          "}",
+          "",
+          "// Le secret peut etre dans l'environnement OU dans la collection : chercher",
+          "// dans les deux evite le piege du mauvais environnement selectionne.",
+          "const brut = pm.environment.get(\"totpSecret\") || pm.collectionVariables.get(\"totpSecret\") || \"\";",
+          "const code = codeTotp(brut);",
+          "pm.collectionVariables.set(\"totpCode\", code);",
+          "",
+          "if (!brut) {",
+          "    console.log(\"totpSecret VIDE : totpCode laisse vide. Normal si le second \"",
+          "        + \"facteur n'est pas encore enrole ; sinon, renseignez-le dans \"",
+          "        + \"l'environnement.\");",
+          "} else if (!code) {",
+          "    console.log(\"totpSecret present mais illisible (base32 attendu) : \" + brut.length",
+          "        + \" caracteres.\");",
+          "} else {",
+          "    console.log(\"totpCode = \" + code);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "0 - MISE EN ROUTE  (commencer ici)",
+      "description": "**Ordre a suivre.**\n\n1. Selectionnez l'environnement `Restart - local`.\n2. Renseignez `adminPassword` (valeur de `SUPER_ADMIN_PASSWORD` dans `.env`) — c'est la SEULE valeur a saisir.\n3. Si le second facteur n'est pas encore enrole : lancez la requete 1, elle remplit `totpSecret` toute seule.\n4. Lancez la requete 2 : le jeton est capture.\n5. Toutes les autres requetes fonctionnent.\n\nLe mot de passe n'est PAS dans la collection : celle-ci est suivie par git. Il vit dans l'environnement, qui ne l'est pas.",
+      "item": [
+        {
+          "name": "1. Enroler le second facteur (une seule fois)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/admin/totp/enroll",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "admin",
+                "totp",
+                "enroll"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"identifier\": \"{{adminIdentifier}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "description": "A executer UNE SEULE FOIS, sur un compte dont le second facteur n'est pas encore enrole.\n\nLa reponse contient une URL `otpauth://` : scannez-la, puis recopiez le secret dans la variable d'environnement `totpSecret`. **Il n'est remis qu'une fois.**\n\nTant que `totpSecret` est vide, la connexion fonctionne sans code — c'est ce qui permet l'enrolement."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let j = {};",
+                  "try { j = pm.response.json(); } catch (e) {}",
+                  "if (j.secret) {",
+                  "    pm.environment.set(\"totpSecret\", j.secret);",
+                  "    console.log(\"totpSecret enregistre dans l'environnement\");",
+                  "} else if (j.qrCodeUrl) {",
+                  "    const m = /secret=([A-Z2-7=]+)/i.exec(j.qrCodeUrl);",
+                  "    if (m) { pm.environment.set(\"totpSecret\", m[1]); console.log(\"totpSecret extrait de l'URL otpauth\"); }",
+                  "}",
+                  "",
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "2. Connexion administrateur  (capture le jeton)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/admin/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "admin",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"identifier\": \"{{adminIdentifier}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"totpCode\": \"{{totpCode}}\"\n}"
+            },
+            "description": "`{{totpCode}}` est calcule automatiquement avant l'envoi, a partir de `totpSecret`. Laissez-le tel quel.\n\nLe jeton est capture dans `{{accessToken}}` et reinjecte dans toutes les autres requetes."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// L'analyse JSON est GARDEE.",
+                  "//",
+                  "// `pm.response.json()` LEVE quand la reponse n'est pas du JSON — un 403 du",
+                  "// filtre d'acces Gateway, un corps vide, une page d'erreur. Le script",
+                  "// s'interrompait alors avant les assertions, et Postman affichait une erreur de",
+                  "// script au lieu du statut reel : sur un echec de connexion, on ne voyait pas",
+                  "// POURQUOI.",
+                  "let json = {};",
+                  "try {",
+                  "    json = pm.response.json();",
+                  "} catch (e) {",
+                  "    console.log(\"Reponse non JSON (\" + pm.response.code + \") : jeton non capture\");",
+                  "}",
+                  "if (json.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", json.accessToken);",
+                  "    console.log(\"accessToken enregistré\");",
+                  "}",
+                  "if (json.refreshToken) {",
+                  "    pm.collectionVariables.set(\"refreshToken\", json.refreshToken);",
+                  "}",
+                  "if (json.token) {",
+                  "    pm.collectionVariables.set(\"maintenanceToken\", json.token);",
+                  "}",
+                  "",
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AccuseDeReceptionSms",
+      "description": "Contrôleur `AccuseDeReceptionSmsController` — base `/sms/accuses`",
+      "item": [
+        {
+          "name": "GET /sms/accuses/afriksms",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sms/accuses/afriksms?cle={{cleAccusesSms}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sms",
+                "accuses",
+                "afriksms"
+              ],
+              "query": [
+                {
+                  "key": "cle",
+                  "value": "{{cleAccusesSms}}",
+                  "description": "SMS_AFRIKSMS_NOTIFY_SECRET. Absent ou faux : 404."
+                }
+              ]
+            },
+            "description": "Handler : recevoirEnGet"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /sms/accuses/afriksms",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sms/accuses/afriksms?cle={{cleAccusesSms}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sms",
+                "accuses",
+                "afriksms"
+              ],
+              "query": [
+                {
+                  "key": "cle",
+                  "value": "{{cleAccusesSms}}",
+                  "description": "SMS_AFRIKSMS_NOTIFY_SECRET. Absent ou faux : 404."
+                }
+              ]
+            },
+            "description": "Handler : recevoirEnPost"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AdminAccount",
+      "description": "Contrôleur `AdminAccountController` — base `/admin/accounts`",
+      "item": [
+        {
+          "name": "GET /admin/accounts/{identifier}/lockout-status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/accounts/:identifier/lockout-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "accounts",
+                ":identifier",
+                "lockout-status"
+              ],
+              "variable": [
+                {
+                  "key": "identifier",
+                  "value": "{{identifier}}",
+                  "description": "Valeur de identifier"
+                }
+              ]
+            },
+            "description": "Handler : getLockoutStatus\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/accounts/{identifier}/unlock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/accounts/:identifier/unlock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "accounts",
+                ":identifier",
+                "unlock"
+              ],
+              "variable": [
+                {
+                  "key": "identifier",
+                  "value": "{{identifier}}",
+                  "description": "Valeur de identifier"
+                }
+              ]
+            },
+            "description": "Handler : unlockAccount\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/accounts/{identifier}/reset-attempts",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/accounts/:identifier/reset-attempts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "accounts",
+                ":identifier",
+                "reset-attempts"
+              ],
+              "variable": [
+                {
+                  "key": "identifier",
+                  "value": "{{identifier}}",
+                  "description": "Valeur de identifier"
+                }
+              ]
+            },
+            "description": "Handler : resetFailedAttempts\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /admin/accounts/{identifier}/remaining-attempts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/accounts/:identifier/remaining-attempts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "accounts",
+                ":identifier",
+                "remaining-attempts"
+              ],
+              "variable": [
+                {
+                  "key": "identifier",
+                  "value": "{{identifier}}",
+                  "description": "Valeur de identifier"
+                }
+              ]
+            },
+            "description": "Handler : getRemainingAttempts\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/accounts/{identifier}/lock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/accounts/:identifier/lock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "accounts",
+                ":identifier",
+                "lock"
+              ],
+              "variable": [
+                {
+                  "key": "identifier",
+                  "value": "{{identifier}}",
+                  "description": "Valeur de identifier"
+                }
+              ]
+            },
+            "description": "Handler : lockAccount\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/accounts/{identifier}/totp/reset",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/accounts/:identifier/totp/reset",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "accounts",
+                ":identifier",
+                "totp",
+                "reset"
+              ],
+              "variable": [
+                {
+                  "key": "identifier",
+                  "value": "{{identifier}}",
+                  "description": "Valeur de identifier"
+                }
+              ]
+            },
+            "description": "Handler : retirerSecondFacteur\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AdminAuth",
+      "description": "Contrôleur `AdminAuthController` — base `/auth`",
+      "item": [
+        {
+          "name": "POST /auth/admin/login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/admin/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "admin",
+                "login"
+              ]
+            },
+            "description": "Handler : login\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{adminPhone}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"totpCode\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// L'analyse JSON est GARDEE.",
+                  "//",
+                  "// `pm.response.json()` LEVE quand la reponse n'est pas du JSON — un 403 du",
+                  "// filtre d'acces Gateway, un corps vide, une page d'erreur. Le script",
+                  "// s'interrompait alors avant les assertions, et Postman affichait une erreur de",
+                  "// script au lieu du statut reel : sur un echec de connexion, on ne voyait pas",
+                  "// POURQUOI.",
+                  "let json = {};",
+                  "try {",
+                  "    json = pm.response.json();",
+                  "} catch (e) {",
+                  "    console.log(\"Reponse non JSON (\" + pm.response.code + \") : jeton non capture\");",
+                  "}",
+                  "if (json.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", json.accessToken);",
+                  "    console.log(\"accessToken enregistré\");",
+                  "}",
+                  "if (json.refreshToken) {",
+                  "    pm.collectionVariables.set(\"refreshToken\", json.refreshToken);",
+                  "}",
+                  "if (json.token) {",
+                  "    pm.collectionVariables.set(\"maintenanceToken\", json.token);",
+                  "}",
+                  "",
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/admin/totp/enroll",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/admin/totp/enroll",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "admin",
+                "totp",
+                "enroll"
+              ]
+            },
+            "description": "Handler : enrollTotp\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{adminPhone}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"totpCode\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/admin/totp/reset",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/admin/totp/reset",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "admin",
+                "totp",
+                "reset"
+              ]
+            },
+            "description": "Handler : reinitialiserTotp\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{adminPhone}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"totpCode\": \"{{totpCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AdminSms",
+      "description": "Contrôleur `AdminSmsController` — base `/admin/sms`",
+      "item": [
+        {
+          "name": "GET /admin/sms/solde",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/sms/solde",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "sms",
+                "solde"
+              ]
+            },
+            "description": "Handler : consulterSolde\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/sms/url-de-rappel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/sms/url-de-rappel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "sms",
+                "url-de-rappel"
+              ]
+            },
+            "description": "Handler : declarerUrlDeRappel\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Audit",
+      "description": "Contrôleur `AuditController` — base `/admin/audit`",
+      "item": [
+        {
+          "name": "GET /admin/audit/logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/audit/logs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "audit",
+                "logs"
+              ]
+            },
+            "description": "Handler : getRecentLogs\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /admin/audit/logs/user/{userId}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/audit/logs/user/:userId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "audit",
+                "logs",
+                "user",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}",
+                  "description": "Valeur de userId"
+                }
+              ]
+            },
+            "description": "Handler : getUserLogs\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/audit/logs/search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/audit/logs/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "audit",
+                "logs",
+                "search"
+              ]
+            },
+            "description": "Handler : searchLogsByPhone\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{phoneNumber}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /admin/audit/failed-attempts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/audit/failed-attempts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "audit",
+                "failed-attempts"
+              ]
+            },
+            "description": "Handler : getFailedAttempts\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /admin/audit/security-stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/audit/security-stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "audit",
+                "security-stats"
+              ]
+            },
+            "description": "Handler : getSecurityStats\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /admin/audit/logs/cleanup",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/audit/logs/cleanup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "audit",
+                "logs",
+                "cleanup"
+              ]
+            },
+            "description": "Handler : cleanupOldLogs\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "description": "Contrôleur `AuthController` — base `/auth`",
+      "item": [
+        {
+          "name": "POST /auth/login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "login"
+              ]
+            },
+            "description": "Handler : login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{phoneNumber}}\",\n  \"identifier\": \"\",\n  \"password\": \"{{password}}\",\n  \"totpCode\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// L'analyse JSON est GARDEE.",
+                  "//",
+                  "// `pm.response.json()` LEVE quand la reponse n'est pas du JSON — un 403 du",
+                  "// filtre d'acces Gateway, un corps vide, une page d'erreur. Le script",
+                  "// s'interrompait alors avant les assertions, et Postman affichait une erreur de",
+                  "// script au lieu du statut reel : sur un echec de connexion, on ne voyait pas",
+                  "// POURQUOI.",
+                  "let json = {};",
+                  "try {",
+                  "    json = pm.response.json();",
+                  "} catch (e) {",
+                  "    console.log(\"Reponse non JSON (\" + pm.response.code + \") : jeton non capture\");",
+                  "}",
+                  "if (json.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", json.accessToken);",
+                  "    console.log(\"accessToken enregistré\");",
+                  "}",
+                  "if (json.refreshToken) {",
+                  "    pm.collectionVariables.set(\"refreshToken\", json.refreshToken);",
+                  "}",
+                  "if (json.token) {",
+                  "    pm.collectionVariables.set(\"maintenanceToken\", json.token);",
+                  "}",
+                  "",
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "logout"
+              ]
+            },
+            "description": "Handler : logout",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "refresh"
+              ]
+            },
+            "description": "Handler : refreshToken",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/forgot-password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "forgot-password"
+              ]
+            },
+            "description": "Handler : forgotPassword",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{phoneNumber}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/reset-password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "reset-password"
+              ]
+            },
+            "description": "Handler : resetPassword",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{phoneNumber}}\",\n  \"code\": \"123456\",\n  \"newPassword\": \"{{password}}\",\n  \"confirmPassword\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/resend-code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/resend-code",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "resend-code"
+              ]
+            },
+            "description": "Handler : resendCode",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{phoneNumber}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "profile"
+              ]
+            },
+            "description": "Handler : getProfile"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /auth/profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "profile"
+              ]
+            },
+            "description": "Handler : updateProfile",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"email\": \"{{email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/phone/auth-request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/phone/auth-request",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "phone",
+                "auth-request"
+              ]
+            },
+            "description": "Handler : requestPhoneAuth",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{phoneNumber}}\",\n  \"countryCode\": \"+223\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/phone/auth-verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/phone/auth-verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "phone",
+                "auth-verify"
+              ]
+            },
+            "description": "Handler : verifyPhoneAuth",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{phoneNumber}}\",\n  \"otp\": \"123456\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// L'analyse JSON est GARDEE.",
+                  "//",
+                  "// `pm.response.json()` LEVE quand la reponse n'est pas du JSON — un 403 du",
+                  "// filtre d'acces Gateway, un corps vide, une page d'erreur. Le script",
+                  "// s'interrompait alors avant les assertions, et Postman affichait une erreur de",
+                  "// script au lieu du statut reel : sur un echec de connexion, on ne voyait pas",
+                  "// POURQUOI.",
+                  "let json = {};",
+                  "try {",
+                  "    json = pm.response.json();",
+                  "} catch (e) {",
+                  "    console.log(\"Reponse non JSON (\" + pm.response.code + \") : jeton non capture\");",
+                  "}",
+                  "if (json.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", json.accessToken);",
+                  "    console.log(\"accessToken enregistré\");",
+                  "}",
+                  "if (json.refreshToken) {",
+                  "    pm.collectionVariables.set(\"refreshToken\", json.refreshToken);",
+                  "}",
+                  "if (json.token) {",
+                  "    pm.collectionVariables.set(\"maintenanceToken\", json.token);",
+                  "}",
+                  "",
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/phone/register-request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/phone/register-request",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "phone",
+                "register-request"
+              ]
+            },
+            "description": "Handler : requestPhoneRegister",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{phoneNumber}}\",\n  \"countryCode\": \"+223\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/phone/register-verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/phone/register-verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "phone",
+                "register-verify"
+              ]
+            },
+            "description": "Handler : verifyPhoneRegister",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{phoneNumber}}\",\n  \"otp\": \"123456\",\n  \"password\": \"{{password}}\",\n  \"desiredRole\": \"USER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// L'analyse JSON est GARDEE.",
+                  "//",
+                  "// `pm.response.json()` LEVE quand la reponse n'est pas du JSON — un 403 du",
+                  "// filtre d'acces Gateway, un corps vide, une page d'erreur. Le script",
+                  "// s'interrompait alors avant les assertions, et Postman affichait une erreur de",
+                  "// script au lieu du statut reel : sur un echec de connexion, on ne voyait pas",
+                  "// POURQUOI.",
+                  "let json = {};",
+                  "try {",
+                  "    json = pm.response.json();",
+                  "} catch (e) {",
+                  "    console.log(\"Reponse non JSON (\" + pm.response.code + \") : jeton non capture\");",
+                  "}",
+                  "if (json.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", json.accessToken);",
+                  "    console.log(\"accessToken enregistré\");",
+                  "}",
+                  "if (json.refreshToken) {",
+                  "    pm.collectionVariables.set(\"refreshToken\", json.refreshToken);",
+                  "}",
+                  "if (json.token) {",
+                  "    pm.collectionVariables.set(\"maintenanceToken\", json.token);",
+                  "}",
+                  "",
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/email/auth-request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/email/auth-request",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "email",
+                "auth-request"
+              ]
+            },
+            "description": "Handler : requestEmailAuth",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/email/auth-verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/email/auth-verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "email",
+                "auth-verify"
+              ]
+            },
+            "description": "Handler : verifyEmailAuth",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"otp\": \"123456\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// L'analyse JSON est GARDEE.",
+                  "//",
+                  "// `pm.response.json()` LEVE quand la reponse n'est pas du JSON — un 403 du",
+                  "// filtre d'acces Gateway, un corps vide, une page d'erreur. Le script",
+                  "// s'interrompait alors avant les assertions, et Postman affichait une erreur de",
+                  "// script au lieu du statut reel : sur un echec de connexion, on ne voyait pas",
+                  "// POURQUOI.",
+                  "let json = {};",
+                  "try {",
+                  "    json = pm.response.json();",
+                  "} catch (e) {",
+                  "    console.log(\"Reponse non JSON (\" + pm.response.code + \") : jeton non capture\");",
+                  "}",
+                  "if (json.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", json.accessToken);",
+                  "    console.log(\"accessToken enregistré\");",
+                  "}",
+                  "if (json.refreshToken) {",
+                  "    pm.collectionVariables.set(\"refreshToken\", json.refreshToken);",
+                  "}",
+                  "if (json.token) {",
+                  "    pm.collectionVariables.set(\"maintenanceToken\", json.token);",
+                  "}",
+                  "",
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/email/register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/email/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "email",
+                "register"
+              ]
+            },
+            "description": "Handler : requestEmailRegister",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/email/register-verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/email/register-verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "email",
+                "register-verify"
+              ]
+            },
+            "description": "Handler : verifyEmailRegister",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"otp\": \"123456\",\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"phoneNumber\": \"{{phoneNumber}}\",\n  \"countryCode\": \"+223\",\n  \"password\": \"{{password}}\",\n  \"desiredRole\": \"USER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// L'analyse JSON est GARDEE.",
+                  "//",
+                  "// `pm.response.json()` LEVE quand la reponse n'est pas du JSON — un 403 du",
+                  "// filtre d'acces Gateway, un corps vide, une page d'erreur. Le script",
+                  "// s'interrompait alors avant les assertions, et Postman affichait une erreur de",
+                  "// script au lieu du statut reel : sur un echec de connexion, on ne voyait pas",
+                  "// POURQUOI.",
+                  "let json = {};",
+                  "try {",
+                  "    json = pm.response.json();",
+                  "} catch (e) {",
+                  "    console.log(\"Reponse non JSON (\" + pm.response.code + \") : jeton non capture\");",
+                  "}",
+                  "if (json.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", json.accessToken);",
+                  "    console.log(\"accessToken enregistré\");",
+                  "}",
+                  "if (json.refreshToken) {",
+                  "    pm.collectionVariables.set(\"refreshToken\", json.refreshToken);",
+                  "}",
+                  "if (json.token) {",
+                  "    pm.collectionVariables.set(\"maintenanceToken\", json.token);",
+                  "}",
+                  "",
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/oauth2/authorize/{provider}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/oauth2/authorize/:provider",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "oauth2",
+                "authorize",
+                ":provider"
+              ],
+              "variable": [
+                {
+                  "key": "provider",
+                  "value": "{{provider}}",
+                  "description": "Valeur de provider"
+                }
+              ]
+            },
+            "description": "Handler : initiateOAuth2"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/oauth2/callback/{provider}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/oauth2/callback/:provider",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "oauth2",
+                "callback",
+                ":provider"
+              ],
+              "variable": [
+                {
+                  "key": "provider",
+                  "value": "{{provider}}",
+                  "description": "Valeur de provider"
+                }
+              ]
+            },
+            "description": "Handler : handleOAuth2CallbackGet"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/oauth2/callback/{provider}",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/oauth2/callback/:provider",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "oauth2",
+                "callback",
+                ":provider"
+              ],
+              "variable": [
+                {
+                  "key": "provider",
+                  "value": "{{provider}}",
+                  "description": "Valeur de provider"
+                }
+              ]
+            },
+            "description": "Handler : handleOAuth2CallbackFormPost"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/oauth2/callback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/oauth2/callback",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "oauth2",
+                "callback"
+              ]
+            },
+            "description": "Handler : handleOAuth2Callback",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"code-autorisation-du-fournisseur\",\n  \"provider\": \"google\",\n  \"state\": \"etat-anti-csrf\",\n  \"redirectUri\": \"{{baseUrl}}/auth/oauth2/callback\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/oauth2/exchange",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/oauth2/exchange",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "oauth2",
+                "exchange"
+              ]
+            },
+            "description": "Handler : echangerLeCodeDeRemise",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/oauth2/complete-profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tempToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/oauth2/complete-profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "oauth2",
+                "complete-profile"
+              ]
+            },
+            "description": "Handler : completeOAuth2Profile",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{phoneNumber}}\",\n  \"countryCode\": \"+223\",\n  \"email\": \"{{email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AuthenticationLog",
+      "description": "Contrôleur `AuthenticationLogController` — base `/admin/logs`",
+      "item": [
+        {
+          "name": "GET /admin/logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/logs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "logs"
+              ]
+            },
+            "description": "Handler : getAllLogs\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /admin/logs/user/{userId}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/logs/user/:userId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "logs",
+                "user",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}",
+                  "description": "Valeur de userId"
+                }
+              ]
+            },
+            "description": "Handler : getLogsByUserId\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/logs/search/by-phone",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/logs/search/by-phone",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "logs",
+                "search",
+                "by-phone"
+              ]
+            },
+            "description": "Handler : searchLogsByPhoneNumber\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{phoneNumber}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /admin/logs/event/{eventType}/status/{status}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/logs/event/:eventType/status/:status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "logs",
+                "event",
+                ":eventType",
+                "status",
+                ":status"
+              ],
+              "variable": [
+                {
+                  "key": "eventType",
+                  "value": "{{eventType}}",
+                  "description": "Valeur de eventType"
+                },
+                {
+                  "key": "status",
+                  "value": "{{status}}",
+                  "description": "Valeur de status"
+                }
+              ]
+            },
+            "description": "Handler : getLogsByEventAndStatus\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /admin/logs/cleanup",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/logs/cleanup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "logs",
+                "cleanup"
+              ]
+            },
+            "description": "Handler : cleanupOldLogs\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/logs/filter",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/logs/filter",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "logs",
+                "filter"
+              ]
+            },
+            "description": "Handler : filterLogs\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventType\": \"LOGIN\",\n  \"status\": \"FAILED\",\n  \"page\": 0,\n  \"size\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /admin/logs/by-status/{status}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/logs/by-status/:status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "logs",
+                "by-status",
+                ":status"
+              ],
+              "variable": [
+                {
+                  "key": "status",
+                  "value": "{{status}}",
+                  "description": "Valeur de status"
+                }
+              ]
+            },
+            "description": "Handler : getLogsByStatus\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /admin/logs/by-event/{eventType}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/logs/by-event/:eventType",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "logs",
+                "by-event",
+                ":eventType"
+              ],
+              "variable": [
+                {
+                  "key": "eventType",
+                  "value": "{{eventType}}",
+                  "description": "Valeur de eventType"
+                }
+              ]
+            },
+            "description": "Handler : getLogsByEventType\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/logs/search/by-ip",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/logs/search/by-ip",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "logs",
+                "search",
+                "by-ip"
+              ]
+            },
+            "description": "Handler : searchLogsByIpAddress\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ipAddress\": \"203.0.113.7\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /admin/logs/by-date-range",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/logs/by-date-range",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "logs",
+                "by-date-range"
+              ]
+            },
+            "description": "Handler : getLogsByDateRange\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /admin/logs/stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/logs/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "logs",
+                "stats"
+              ]
+            },
+            "description": "Handler : getLogStatistics\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "BiometricAuth",
+      "description": "Contrôleur `BiometricAuthController` — base `/auth/biometric`",
+      "item": [
+        {
+          "name": "POST /auth/biometric/register/initiate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/biometric/register/initiate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "biometric",
+                "register",
+                "initiate"
+              ]
+            },
+            "description": "Handler : initiateRegistration"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/biometric/register/complete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/biometric/register/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "biometric",
+                "register",
+                "complete"
+              ]
+            },
+            "description": "Handler : completeRegistration",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"FINGERPRINT\",\n  \"credentialId\": \"identifiant-de-la-credential\",\n  \"publicKey\": \"\",\n  \"attestationObject\": \"attestation-base64url\",\n  \"clientDataJSON\": \"donnees-client-base64url\",\n  \"deviceName\": \"iPhone de test\",\n  \"challenge\": \"defi-de-register/initiate\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/biometric/authenticate/initiate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/biometric/authenticate/initiate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "biometric",
+                "authenticate",
+                "initiate"
+              ]
+            },
+            "description": "Handler : initiateAuthentication",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{phoneNumber}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/biometric/authenticate/verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/biometric/authenticate/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "biometric",
+                "authenticate",
+                "verify"
+              ]
+            },
+            "description": "Handler : verifyAuthentication",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"credentialId\": \"identifiant-de-la-credential\",\n  \"authenticatorData\": \"donnees-authentificateur-base64url\",\n  \"clientDataJSON\": \"donnees-client-base64url\",\n  \"signature\": \"signature-base64url\",\n  \"challenge\": \"defi-de-authenticate/initiate\",\n  \"userHandle\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/biometric/credentials",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/biometric/credentials",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "biometric",
+                "credentials"
+              ]
+            },
+            "description": "Handler : getUserCredentials"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /auth/biometric/credentials/{credentialId}",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/biometric/credentials/:credentialId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "biometric",
+                "credentials",
+                ":credentialId"
+              ],
+              "variable": [
+                {
+                  "key": "credentialId",
+                  "value": "{{credentialId}}",
+                  "description": "Valeur de credentialId"
+                }
+              ]
+            },
+            "description": "Handler : deleteCredential"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /auth/biometric/credentials",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/biometric/credentials",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "biometric",
+                "credentials"
+              ]
+            },
+            "description": "Handler : deleteAllCredentials"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/biometric/has-credentials",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/biometric/has-credentials",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "biometric",
+                "has-credentials"
+              ]
+            },
+            "description": "Handler : hasActiveCredentials"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "CompteUtilisateur",
+      "description": "Contrôleur `CompteUtilisateurController` — base `/auth`",
+      "item": [
+        {
+          "name": "POST /auth/password/change",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/password/change",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "password",
+                "change"
+              ]
+            },
+            "description": "Handler : changerMotDePasse",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/totp/enroll",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/totp/enroll",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "totp",
+                "enroll"
+              ]
+            },
+            "description": "Handler : demarrerLeSecondFacteur"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/totp/confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/totp/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "totp",
+                "confirm"
+              ]
+            },
+            "description": "Handler : confirmerLeSecondFacteur",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /auth/totp",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/totp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "totp"
+              ]
+            },
+            "description": "Handler : desactiverLeSecondFacteur"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/sessions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "sessions"
+              ]
+            },
+            "description": "Handler : sessions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /auth/sessions/{sessionId}",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/sessions/:sessionId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "sessions",
+                ":sessionId"
+              ],
+              "variable": [
+                {
+                  "key": "sessionId",
+                  "value": "{{sessionId}}",
+                  "description": "Valeur de sessionId"
+                }
+              ]
+            },
+            "description": "Handler : fermerUneSession"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /auth/sessions",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "sessions"
+              ]
+            },
+            "description": "Handler : fermerLesSessions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/email/confirm-request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/email/confirm-request",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "email",
+                "confirm-request"
+              ]
+            },
+            "description": "Handler : demanderConfirmationEmail",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/email/confirm-verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/email/confirm-verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "email",
+                "confirm-verify"
+              ]
+            },
+            "description": "Handler : confirmerEmail",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/phone/confirm-request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/phone/confirm-request",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "phone",
+                "confirm-request"
+              ]
+            },
+            "description": "Handler : demanderConfirmationTelephone",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/phone/confirm-verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/phone/confirm-verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "phone",
+                "confirm-verify"
+              ]
+            },
+            "description": "Handler : confirmerTelephone",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/trusted-devices",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/trusted-devices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "trusted-devices"
+              ]
+            },
+            "description": "Handler : accorderLaConfiance",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/trusted-devices",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/trusted-devices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "trusted-devices"
+              ]
+            },
+            "description": "Handler : appareilsDeConfiance"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /auth/trusted-devices/{appareilId}",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/trusted-devices/:appareilId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "trusted-devices",
+                ":appareilId"
+              ],
+              "variable": [
+                {
+                  "key": "appareilId",
+                  "value": "{{appareilId}}",
+                  "description": "Valeur de appareilId"
+                }
+              ]
+            },
+            "description": "Handler : revoquerUnAppareil"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /auth/trusted-devices",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/trusted-devices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "trusted-devices"
+              ]
+            },
+            "description": "Handler : revoquerTousLesAppareils"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/backup-codes",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/backup-codes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "backup-codes"
+              ]
+            },
+            "description": "Handler : regenererLesCodesDeSecours",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/backup-codes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/backup-codes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "backup-codes"
+              ]
+            },
+            "description": "Handler : etatDesCodesDeSecours"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/phone/change-request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/phone/change-request",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "phone",
+                "change-request"
+              ]
+            },
+            "description": "Handler : demanderChangementDeNumero",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/phone/change-verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/phone/change-verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "phone",
+                "change-verify"
+              ]
+            },
+            "description": "Handler : confirmerChangementDeNumero",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/alerts/new-login",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/alerts/new-login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "alerts",
+                "new-login"
+              ]
+            },
+            "description": "Handler : etatDeLalerteDeConnexion"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// L'analyse JSON est GARDEE.",
+                  "//",
+                  "// `pm.response.json()` LEVE quand la reponse n'est pas du JSON — un 403 du",
+                  "// filtre d'acces Gateway, un corps vide, une page d'erreur. Le script",
+                  "// s'interrompait alors avant les assertions, et Postman affichait une erreur de",
+                  "// script au lieu du statut reel : sur un echec de connexion, on ne voyait pas",
+                  "// POURQUOI.",
+                  "let json = {};",
+                  "try {",
+                  "    json = pm.response.json();",
+                  "} catch (e) {",
+                  "    console.log(\"Reponse non JSON (\" + pm.response.code + \") : jeton non capture\");",
+                  "}",
+                  "if (json.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", json.accessToken);",
+                  "    console.log(\"accessToken enregistré\");",
+                  "}",
+                  "if (json.refreshToken) {",
+                  "    pm.collectionVariables.set(\"refreshToken\", json.refreshToken);",
+                  "}",
+                  "if (json.token) {",
+                  "    pm.collectionVariables.set(\"maintenanceToken\", json.token);",
+                  "}",
+                  "",
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /auth/alerts/new-login",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/alerts/new-login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "alerts",
+                "new-login"
+              ]
+            },
+            "description": "Handler : changerLalerteDeConnexion",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// L'analyse JSON est GARDEE.",
+                  "//",
+                  "// `pm.response.json()` LEVE quand la reponse n'est pas du JSON — un 403 du",
+                  "// filtre d'acces Gateway, un corps vide, une page d'erreur. Le script",
+                  "// s'interrompait alors avant les assertions, et Postman affichait une erreur de",
+                  "// script au lieu du statut reel : sur un echec de connexion, on ne voyait pas",
+                  "// POURQUOI.",
+                  "let json = {};",
+                  "try {",
+                  "    json = pm.response.json();",
+                  "} catch (e) {",
+                  "    console.log(\"Reponse non JSON (\" + pm.response.code + \") : jeton non capture\");",
+                  "}",
+                  "if (json.accessToken) {",
+                  "    pm.collectionVariables.set(\"accessToken\", json.accessToken);",
+                  "    console.log(\"accessToken enregistré\");",
+                  "}",
+                  "if (json.refreshToken) {",
+                  "    pm.collectionVariables.set(\"refreshToken\", json.refreshToken);",
+                  "}",
+                  "if (json.token) {",
+                  "    pm.collectionVariables.set(\"maintenanceToken\", json.token);",
+                  "}",
+                  "",
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/oauth2/accounts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/oauth2/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "oauth2",
+                "accounts"
+              ]
+            },
+            "description": "Handler : comptesSociaux"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /auth/oauth2/accounts/{provider}",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/oauth2/accounts/:provider",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "oauth2",
+                "accounts",
+                ":provider"
+              ],
+              "variable": [
+                {
+                  "key": "provider",
+                  "value": "{{provider}}",
+                  "description": "Valeur de provider"
+                }
+              ]
+            },
+            "description": "Handler : delierCompteSocial"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/oauth2/providers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/oauth2/providers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "oauth2",
+                "providers"
+              ]
+            },
+            "description": "Handler : fournisseursDisponibles"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Erasure",
+      "description": "Contrôleur `ErasureController` — base `/auth/erasure`",
+      "item": [
+        {
+          "name": "POST /auth/erasure/me",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/erasure/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "erasure",
+                "me"
+              ]
+            },
+            "description": "Handler : erasePersonalData"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/erasure/{subjectId}",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/erasure/:subjectId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "erasure",
+                ":subjectId"
+              ],
+              "variable": [
+                {
+                  "key": "subjectId",
+                  "value": "{{subjectId}}",
+                  "description": "Valeur de subjectId"
+                }
+              ]
+            },
+            "description": "Handler : eraseFor"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/erasure/{requestId}/status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-sdk/erasure/:requestId/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-sdk",
+                "erasure",
+                ":requestId",
+                "status"
+              ],
+              "variable": [
+                {
+                  "key": "requestId",
+                  "value": "{{requestId}}",
+                  "description": "Valeur de requestId"
+                }
+              ]
+            },
+            "description": "Handler : status"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "InternalAuth",
+      "description": "Contrôleur `InternalAuthController` — base `/internal/auth`",
+      "item": [
+        {
+          "name": "GET /internal/auth/users/{userId}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/auth/users/:userId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "auth",
+                "users",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}",
+                  "description": "Valeur de userId"
+                }
+              ]
+            },
+            "description": "Handler : getUserById"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /internal/auth/users/{userId}",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/auth/users/:userId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "auth",
+                "users",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}",
+                  "description": "Valeur de userId"
+                }
+              ]
+            },
+            "description": "Handler : deleteUser"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "MessageTemplate",
+      "description": "Contrôleur `MessageTemplateController` — base `/admin/templates`",
+      "item": [
+        {
+          "name": "GET /admin/templates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "templates"
+              ]
+            },
+            "description": "Handler : getAllTemplates\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/templates",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "templates"
+              ]
+            },
+            "description": "Handler : createTemplate\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateType\": \"SMS_VERIFICATION\",\n  \"subject\": \"Code de verification\",\n  \"content\": \"Votre code est {code}\",\n  \"description\": \"Gabarit d'essai\",\n  \"isActive\": true,\n  \"variables\": \"code\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /admin/templates/{templateId}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/templates/:templateId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "templates",
+                ":templateId"
+              ],
+              "variable": [
+                {
+                  "key": "templateId",
+                  "value": "{{templateId}}",
+                  "description": "Valeur de templateId"
+                }
+              ]
+            },
+            "description": "Handler : updateTemplate\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templateType\": \"SMS_VERIFICATION\",\n  \"subject\": \"Code de verification\",\n  \"content\": \"Votre code est {code}\",\n  \"description\": \"Gabarit modifie\",\n  \"isActive\": true,\n  \"variables\": \"code\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /admin/templates/{templateId}",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-admin/templates/:templateId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-admin",
+                "templates",
+                ":templateId"
+              ],
+              "variable": [
+                {
+                  "key": "templateId",
+                  "value": "{{templateId}}",
+                  "description": "Valeur de templateId"
+                }
+              ]
+            },
+            "description": "Handler : deleteTemplate\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "UserRoleManagement",
+      "description": "Contrôleur `UserRoleManagementController` — base `/auth-users`",
+      "item": [
+        {
+          "name": "POST /auth-users",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-users"
+              ]
+            },
+            "description": "Handler : ?\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth-users/{userId}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-users/:userId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-users",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}",
+                  "description": "Valeur de userId"
+                }
+              ]
+            },
+            "description": "Handler : ?"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth-users/{userId}/roles/{role}",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-users/:userId/roles/:role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-users",
+                ":userId",
+                "roles",
+                ":role"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}",
+                  "description": "Valeur de userId"
+                },
+                {
+                  "key": "role",
+                  "value": "{{role}}",
+                  "description": "Valeur de role"
+                }
+              ]
+            },
+            "description": "Handler : ?\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /auth-users/{userId}/roles/{role}",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-users/:userId/roles/:role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-users",
+                ":userId",
+                "roles",
+                ":role"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}",
+                  "description": "Valeur de userId"
+                },
+                {
+                  "key": "role",
+                  "value": "{{role}}",
+                  "description": "Valeur de role"
+                }
+              ]
+            },
+            "description": "Handler : ?\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /auth-users/{userId}/primary-role/{role}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-users/:userId/primary-role/:role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-users",
+                ":userId",
+                "primary-role",
+                ":role"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}",
+                  "description": "Valeur de userId"
+                },
+                {
+                  "key": "role",
+                  "value": "{{role}}",
+                  "description": "Valeur de role"
+                }
+              ]
+            },
+            "description": "Handler : ?\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth-users/by-role/{role}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth-users/by-role/:role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth-users",
+                "by-role",
+                ":role"
+              ],
+              "variable": [
+                {
+                  "key": "role",
+                  "value": "{{role}}",
+                  "description": "Valeur de role"
+                }
+              ]
+            },
+            "description": "Handler : ?\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081/api/v1"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "maintenanceToken",
+      "value": ""
+    },
+    {
+      "key": "email",
+      "value": "dev@example.com"
+    },
+    {
+      "key": "password",
+      "value": "SecurePass123!"
+    },
+    {
+      "key": "phoneNumber",
+      "value": "+22300000000"
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "adminPhone",
+      "value": ""
+    },
+    {
+      "key": "adminIdentifier",
+      "value": ""
+    },
+    {
+      "key": "adminPassword",
+      "value": ""
+    },
+    {
+      "key": "totpCode",
+      "value": ""
+    },
+    {
+      "key": "tempToken",
+      "value": ""
+    },
+    {
+      "key": "adminSecret",
+      "value": ""
+    },
+    {
+      "key": "maintenanceSecret",
+      "value": ""
+    }
+  ]
+}

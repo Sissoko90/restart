@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: quotas-service
+  profiles:
+    active: dev
+  config:
+    import: "optional:configserver:http://localhost:8888"
+  cloud:
+    config:
+      enabled: true
+      uri: http://localhost:8888
+      name: ${spring.application.name}
+      profile: ${spring.profiles.active}

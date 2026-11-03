@@ -1,0 +1,18 @@
+# ==========================================================
+# Propriétés de test - media-service
+# Valeurs factices pour les placeholders sans défaut.
+# ==========================================================
+
+minio:
+  endpoint: http://localhost:9000
+  access-key: test-access-key
+  secret-key: test-secret-key
+  bucket-name: test-bucket
+
+security:
+  gateway:
+    secret-key: test-gateway-secret-key
+
+encryption:
+  # 32 caractères, valeur factice réservée aux tests
+  master-key: test-encryption-master-key-32chr

@@ -1,0 +1,555 @@
+# ==========================================
+# CONFIGURATION DEV - Tous les Microservices
+# ==========================================
+# Ce fichier contient la configuration commune à tous les services
+# Les secrets sensibles sont dans .env
+# Les configs spécifiques sont dans {service}-dev.yml
+# ==========================================
+
+# Note: server.servlet.context-path est défini dans chaque {service}-dev.yml
+# Gateway: context-path: /
+# Autres services: context-path: /api/v1
+
+server:
+  # Timeouts harmonisés
+  tomcat:
+    connection-timeout: 20000
+    threads:
+      max: 200
+      min-spare: 10
+
+# ==========================================
+# NETTY CONFIGURATION - Services Réactifs
+# ==========================================
+# Configuration commune pour Gateway et Auth Service
+# Chargée depuis .env via @Value dans NettyConfig.java
+netty:
+  worker-threads: ${NETTY_WORKER_THREADS:0}  # 0 = auto-detect CPU cores
+  boss-threads: 1
+  connection-pool:
+    max-connections: ${NETTY_MAX_CONNECTIONS:500}
+    max-idle-time: ${NETTY_MAX_IDLE_TIME:20}
+    max-life-time: ${NETTY_MAX_LIFE_TIME:60}
+  # Configuration des sockets optimisée
+  socket:
+    backlog: ${NETTY_BACKLOG:1024}
+    receive-buffer-size: ${NETTY_RECEIVE_BUFFER:262144}  # 256KB
+    send-buffer-size: ${NETTY_SEND_BUFFER:262144}       # 256KB
+    tcp-nodelay: ${NETTY_TCP_NODELAY:true}
+    keep-alive: ${NETTY_KEEP_ALIVE:true}
+    so-reuseaddr: true
+    so-linger: 0
+  # Configuration des timeouts
+  timeouts:
+    connection: ${NETTY_CONNECTION_TIMEOUT:10000}  # ms
+    connect: ${NETTY_CONNECT_TIMEOUT:5000}         # ms
+    idle: ${NETTY_IDLE_TIMEOUT:60}                 # s
+    read: ${NETTY_READ_TIMEOUT:60}                 # s
+    write: ${NETTY_WRITE_TIMEOUT:60}               # s
+    response: ${NETTY_RESPONSE_TIMEOUT:10}         # s
+  # Configuration des channels
+  channel:
+    write-buffer-high-water-mark: 65536  # 64KB
+    write-buffer-low-water-mark: 32768   # 32KB
+    max-messages-per-read: 16
+    auto-read: true
+  # Configuration de compression
+  compression:
+    enabled: ${NETTY_COMPRESSION:true}
+    level: 6
+    window-bits: 15
+    mem-level: 8
+
+spring:
+  # ==========================================
+  # DATASOURCE / HIKARICP CONFIGURATION
+  # ==========================================
+  # Note: datasource.url, username, password sont chargés depuis .env via DotenvConfig
+  datasource:
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+  
+  # ==========================================
+  # JPA / HIBERNATE CONFIGURATION
+  # ==========================================
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+        use_sql_comments: true
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+    open-in-view: false
+  
+  # ==========================================
+  # KAFKA CONFIGURATION
+  # ==========================================
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+    listener:
+      ack-mode: manual
+  
+  # ==========================================
+  # CONSUL SERVICE DISCOVERY
+  # ==========================================
+  # Note: consul.host et consul.port sont chargés depuis .env via DotenvConfig
+  cloud:
+    consul:
+      discovery:
+        enabled: true
+        prefer-ip-address: true
+        health-check-interval: 10s
+        health-check-path: /actuator/health
+        instance-id: ${spring.application.name}:${random.value}
+        register: true
+        fail-fast: false
+  
+  # ==========================================
+  # REDIS CONFIGURATION
+  # ==========================================
+  # Note: redis.host, redis.port, redis.password sont chargés depuis .env via DotenvConfig
+  data:
+    redis:
+      timeout: 5000ms
+      connect-timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+          max-wait: 2000ms
+        shutdown-timeout: 100ms
+  
+  # Cache Configuration
+  cache:
+    type: redis
+    redis:
+      time-to-live: 600000  # 10 minutes
+      cache-null-values: false
+      key-prefix: "app:"
+      use-key-prefix: true
+  
+  # Spring Session Redis
+  session:
+    store-type: redis
+    redis:
+      namespace: "app:session"
+      flush-mode: on_save
+    timeout: 1800s  # 30 minutes
+
+# ==========================================
+# MANAGEMENT & ACTUATOR
+# ==========================================
+management:
+  endpoints:
+    web:
+      exposure:
+        # env, httptrace et loggers ont ete RETIRES de la liste PARTAGEE.
+        #
+        # Ce fichier s'applique a tous les services, et le filtre d'acces
+        # Gateway de cinq d'entre eux exemptait /actuator/ EN BLOC — pas
+        # seulement /actuator/health. Ces trois endpoints etaient donc
+        # joignables en direct, sans passer par le Gateway :
+        #
+        #   httptrace : les derniers echanges HTTP, en-tetes comprises. Un
+        #               jeton d'autorisation s'y retrouve.
+        #   loggers   : modifiable par POST. Permet de passer la securite en
+        #               DEBUG pour faire journaliser des donnees sensibles,
+        #               ou en OFF pour aveugler la supervision.
+        #   env       : la cartographie de la configuration.
+        #
+        # Un service qui en a besoin les redeclare dans son propre fichier,
+        # avec la regle Spring Security correspondante.
+        include: health,info,metrics,prometheus,circuitbreakers
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: always
+      enabled: true
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: diskSpace
+        liveness:
+          include: ping
+  # Export Prometheus.
+  #
+  # La clef est `management.prometheus.metrics.export`, et NON
+  # `management.metrics.export.prometheus` : les proprietes des registres ont
+  # ete deplacees en Spring Boot 3.0, et ce projet est en 4.0.1. L'ancienne
+  # forme etait donc ignoree — l'export fonctionnait quand meme, parce qu'il
+  # est actif par defaut des que le registre est sur le classpath, mais `step`
+  # ne s'appliquait pas.
+  #
+  # C'est le genre de configuration qui rassure sans rien faire : elle nomme un
+  # reglage, elle est lue par personne.
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+        step: 1m
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+    tags:
+      application: ${spring.application.name}
+      environment: dev
+  # Distributed Tracing
+  tracing:
+    sampling:
+      probability: 1.0  # 100% en dev, réduire en prod (0.1 = 10%)
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+# ==========================================
+# RESILIENCE4J - Résilience et Tolérance aux Pannes
+# ==========================================
+# Circuit Breaker: Arrête les appels vers un service défaillant
+# Retry: Réessaye automatiquement les opérations échouées
+# Rate Limiter: Limite le nombre de requêtes par période
+# Time Limiter: Timeout sur les opérations longues
+# Bulkhead: Isole les ressources pour éviter la saturation
+# ==========================================
+resilience4j:
+  # Circuit Breaker Configuration
+  circuitbreaker:
+    configs:
+      default:
+        registerHealthIndicator: true
+        slidingWindowSize: 10  # Fenêtre de 10 appels pour calculer le taux d'échec
+        minimumNumberOfCalls: 5  # Min 5 appels avant d'ouvrir le circuit
+        permittedNumberOfCallsInHalfOpenState: 3  # 3 appels de test en HALF_OPEN
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 30s  # Attendre 30s avant de passer en HALF_OPEN
+        failureRateThreshold: 50  # Ouvrir si 50% d'échecs
+        slowCallRateThreshold: 50  # Ouvrir si 50% d'appels lents
+        slowCallDurationThreshold: 3s  # Un appel est "lent" si > 3s
+        eventConsumerBufferSize: 10
+        recordExceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.client.ResourceAccessException
+          - org.springframework.web.client.HttpServerErrorException
+    instances:
+      # Circuit breaker pour services externes (SMS, Email)
+      externalService:
+        baseConfig: default
+        waitDurationInOpenState: 60s  # Plus long pour services externes
+        failureRateThreshold: 60
+      # Circuit breaker pour appels inter-services
+      internalService:
+        baseConfig: default
+        waitDurationInOpenState: 20s
+        failureRateThreshold: 40
+  
+  # Retry Configuration
+  retry:
+    configs:
+      default:
+        maxAttempts: 3  # 3 tentatives max (inclut l'appel initial)
+        waitDuration: 1s  # Attendre 1s entre les tentatives
+        enableExponentialBackoff: true  # Backoff exponentiel: 1s, 2s, 4s
+        exponentialBackoffMultiplier: 2
+        retryExceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.client.ResourceAccessException
+        ignoreExceptions:
+          - java.lang.IllegalArgumentException
+    instances:
+      externalService:
+        baseConfig: default
+        maxAttempts: 5  # Plus de tentatives pour services externes
+        waitDuration: 2s
+      internalService:
+        baseConfig: default
+  
+  # Time Limiter Configuration
+  timelimiter:
+    configs:
+      default:
+        timeoutDuration: 5s  # Timeout par défaut: 5s
+        cancelRunningFuture: true
+    instances:
+      externalService:
+        timeoutDuration: 10s  # Plus long pour services externes
+      internalService:
+        timeoutDuration: 3s  # Plus court pour appels internes
+  
+  # Bulkhead Configuration (Isolation des ressources)
+  bulkhead:
+    configs:
+      default:
+        maxConcurrentCalls: 10  # Max 10 appels concurrents
+        maxWaitDuration: 1s  # Attendre max 1s pour obtenir une permission
+    instances:
+      externalService:
+        maxConcurrentCalls: 5  # Limiter les appels externes
+      internalService:
+        maxConcurrentCalls: 20
+  
+  # Rate Limiter Configuration
+  ratelimiter:
+    configs:
+      default:
+        limitForPeriod: 100  # 100 requêtes par période
+        limitRefreshPeriod: 1s  # Période de 1 seconde
+        timeoutDuration: 0s  # Pas d'attente, refus immédiat
+    instances:
+      api:
+        limitForPeriod: 50  # Limiter les API publiques
+        limitRefreshPeriod: 1s
+      auth:
+        limitForPeriod: 20  # Plus restrictif pour l'auth
+        limitRefreshPeriod: 1s
+      otp:
+        limitForPeriod: 5  # Très restrictif pour les OTP
+        limitRefreshPeriod: 60s  # 5 OTP par minute max
+
+
+# ==========================================
+# CORS CONFIGURATION
+# ==========================================
+cors:
+  allowed-origins: http://localhost:3000,http://localhost:8080,http://localhost:4200
+  allowed-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
+  allowed-headers: "*"
+  exposed-headers: Authorization,X-Auth-User-Id,X-Service-Token
+  allow-credentials: true
+  max-age: 3600  # Cache CORS preflight pendant 1h
+
+# ==========================================
+# LOGGING CONFIGURATION
+# ==========================================
+logging:
+  level:
+    root: INFO
+    com.abdatytch: DEBUG
+    org.springframework.web: INFO
+    org.springframework.security: INFO
+
+    # Resilience4j en DEBUG produisait une douzaine de lignes au démarrage
+    # disant qu'AspectJ et RxJava2 ne sont pas au classpath — ce qui est normal
+    # et sans intérêt. Les transitions de disjoncteur, elles, sont journalisées
+    # par le code applicatif. Remettre à DEBUG seulement pour diagnostiquer la
+    # bibliothèque elle-même.
+    io.github.resilience4j: INFO
+
+    # Le résolveur DNS natif macOS est absent hors macOS et signale son absence
+    # au niveau ERROR, ce qui simule une panne. Voir le profil Maven `macos`
+    # dans le POM parent, qui fournit la bibliothèque.
+    io.netty.resolver.dns: WARN
+
+    # Note : les niveaux org.hibernate.SQL et BasicBinder ont été retirés.
+    # La persistance est passée en R2DBC (docs/AUTH-SERVICE-R2DBC-MIGRATION.md),
+    # ils ne produisaient plus aucune ligne.
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/${spring.application.name}.log
+    max-size: 10MB
+    max-history: 30
+
+# ==========================================
+# JWT CONFIGURATION
+# ==========================================
+jwt:
+  expiration: 86400000  # 24 heures en millisecondes
+  issuer: interface-service
+  audience: abdatech-developers,quotas-service,setting-service,media-service,user-service,gateway-service
+  refresh-expiration: 604800000  # 7 jours (en millisecondes)
+  # JWKS - Récupération des clés publiques depuis interface-service (développeurs)
+  jwks:
+    enabled: true
+    url: ${JWKS_URL:http://localhost:8088/dev/.well-known/jwks.json}
+    refresh-interval-seconds: ${JWKS_REFRESH_INTERVAL_SECONDS:300}
+
+# ==========================================
+# SECURITY CONFIGURATION AVANCÉE
+# ==========================================
+# Protection complète : ZIP bombs, IP blacklist, XSS, CSP, CORS, Rate limiting
+security:
+  # Protection contre les fichiers compressés malveillants
+  zipbomb:
+    enabled: ${ZIPBOMB_ENABLED:true}
+    max-compression-ratio: ${ZIPBOMB_MAX_COMPRESSION_RATIO:100}
+    max-uncompressed-size-mb: ${ZIPBOMB_MAX_UNCOMPRESSED_SIZE_MB:500}
+    max-entries: ${ZIPBOMB_MAX_ENTRIES:1000}
+    max-nested-depth: ${ZIPBOMB_MAX_NESTED_DEPTH:3}
+  
+  # Configuration IP Blacklist
+  ip-blacklist:
+    enabled: ${IP_BLACKLIST_ENABLED:true}
+    cache-ttl: ${IP_BLACKLIST_CACHE_TTL:1800}
+    max-attempts: ${IP_BLACKLIST_MAX_ATTEMPTS:5}
+    block-duration: ${IP_BLACKLIST_BLOCK_DURATION:3600}
+    redis-key-prefix: "blacklist:ip:"
+  
+  # Configuration Body & XSS Filtering
+  body-filter:
+    enabled: ${BODY_FILTER_ENABLED:true}
+    max-size: ${BODY_MAX_SIZE:10485760}  # 10MB
+    allowed-content-types:
+      - "application/json"
+      - "application/x-www-form-urlencoded"
+      - "multipart/form-data"
+      - "text/plain"
+  
+  xss-filter:
+    enabled: ${XSS_FILTER_ENABLED:true}
+    sanitize-html: ${XSS_SANITIZE_HTML:true}
+    block-scripts: ${XSS_BLOCK_SCRIPTS:true}
+    allowed-tags: "p,br,strong,em,ul,ol,li,h1,h2,h3,h4,h5,h6"
+    blocked-patterns:
+      - "<script[^>]*>.*?</script>"
+      - "javascript:"
+      - "vbscript:"
+      - "onload="
+      - "onerror="
+      - "onclick="
+  
+  # Configuration Request Filtering
+  request-filter:
+    enabled: ${REQUEST_FILTER_ENABLED:true}
+    max-headers: ${REQUEST_MAX_HEADERS:50}
+    max-header-size: ${REQUEST_MAX_HEADER_SIZE:8192}
+    max-uri-length: ${REQUEST_MAX_URI_LENGTH:2048}
+    blocked-user-agents:
+      - "curl"
+      - "wget"
+      - "python-requests"
+    blocked-extensions:
+      - ".php"
+      - ".asp"
+      - ".jsp"
+      - ".cgi"
+  
+  # Configuration Content Security Policy
+  csp:
+    enabled: ${CSP_ENABLED:true}
+    report-only: ${CSP_REPORT_ONLY:false}
+    report-uri: ${CSP_REPORT_URI:/security/csp-report}
+    directives:
+      default-src: "'self'"
+      script-src: "'self' 'unsafe-inline'"
+      style-src: "'self' 'unsafe-inline'"
+      img-src: "'self' data: https:"
+      font-src: "'self'"
+      connect-src: "'self'"
+      frame-ancestors: "'none'"
+  
+  # Configuration CORS Sécurisé
+  cors:
+    strict-mode: ${CORS_STRICT_MODE:true}
+    max-age: ${CORS_MAX_AGE:3600}
+    allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
+    allowed-origins:
+      - "http://localhost:3000"
+      - "http://localhost:8080"
+      - "http://localhost:8081"
+    allowed-methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "OPTIONS"
+    allowed-headers:
+      - "Authorization"
+      - "Content-Type"
+      - "X-Requested-With"
+      - "X-CSRF-Token"
+  
+  # Configuration Rate Limiting Global
+  rate-limit:
+    global-enabled: ${RATE_LIMIT_GLOBAL_ENABLED:true}
+    per-ip-requests: ${RATE_LIMIT_PER_IP_REQUESTS:100}
+    per-ip-window: ${RATE_LIMIT_PER_IP_WINDOW:60}
+    burst-capacity: ${RATE_LIMIT_BURST_CAPACITY:20}
+    redis-key-prefix: "rate_limit:"
+
+# ==========================================
+# ACCOUNT LOCKOUT CONFIGURATION
+# ==========================================
+auth:
+  lockout:
+    max-attempts: 5  # Nombre max de tentatives échouées
+    duration-minutes: 30  # Durée du verrouillage en minutes
+    attempt-window-minutes: 15  # Fenêtre de temps pour comptabiliser les tentatives
+
+# Configuration Loki (via logback-spring.xml)
+loki:
+  url: http://localhost:3100/loki/api/v1/push
+
+
+# ==========================================================
+# DURÉES DE CONSERVATION DES DONNÉES PERSONNELLES
+# ==========================================================
+# Le RGPD (art. 5.1.e) impose une conservation limitée à ce qui est
+# nécessaire à la finalité. Ces durées doivent être communiquées aux
+# personnes concernées : elles ne peuvent pas rester implicites.
+#
+# ⚠️ ÉTAT D'APPLICATION — à lire avant de s'y fier :
+#   APPLIQUÉE  = une purge automatique l'exécute
+#   DÉCLARÉE   = la valeur est fixée mais RIEN ne la fait respecter
+#
+# Une durée déclarée sans purge ne protège personne. Elle sert de
+# spécification à l'implémentation, pas de preuve de conformité.
+# ==========================================================
+data-retention:
+
+  # APPLIQUÉE — expiration courte gérée par le service
+  verification-codes-minutes: 10
+
+  # APPLIQUÉE — TTL Redis
+  revoked-tokens-days: 7
+
+  # APPLIQUÉE — DocumentExpirationScheduler
+  kyc-documents-days: 1095        # 3 ans après validation
+
+  # APPLIQUÉE — ScheduledTasksConfig (auth-service), dimanche 3h
+  authentication-logs-days: 365   # sécurité et antifraude
+
+  # APPLIQUÉE — RetentionPurgeScheduler (user-service), dimanche 4h
+  audit-logs-days: 1095           # traçabilité des actions d'administration
+
+  # DÉCLARÉE — aucune purge n'existe encore
+  inactive-account-days: 1095     # compte sans connexion : effacement proposé
+  usage-records-days: 730         # facturation ; à agréger ensuite sans identifiant
+
+  # Registre des effacements : conservé longtemps À DESSEIN.
+  # C'est la preuve de conformité (art. 5.2), et il ne contient aucune
+  # donnée personnelle — seulement des identifiants techniques devenus
+  # opaques une fois l'effacement fait.
+  erasure-registry-days: 3650
+
+# Services devant accuser réception d'un effacement pour qu'une demande
+# soit considérée comme terminée. Ajouter ici tout service détenant des
+# données personnelles : un oubli marquerait les demandes terminées à tort.
+erasure:
+  expected-services: user-service,media-service,quotas-service,setting-service,interface-service

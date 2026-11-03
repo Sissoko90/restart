@@ -1,0 +1,136 @@
+# ==========================================
+# SECURITY SERVICE - Configuration DEV
+# ==========================================
+# Service de la politique de sécurité : il DÉCIDE, le Gateway et auth-service
+# APPLIQUENT. La config commune est dans application-dev.yml.
+#
+# Ce que ce service détient, et que personne d'autre ne détient :
+#   - la politique de sécurité typée (seuils, durées, bascules)
+#   - les pays refusés, par code ISO
+#   - les règles de blocage d'adresses IP, avec motif et échéance
+#   - les fenêtres de maintenance, plateforme entière ou service par service
+#
+# Il publie tout cela dans Redis, et c'est de Redis que le Gateway et
+# auth-service le lisent. Jamais un appel réseau par requête : une décision de
+# sécurité sur le chemin d'une requête ne doit pas dépendre de la disponibilité
+# d'un service.
+# ==========================================
+
+server:
+  port: 8091
+
+# Pas de context-path : le Gateway route /api/v1/security/** et ce service
+# expose directement /security/**. Même convention que setting-service.
+
+spring:
+  application:
+    name: security-service
+  cloud:
+    consul:
+      discovery:
+        health-check-path: /actuator/health/liveness
+
+  # Configuration R2DBC pour PostgreSQL (réactif)
+  #
+  # Base SÉPARÉE de celles des autres services, comme pour chacun d'eux. La
+  # politique de sécurité n'est pas une table de plus dans setting_service_db :
+  # les deux services ont des cycles de vie et des droits d'accès distincts.
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_SECURITY:security_service_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    pool:
+      enabled: true
+      initial-size: 5
+      max-size: 20
+      max-idle-time: 30m
+      validation-query: SELECT 1
+
+  # Schéma versionné par Flyway (Flyway n'a pas d'API réactive : il passe par
+  # JDBC au démarrage uniquement)
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_SECURITY:security_service_db}
+    user: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  # Redis : la sortie du service, et non un cache.
+  #
+  # La distinction compte pour l'exploitation. Un cache perdu se reconstruit
+  # sans conséquence ; ici, une base Redis vide signifie « aucun pays refusé,
+  # aucune IP bloquée, aucune maintenance ». La republication périodique
+  # ci-dessous est ce qui rend cette perte temporaire, et c'est pour cela
+  # qu'elle n'est pas facultative.
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+# ==========================================================
+# JWT - audience propre au service (voir docs/JWT-CONTRACT.md)
+# ==========================================================
+jwt:
+  audience: security-service
+
+# ==========================================================
+# GATEWAY SECURITY
+# ==========================================================
+gateway:
+  secret:
+    key: ${GATEWAY_SECRET_KEY}
+
+# Configuration OpenAPI/Swagger
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+  show-actuator: true
+
+# Configuration Resilience4j
+resilience4j:
+  ratelimiter:
+    instances:
+      securityService:
+        limitForPeriod: 100
+        limitRefreshPeriod: 1s
+        timeoutDuration: 0s
+  circuitbreaker:
+    instances:
+      securityService:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 5s
+        failureRateThreshold: 50
+        eventConsumerBufferSize: 10
+
+# ==========================================================
+# Publication de la politique vers Redis
+# ==========================================================
+security:
+  publication:
+    # Toutes les cinq minutes, en plus d'une publication au démarrage.
+    #
+    # La périodicité n'est pas une précaution de confort : c'est le seul
+    # mécanisme qui répare une base Redis vidée, redémarrée ou expirée. Sans
+    # elle, une perte de Redis laisserait la plateforme sans aucun pays refusé
+    # ni aucune IP bloquée jusqu'au prochain redémarrage de ce service — et
+    # rien ne le signalerait, puisque tout continuerait de fonctionner.
+    #
+    # Cinq minutes est le délai maximal pendant lequel une décision de sécurité
+    # peut rester inappliquée après une perte de Redis. Une écriture par
+    # l'API, elle, publie immédiatement : ce cron ne retarde aucune décision.
+    cron: "0 */5 * * * *"

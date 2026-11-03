@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<parent>
+		<groupId>com.abdatytch</groupId>
+		<artifactId>abdatech-platform</artifactId>
+		<version>0.0.1-SNAPSHOT</version>
+		<relativePath>../pom.xml</relativePath>
+	</parent>
+
+	<artifactId>platform-commons</artifactId>
+	<name>Platform Commons</name>
+	<description>Socle sécurité partagé : JWKS, HMAC Gateway, comparaison de secrets</description>
+
+	<dependencies>
+		<!-- MaxMind GeoIP2 : LocalisationIp est le detenteur unique de la
+		     lecture des bases .mmdb pour toute la plateforme. Version geree
+		     par le POM parent. -->
+		<dependency>
+			<groupId>com.maxmind.geoip2</groupId>
+			<artifactId>geoip2</artifactId>
+		</dependency>
+
+		<!-- WebFlux : WebClient pour récupérer le JWKS + types réactifs -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-webflux</artifactId>
+		</dependency>
+
+		<!-- Auto-configuration Spring Boot -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-autoconfigure</artifactId>
+		</dependency>
+
+		<!-- JWT : uniquement l'API (Locator/JwsHeader), pas l'implémentation -->
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-api</artifactId>
+		</dependency>
+	
+		<!-- ResourceOwnershipGuard lit le contexte de securite reactif.
+		     Portee `provided` : tous les services consommateurs apportent deja
+		     spring-security, inutile de le leur imposer depuis ici. -->
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-core</artifactId>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- Tests : JwtClaimsReader est la lecture de rôle de TOUTE la plateforme.
+		     Une régression ici casse simultanément chaque service. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- jjwt-api ne fournit que les interfaces ; l'implémentation est requise
+		     pour construire des Claims dans les tests. -->
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-impl</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>io.projectreactor</groupId>
+			<artifactId>reactor-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- Attente de conditions asynchrones : le chargement JWKS est en
+		     arrière-plan, on ne peut pas l'observer par une assertion immédiate. -->
+		<dependency>
+			<groupId>org.awaitility</groupId>
+			<artifactId>awaitility</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-jackson</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<plugins>
+			<!-- Bibliothèque : pas de JAR exécutable -->
+			<plugin>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<skip>true</skip>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+</project>

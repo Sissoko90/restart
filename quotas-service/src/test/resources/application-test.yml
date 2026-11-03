@@ -1,0 +1,44 @@
+# ==========================================================
+# Propriétés de test - quotas-service
+# ==========================================================
+# Le test `contextLoads` ne doit pas exiger une Cassandra vivante :
+# on désactive l'auto-configuration Cassandra, ses templates réactifs
+# et l'enregistrement des repositories.
+# À remplacer par Testcontainers pour de vrais tests d'intégration.
+# ==========================================================
+
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.cassandra.autoconfigure.CassandraAutoConfiguration
+      - org.springframework.boot.data.cassandra.autoconfigure.DataCassandraAutoConfiguration
+      - org.springframework.boot.data.cassandra.autoconfigure.DataCassandraReactiveAutoConfiguration
+      - org.springframework.boot.data.cassandra.autoconfigure.DataCassandraReactiveRepositoriesAutoConfiguration
+      - org.springframework.boot.data.cassandra.autoconfigure.DataCassandraRepositoriesAutoConfiguration
+
+# ==========================================================
+# Le contexte de test ne doit dépendre NI d'un config-server,
+# NI d'un fichier .env. Sans ces valeurs, le test réussit ou
+# échoue selon qu'un config-server tourne par hasard sur le
+# poste — ce qui rend l'échec incompréhensible.
+# Aucune valeur réelle ici.
+# ==========================================================
+  cloud:
+    config:
+      enabled: false
+  config:
+    import: ""
+
+gateway:
+  secret:
+    key: test-gateway-secret-key
+
+jwt:
+  issuer: interface-service
+  audience: quotas-service
+  jwks:
+    # Laissé actif : JwksKeyProvider est requis par JwtAuthenticationWebFilter.
+    # Le désactiver retire le bean et fait échouer le chargement du contexte.
+    # La récupération des clés est différée, elle n'a donc pas lieu ici.
+    enabled: true
+    url: http://localhost:8088/dev/.well-known/jwks.json

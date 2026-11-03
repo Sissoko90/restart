@@ -1,0 +1,40 @@
+# ==========================================================
+# Propriétaires du code
+# ==========================================================
+# La protection de main exige l'approbation d'un CODEOWNER
+# (voir scripts/github/protect-main.sh).
+#
+# Une entrée plus BASSE l'emporte sur une plus haute : les chemins
+# sensibles sont donc listés en dernier.
+# ==========================================================
+
+# Par défaut
+*                                   @Sissoko90
+
+# ----------------------------------------------------------
+# Chemins sensibles — toute modification touche la sécurité
+# de l'ensemble de la plateforme
+# ----------------------------------------------------------
+
+# Lecture des claims partagée par tous les services : une erreur ici
+# casse simultanément l'authentification de chaque service.
+/platform-commons/                  @Sissoko90
+
+# Seul point d'entrée : filtres, chaîne de sécurité, routage.
+/gateway-service/src/main/java/com/abdatytch/gateway_service/security/   @Sissoko90
+/gateway-service/src/main/java/com/abdatytch/gateway_service/filter/     @Sissoko90
+
+# Autorité de signature JWT de toute la plateforme.
+/interface-service/src/main/java/com/abdatytch/interface_service/service/impl/DevJwtServiceImpl.java   @Sissoko90
+/interface-service/src/main/java/com/abdatytch/interface_service/service/impl/KeyRotationService*.java @Sissoko90
+
+# Chiffrement des pièces d'identité.
+/media-service/src/main/java/com/abdatytch/media_service/service/impl/UnifiedEncryptionServiceImpl.java @Sissoko90
+
+# Schémas : une migration fautive est difficile à défaire en production.
+**/src/main/resources/db/migration/  @Sissoko90
+
+# La chaîne de construction et les garde-fous eux-mêmes.
+/.github/                           @Sissoko90
+/scripts/                           @Sissoko90
+/pom.xml                            @Sissoko90

@@ -1,0 +1,79 @@
+# ==========================================================
+# Propriétés de test - auth-service
+# ==========================================================
+# Le test `contextLoads` ne doit PAS dépendre d'un config-server
+# ni d'un fichier .env : il fournit ici des valeurs factices pour
+# tous les placeholders sans défaut du code de production.
+# Aucune valeur réelle ne doit figurer dans ce fichier.
+# ==========================================================
+
+# Les seeders écrivent en base au démarrage : sans base, on les désactive
+app:
+  seeders:
+    enabled: false
+  # Valeur FACTICE : la vraie vient de config-repo.
+  frontend-url: http://front.test.local
+
+sms:
+  enabled: false
+  account-sid: test-account-sid
+  auth-token: test-auth-token
+  sender-id: test-sender
+
+oauth2:
+  google:
+    client-id: test-google-client-id
+    client-secret: test-google-client-secret
+    redirect-uri: http://localhost:8081/api/v1/auth/oauth2/callback/google
+  facebook:
+    client-id: test-facebook-client-id
+    client-secret: test-facebook-client-secret
+    redirect-uri: http://localhost:8081/api/v1/auth/oauth2/callback/facebook
+
+gateway:
+  url: http://localhost:8081
+  secret:
+    key: test-gateway-secret-key
+
+auth:
+  lockout:
+    max-attempts: 5
+    duration-minutes: 15
+    attempt-window-minutes: 15
+
+admin:
+  default:
+    phone: "+22300000000"
+    email: admin@test.local
+    password: TestAdmin123!
+    firstName: Test
+    lastName: Admin
+
+email:
+  enabled: false
+  from: noreply@test.local
+
+security:
+  internal-secret: test-internal-secret
+
+# ==========================================================
+# Base de données : R2DBC PostgreSQL en production.
+# En test, on désactive R2DBC et Flyway et on mocke les repositories
+# (voir AuthServiceApplicationTests). À remplacer par Testcontainers
+# pour de vrais tests d'intégration sur la persistance.
+# ==========================================================
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.r2dbc.autoconfigure.R2dbcAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.R2dbcDataAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.R2dbcRepositoriesAutoConfiguration
+      - org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration
+
+# WebAuthn : valeurs factices. Le verificateur exige rp-id et origin, sans
+# defaut — une valeur de repli trop permissive affaiblirait la verification
+# en production, ou ces deux champs decident quelle origine peut presenter
+# une assertion.
+webauthn:
+  rp-id: exemple.test
+  origin: https://exemple.test

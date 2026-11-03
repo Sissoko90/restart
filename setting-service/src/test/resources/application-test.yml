@@ -1,0 +1,16 @@
+# ==========================================================
+# Propriétés de test - setting-service
+# ==========================================================
+# Le test `contextLoads` ne doit pas exiger une base PostgreSQL vivante :
+# on désactive l'auto-configuration R2DBC (et son health check).
+# À remplacer par Testcontainers le jour où le service aura de vrais
+# tests d'intégration sur ses repositories.
+# ==========================================================
+
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.r2dbc.autoconfigure.R2dbcAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.R2dbcDataAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.R2dbcRepositoriesAutoConfiguration
+      - org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration
