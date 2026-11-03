@@ -1,4 +1,4 @@
-﻿# ==========================================================
+# ==========================================================
 # Analyse de sécurité
 # ==========================================================
 # Séparé de la CI parce que plus lent, et parce que certaines
@@ -175,7 +175,7 @@ jobs:
             -DfailBuildOnCVSS=7 \
             -Dformats=HTML,SARIF
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: rapport-owasp
@@ -205,7 +205,7 @@ jobs:
       - name: Vérifier la compatibilité avec une distribution propriétaire
         run: ./scripts/license-check.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: inventaire-licences
