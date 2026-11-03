@@ -103,9 +103,24 @@ spring.datasource:
   password: ${USER_DB_PASSWORD}
 
 # Fallback Redis
+#
+# Les deux valeurs portent desormais un DEFAUT, et ce n'est pas cosmetique : un
+# repli sans defaut n'est pas un repli.
+#
+# `port` est un ENTIER. Sans `.env` pour resoudre la substitution, Spring tentait
+# de convertir la chaine litterale « ${REDIS_PORT} » en int et le contexte
+# refusait de demarrer :
+#
+#   Failed to bind properties under 'spring.data.redis.port' to int
+#   NumberFormatException: For input string: "${REDIS_PORT}"
+#
+# Invisible en local — le `.env` du poste resolvait tout — et fatal sur le
+# runner d'integration continue, qui n'en a pas. C'est le meme ecart que celui
+# qui faisait passer un POM invalide : l'environnement de developpement masquait
+# le defaut.
 spring.data.redis:
-  host: ${REDIS_HOST}
-  port: ${REDIS_PORT}
+  host: ${REDIS_HOST:localhost}
+  port: ${REDIS_PORT:6379}
 
 # Fallback management
 management:

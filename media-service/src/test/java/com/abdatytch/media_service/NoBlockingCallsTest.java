@@ -66,10 +66,51 @@ class NoBlockingCallsTest {
      * crees par la vraie fabrique, quelle que soit l'histoire de la JVM avant
      * cette classe.
      */
+    /**
+     * Le chargement de classes est autorise, et il FAUT l'autoriser.
+     *
+     * <h3>Ce que son absence a produit</h3>
+     *
+     * {@code BlockHound.install()} arme la detection pour <b>toute la JVM</b>, et
+     * Surefire execute toutes les classes de test d'un module dans le meme fork.
+     * Les classes qui suivent celle-ci en heritent donc, qu'elles portent sur le
+     * non-blocage ou non.
+     *
+     * <p>Sur le runner d'integration continue, {@code ChaineReelleTest} a ainsi
+     * rendu <b>500 sur quinze requetes</b> :
+     *
+     * <pre>
+     * BlockingOperationError: Blocking call! java.io.RandomAccessFile#readBytes
+     *   at java.util.jar.JarFile.getEntry
+     *   at java.util.jar.JarFile.isMultiRelease
+     * </pre>
+     *
+     * Ce n'etait pas un appel bloquant du code : c'etait la JVM qui chargeait une
+     * classe depuis un JAR, <b>paresseusement</b>, au premier passage dans un
+     * chemin — sur une EventLoop.
+     *
+     * <h3>Pourquoi le defaut n'existait que sur le runner</h3>
+     *
+     * Parce qu'il depend de l'ORDRE des classes de test, qui depend de l'ordre de
+     * balayage du systeme de fichiers — et il n'est pas le meme sur macOS et sur
+     * Linux. En local, {@code ChaineReelleTest} passait avant l'installation de
+     * BlockHound ; sur le runner, apres. Le meme code, vert d'un cote et rouge de
+     * l'autre, sans qu'aucune ligne ne differe.
+     *
+     * <h3>Ce que cette autorisation ne masque pas</h3>
+     *
+     * Elle permet ce qui se produit <b>a l'interieur</b> de
+     * {@code ClassLoader.loadClass}. Un appel bloquant ecrit dans notre code
+     * reste detecte : il n'a aucune raison de se trouver sous un chargement de
+     * classe. Le risque residuel est un appel bloquant dans un initialiseur
+     * statique de dependance, ce qui est le compromis admis — une JVM charge ses
+     * classes depuis le disque, et aucune reecriture du code ne change cela.
+     */
     @BeforeAll
     static void installBlockHound() {
         Schedulers.shutdownNow();
-        BlockHound.install();
+        BlockHound.install(builder ->
+                builder.allowBlockingCallsInside("java.lang.ClassLoader", "loadClass"));
     }
 
     private ImageCompressionServiceImpl imageCompressionService;

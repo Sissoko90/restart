@@ -93,7 +93,20 @@ class NoBlockingCallsTest {
     @BeforeAll
     static void installerBlockHound() {
         Schedulers.shutdownNow();
-        BlockHound.install();
+        // Le chargement de classes est autorise. BlockHound arme la detection
+        // pour TOUTE la JVM, donc pour les classes de test qui suivent dans le
+        // meme fork Surefire. Sans cette autorisation, un chargement de classe
+        // paresseux depuis un JAR — RandomAccessFile#readBytes via
+        // JarFile.getEntry — fait echouer un test qui n'a rien a voir avec le
+        // non-blocage.
+        //
+        // Observe en integration continue sur media-service : quinze requetes
+        // en 500. Et le defaut depend de l'ORDRE des classes de test, donc de
+        // l'ordre de balayage du systeme de fichiers : vert sur macOS, rouge
+        // sur Linux, a code identique. Voir le javadoc de
+        // media-service/NoBlockingCallsTest pour le detail.
+        BlockHound.install(builder ->
+                builder.allowBlockingCallsInside("java.lang.ClassLoader", "loadClass"));
     }
 
     private ReactiveRedisTemplate<String, String> redis;
