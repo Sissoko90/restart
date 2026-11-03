@@ -1,4 +1,4 @@
-﻿# ==========================================================
+# ==========================================================
 # Revue des dépendances ajoutées par une PR
 # ==========================================================
 # Complète security.yml, qui analyse l'état du dépôt. Ici on regarde
@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/dependency-review-action@v5
         with:
           # Aligné sur la politique du projet : bloquer sur critique et élevé.
           fail-on-severity: high
