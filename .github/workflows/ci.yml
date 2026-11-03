@@ -1,4 +1,4 @@
-﻿# ==========================================================
+# ==========================================================
 # Intégration continue — compilation, tests, couverture
 # ==========================================================
 # Ce workflow est la porte d'entrée de toute modification.
@@ -55,7 +55,7 @@ jobs:
         run: mvn $MAVEN_ARGS verify
 
       - name: Publier les résultats de tests
-        uses: mikepenz/action-junit-report@v4
+        uses: mikepenz/action-junit-report@v5
         if: always()
         with:
           report_paths: '**/target/surefire-reports/TEST-*.xml'
