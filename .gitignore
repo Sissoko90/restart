@@ -52,6 +52,11 @@ vault-secrets*.sh
 
 # Maven
 target/
+
+# Arbre des dependances resolu par la CI avant l'analyse Trivy
+# (.github/workflows/security.yml). 425 JAR a la racine : lancer la meme
+# commande en local sans cette ligne les ferait entrer dans l'index.
+arbre-resolu/
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup

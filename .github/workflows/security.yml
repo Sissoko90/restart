@@ -108,17 +108,64 @@ jobs:
           distribution: temurin
           cache: maven
 
-      # Trivy lit directement les pom.xml : pas de clé d'API à gérer,
-      # contrairement à OWASP Dependency-Check qui dépend du NVD.
-      - name: Trivy — analyse du dépôt
+      # ------------------------------------------------------------------
+      # LE PERIMETRE DE L'ANALYSE EST RESOLU LOCALEMENT, ET C'EST LE POINT
+      # ------------------------------------------------------------------
+      # Trivy lisait les `pom.xml`. Pour connaitre l'arbre TRANSITIF il doit
+      # alors aller chercher les POM parents et les BOM sur Maven Central —
+      # et quand cette requete reseau echoue, il retombe sur les seules
+      # dependances DIRECTES sans le dire.
+      #
+      # Mesure sur deux executions consecutives, meme code, 40 minutes
+      # d'ecart :
+      #   2b5a2db : 14 pom.xml lus,  0 ligne de CVE  -> VERT
+      #   057a292 : 28 pom.xml lus, 756 lignes, 25 artefacts -> ROUGE
+      # Le commit intermediaire ne touchait aucune dependance.
+      #
+      # Un garde-fou bloquant qui passe ou echoue selon la chance reseau est
+      # pire qu'aucun garde-fou : il apprend a relancer jusqu'au vert. Et il
+      # masquait 4 CVE CRITIQUES qui etaient dans l'arbre depuis le debut.
+      #
+      # On resout donc l'arbre AVANT, avec Maven, puis Trivy analyse les JAR
+      # reellement produits. Le perimetre devient exactement ce qui est
+      # livre, il ne depend plus du reseau, et il est reproductible.
+      #
+      # Portee `runtime` : compile + runtime, sans test ni provided. Analyser
+      # les dependances de test signalerait des vulnerabilites qui
+      # n'atteignent jamais la production, et chaque faux positif erode la
+      # confiance dans la barriere.
+      - name: Resoudre l'arbre reel des dependances
+        run: |
+          mvn -B -ntp -DskipTests install \
+            dependency:copy-dependencies \
+            -DoutputDirectory="${{ github.workspace }}/arbre-resolu" \
+            -Dmdep.includeScope=runtime \
+            -Dmdep.useRepositoryLayout=false
+          echo "JAR resolus : $(ls -1 "${{ github.workspace }}/arbre-resolu"/*.jar | wc -l)"
+
+      # Un plancher, pour la meme raison que dans les gardes du depot : si la
+      # resolution echouait a moitie, Trivy analyserait trois JAR et rendrait
+      # vert. Un garde-fou doit echouer bruyamment, jamais silencieusement.
+      - name: Verifier que l'arbre a bien ete resolu
+        run: |
+          NB=$(ls -1 "${{ github.workspace }}/arbre-resolu"/*.jar 2>/dev/null | wc -l)
+          echo "JAR presents : $NB"
+          if [ "$NB" -lt 300 ]; then
+            echo "::error::Seulement $NB JAR resolus, attendu plus de 300."\
+                 "L'analyse porterait sur un perimetre tronque et rendrait un"\
+                 "vert trompeur."
+            exit 1
+          fi
+
+      - name: Trivy — vulnerabilites des artefacts livres
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
-          scan-ref: .
+          scan-ref: arbre-resolu
           format: sarif
           output: trivy.sarif
           severity: CRITICAL,HIGH,MEDIUM
-          scanners: vuln,secret,misconfig
+          scanners: vuln
 
       - name: Publier dans l'onglet Sécurité
         uses: github/codeql-action/upload-sarif@v3
@@ -127,12 +174,33 @@ jobs:
           sarif_file: trivy.sarif
           category: trivy
 
-      # Second passage, bloquant celui-là, restreint aux severités retenues.
-      - name: Trivy — blocage sur CRITICAL/HIGH
+      # Le depot lui-meme : secrets et defauts de configuration. Separe de
+      # l'analyse des dependances parce que son perimetre est le code source,
+      # pas l'arbre des artefacts — et parce qu'il ne depend d'aucune
+      # resolution, donc il est deterministe par nature.
+      - name: Trivy — secrets et configuration du depot
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
+          format: sarif
+          output: trivy-depot.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+          scanners: secret,misconfig
+
+      - name: Publier l'analyse du dépôt
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-depot.sarif
+          category: trivy-depot
+
+      # Passage bloquant, sur le meme perimetre resolu.
+      - name: Trivy — blocage sur CRITICAL/HIGH
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: arbre-resolu
           format: table
           severity: CRITICAL,HIGH
           ignore-unfixed: true
