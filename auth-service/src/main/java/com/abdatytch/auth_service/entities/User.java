@@ -72,8 +72,35 @@ public class User extends BaseEntity {
     @Column("totp_secret")
     private String totpSecret;
 
-    /** Vrai une fois l'enrolement effectue. Le secret n'est alors plus remis. */
+    /**
+     * Vrai une fois l'enrolement effectue. Le secret n'est alors plus remis.
+     *
+     * <h3>Pourquoi {@code @Builder.Default} et pas seulement l'affectation</h3>
+     *
+     * Sans cette annotation, Lombok <b>ignore</b> l'expression d'initialisation
+     * dans le builder : {@code User.builder()...build()} laissait ce champ a
+     * {@code null}, et non a {@code false}. Les quatre sites qui construisent un
+     * compte ainsi — l'inscription (deux chemins), l'inscription OAuth2 et
+     * l'attribution de role — ne le posent nulle part.
+     *
+     * <p>Or la colonne est {@code BOOLEAN NOT NULL DEFAULT FALSE}
+     * ({@code V3__admin_totp.sql}). Et PostgreSQL n'applique un DEFAULT que
+     * lorsque la colonne est <b>omise</b> de l'INSERT, pas lorsqu'on y envoie
+     * {@code NULL} explicitement — ce que fait Spring Data R2DBC, qui ecrit
+     * toutes les proprietes mappees.
+     *
+     * <p>La consequence a l'execution n'a pas pu etre mesuree ici : les tests de
+     * ce module n'ouvrent aucune base, et aucune instance ne tourne. La
+     * correction est juste independamment de cela — le champ vaut maintenant ce
+     * que sa declaration annonce — mais le dire autrement serait affirmer plus
+     * que ce qui a ete verifie.
+     *
+     * <p>Cote lecture, rien ne changeait : les neuf lectures passent par
+     * {@code Boolean.TRUE.equals(...)}, qui traite {@code null} comme
+     * « desactive ». C'est precisement ce qui rendait l'ecart silencieux.
+     */
     @Column("totp_enabled")
+    @Builder.Default
     private Boolean totpEnabled = false;
 
     @Column("role")

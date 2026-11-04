@@ -160,10 +160,93 @@ public class SecurityConfig {
                 
                 // Configuration OAuth2 Resource Server avec JWT
                 .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt.jwtDecoder(jwtDecoder()))
+                        .jwt(jwt -> jwt
+                                .jwtDecoder(jwtDecoder())
+                                .jwtAuthenticationConverter(convertisseurDeRoles()))
                 )
-                
+
                 .build();
+    }
+
+    /**
+     * Traduit le claim {@code roles} en autorités {@code ROLE_*}.
+     *
+     * <h3>Le défaut corrigé : deux règles de rôle qui ne pouvaient JAMAIS être
+     * satisfaites</h3>
+     *
+     * Sans ce convertisseur, Spring Security emploie son
+     * {@code JwtGrantedAuthoritiesConverter} par défaut, qui lit les claims
+     * {@code scope} et {@code scp} et préfixe les valeurs de {@code SCOPE_}. Or
+     * les jetons de cette plateforme ne portent ni l'un ni l'autre : ils portent
+     * un claim {@code roles} ({@code DevJwtServiceImpl}). Aucune autorité
+     * {@code ROLE_*} n'était donc jamais produite, et les deux seules règles de
+     * rôle de ce service refusaient <b>tout le monde</b> :
+     *
+     * <ul>
+     *   <li>{@code /dev/admin/keys/**} en {@code hasRole("SUPER_ADMIN")} — la
+     *       rotation et la révocation des clés de signature de la plateforme,
+     *       injoignables ;</li>
+     *   <li>{@code /actuator/**} en {@code hasRole("ADMIN")} — toute la
+     *       supervision, injoignable.</li>
+     * </ul>
+     *
+     * <p>Le plus instructif est l'enchaînement. Ces trois endpoints de gestion
+     * de clés portaient le commentaire « Réservé aux administrateurs » sans
+     * qu'aucune règle ne l'applique : ils tombaient sous
+     * {@code anyExchange().authenticated()}, et n'importe quel porteur de jeton
+     * pouvait faire tourner les clés. La règle {@code hasRole("SUPER_ADMIN")} a
+     * été ajoutée pour fermer ce trou — et l'a fermé pour <b>tout le monde</b>,
+     * le responsable technique compris. Une protection qui refuse chacun n'est
+     * pas une protection, c'est une panne, et elle se présente avec le même
+     * visage vert qu'une protection qui marche.
+     *
+     * <p>Mesuré par {@code ChaineReelleTest}, qui appelle ces endpoints avec un
+     * jeton {@code SUPER_ADMIN} authentique : 403 avant, 200 après.
+     *
+     * <h3>Les deux formes du claim</h3>
+     *
+     * {@code roles} se présente tantôt en liste, tantôt en chaîne simple. Les
+     * deux sont admises — c'est le contrat des autres modules
+     * ({@code user-service/SecurityConfig}, les
+     * {@code JwtAuthenticationWebFilter}), et n'en couvrir qu'une laisserait
+     * l'autre se casser en silence.
+     *
+     * <p>Le préfixe {@code ROLE_} n'est ajouté que s'il manque :
+     * {@code hasRole("ADMIN")} cherche l'autorité {@code ROLE_ADMIN}, et un
+     * double préfixe produirait {@code ROLE_ROLE_ADMIN} — un refus de plus,
+     * silencieux lui aussi.
+     */
+    private org.springframework.core.convert.converter.Converter<
+            org.springframework.security.oauth2.jwt.Jwt,
+            reactor.core.publisher.Mono<
+                    org.springframework.security.authentication.AbstractAuthenticationToken>>
+            convertisseurDeRoles() {
+
+        return jeton -> {
+            var autorites = new java.util.ArrayList<
+                    org.springframework.security.core.GrantedAuthority>();
+
+            Object declares = jeton.getClaim("roles");
+            if (declares instanceof String unSeul) {
+                autorites.add(autorite(unSeul));
+            } else if (declares instanceof java.util.List<?> plusieurs) {
+                for (Object role : plusieurs) {
+                    if (role != null) {
+                        autorites.add(autorite(role.toString()));
+                    }
+                }
+            }
+
+            return reactor.core.publisher.Mono.just(
+                    new org.springframework.security.oauth2.server.resource.authentication
+                            .JwtAuthenticationToken(jeton, autorites, jeton.getSubject()));
+        };
+    }
+
+    /** Le préfixe {@code ROLE_}, ajouté une seule fois. */
+    private static org.springframework.security.core.GrantedAuthority autorite(String role) {
+        String nom = role.startsWith("ROLE_") ? role : "ROLE_" + role;
+        return new org.springframework.security.core.authority.SimpleGrantedAuthority(nom);
     }
 
     @Bean
