@@ -19,7 +19,31 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.0.1</version>
+		<!--
+		  4.0.1 -> 4.0.6 : montee de CORRECTIF, decidee sur le rapport de Trivy.
+
+		  Elle ferme des vulnerabilites qui touchent precisement le metier de
+		  cette plateforme :
+
+		    CVE-2026-40976  CRITIQUE  Spring Boot — contournement de securite
+		    CVE-2026-40973  ELEVEE    Spring Boot — execution de code arbitraire
+		    CVE-2026-22731/22733      Actuator — contournement d'AUTHENTIFICATION
+		    CVE-2026-22753/22754      Spring Security — contournement d'AUTORISATION
+		    CVE-2026-22732  CRITIQUE  spring-security-web — contournement de politique
+		    CVE-2026-47890  CRITIQUE  spring-webflux
+		    CVE-2026-41850/41842      spring-framework — deni de service
+		    CVE-2026-41695/41716      spring-data-commons — deni de service
+		    CVE-2026-41731            spring-kafka — execution de code arbitraire
+
+		  Spring Security, Spring Framework, Spring Data et Spring Kafka suivent
+		  par la BOM : c'est pourquoi une seule ligne les corrige tous.
+
+		  La politique du depot est que les montees MAJEURES se decident et ne se
+		  subissent pas. Celle-ci n'en est pas une — meme mineure, 4.0.x — et des
+		  contournements d'authentification dans un service d'authentification ne
+		  se laissent pas en attente.
+		-->
+		<version>4.0.6</version>
 		<relativePath/>
 	</parent>
 
@@ -57,12 +81,56 @@
 		<reactor-kafka.version>1.3.25</reactor-kafka.version>
 		<blockhound.version>1.0.9.RELEASE</blockhound.version>
 		<jacoco.version>0.8.12</jacoco.version>
+
+		<!--
+		  Surcharges de la BOM de Spring Boot, decidees sur le rapport de Trivy.
+
+		  La montee du parent en 4.0.6 ferme une partie des vulnerabilites, pas
+		  toutes : elle resout Spring Framework 7.0.7, Spring Data 4.0.5 et
+		  PostgreSQL 42.7.10, alors que les correctifs publies sont au-dela. Les
+		  trois lignes ci-dessous comblent l'ecart.
+
+		  Ce sont des montees de CORRECTIF dans la meme version mineure. Elles
+		  depassent ce que Boot 4.0.6 a valide, ce qui est le compromis assume
+		  face a trois vulnerabilites CRITIQUES — dont un contournement de
+		  politique de securite dans spring-webflux. Les 2404 tests verifient
+		  l'absence de regression.
+		-->
+		<!-- CVE-2026-47890 (CRITIQUE), 47892, 41850, 41842 : webflux et framework -->
+		<spring-framework.version>7.0.9</spring-framework.version>
+		<!-- CVE-2026-41695, 41716 : spring-data-commons en 4.0.6 -->
+		<spring-data-bom.version>2025.1.6</spring-data-bom.version>
+		<!-- CVE-2026-42198, 54291 : pilote JDBC PostgreSQL -->
+		<postgresql.version>42.7.12</postgresql.version>
 		<testcontainers.version>1.21.3</testcontainers.version>
 		<license-plugin.version>2.4.0</license-plugin.version>
 	</properties>
 
 	<dependencyManagement>
 		<dependencies>
+			<!--
+			  Deux versions epinglees ICI et non par une propriete : la BOM de
+			  Spring Boot n'expose ni `snappy.version` ni de propriete pour
+			  Jackson 3 — verifie par help:evaluate, les deux rendent « null
+			  object or invalid expression ». Une propriete inventee serait
+			  ignoree en silence, et la vulnerabilite resterait ouverte en
+			  paraissant corrigee.
+
+			  snappy-java arrive transitivement par Kafka ; jackson-core par la
+			  serialisation.
+			-->
+			<!-- CVE-2026-108106, 93451 : deni de service et debordement de tampon -->
+			<dependency>
+				<groupId>org.xerial.snappy</groupId>
+				<artifactId>snappy-java</artifactId>
+				<version>1.1.10.9</version>
+			</dependency>
+			<!-- CVE-2026-68494 : 4.0.6 resout 3.1.2, le correctif est en 3.1.4 -->
+			<dependency>
+				<groupId>tools.jackson.core</groupId>
+				<artifactId>jackson-core</artifactId>
+				<version>3.1.4</version>
+			</dependency>
 			<dependency>
 				<groupId>org.springframework.cloud</groupId>
 				<artifactId>spring-cloud-dependencies</artifactId>
