@@ -20,7 +20,7 @@
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
 		<!--
-		  4.0.1 -> 4.0.6 : montee de CORRECTIF, decidee sur le rapport de Trivy.
+		  4.0.1 -> 4.1.2 : montee de CORRECTIF, decidee sur le rapport de Trivy.
 
 		  Elle ferme des vulnerabilites qui touchent precisement le metier de
 		  cette plateforme :
@@ -43,7 +43,7 @@
 		  contournements d'authentification dans un service d'authentification ne
 		  se laissent pas en attente.
 		-->
-		<version>4.0.6</version>
+		<version>4.1.2</version>
 		<relativePath/>
 	</parent>
 
@@ -71,7 +71,7 @@
 		<java.version>17</java.version>
 
 		<!-- Spring Cloud : doit rester compatible avec la version de Spring Boot ci-dessus -->
-		<spring-cloud.version>2025.1.0</spring-cloud.version>
+		<spring-cloud.version>2025.1.4</spring-cloud.version>
 
 		<!-- Bibliothèques transverses -->
 		<jjwt.version>0.12.5</jjwt.version>
