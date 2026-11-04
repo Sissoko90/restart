@@ -131,7 +131,7 @@
 		<!-- CVE-2026-40983, 40984 (ELEVEES) : micrometer-core, sur le chemin de
 		     chaque metrique. Correctif en 1.16.6. -->
 		<micrometer.version>1.16.8</micrometer.version>
-		<testcontainers.version>1.21.3</testcontainers.version>
+		<testcontainers.version>1.21.4</testcontainers.version>
 		<license-plugin.version>2.4.0</license-plugin.version>
 	</properties>
 
