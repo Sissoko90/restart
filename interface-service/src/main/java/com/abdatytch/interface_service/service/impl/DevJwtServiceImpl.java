@@ -93,12 +93,47 @@ public class DevJwtServiceImpl implements IDevJwtService {
     /**
      * Parser JWT commun : résolution de clé par `kid` + contrôle de l'émetteur.
      */
+    /**
+     * Les DEUX variantes d'analyseur, construites une fois chacune.
+     *
+     * <p>{@code build()} de jjwt fait une recherche
+     * {@link java.util.ServiceLoader}, qui <b>lit des JAR sur le disque</b>. Le
+     * construire a chaque validation mettait donc un appel bloquant sur le
+     * chemin de chaque requete authentifiee — ce que la politique de ce depot
+     * interdit, et ce que BlockHound a signale sur media-service.
+     *
+     * <p>Le localisateur est passe par <b>indirection</b> : il est obtenu au
+     * moment de l'analyse, et non fige a la construction. C'est ce qui permet a
+     * {@code keyRotationService} de rendre une cle fraiche, et c'est aussi ce
+     * qui evite d'echouer au demarrage quand le service de rotation n'a pas
+     * encore charge ses cles.
+     *
+     * <p>Deux champs et non un : cette methode rend un analyseur qui exige
+     * l'emetteur ou non, selon l'appelant. Les fusionner changerait le contrat
+     * de verification.
+     */
+    private volatile JwtParser parserAvecEmetteur;
+    private volatile JwtParser parserSansEmetteur;
+
+    /**
+     * Construit les deux analyseurs apres l'injection des {@code @Value}.
+     *
+     * <p>Et non dans le constructeur, ou {@code jwtIssuer} serait encore nul.
+     */
+    @jakarta.annotation.PostConstruct
+    void construireLesAnalyseurs() {
+        parserSansEmetteur = Jwts.parser()
+                .keyLocator(entete -> keyLocator().locate(entete))
+                .build();
+        parserAvecEmetteur = Jwts.parser()
+                .keyLocator(entete -> keyLocator().locate(entete))
+                .requireIssuer(jwtIssuer)
+                .build();
+    }
+
     private JwtParser jwtParser(boolean requireIssuer) {
-        var builder = Jwts.parser().keyLocator(keyLocator());
-        if (requireIssuer) {
-            builder.requireIssuer(jwtIssuer);
-        }
-        return builder.build();
+        // Les analyseurs sont construits au demarrage : voir les champs.
+        return requireIssuer ? parserAvecEmetteur : parserSansEmetteur;
     }
 
     /**

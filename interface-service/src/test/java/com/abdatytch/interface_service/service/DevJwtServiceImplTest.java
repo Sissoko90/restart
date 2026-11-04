@@ -79,6 +79,18 @@ class DevJwtServiceImplTest {
         ReflectionTestUtils.setField(jwtService, "refreshExpirationMs", 604_800_000L);
         ReflectionTestUtils.setField(jwtService, "jwtIssuer", ISSUER);
         ReflectionTestUtils.setField(jwtService, "jwtAudience", AUDIENCES);
+
+        // Ce que le conteneur fait et que `new` ne fait pas.
+        //
+        // Les analyseurs JWT sont construits une fois, en @PostConstruct : les
+        // reconstruire a chaque validation ferait une recherche ServiceLoader,
+        // donc une LECTURE DISQUE sur une EventLoop. Voir le javadoc des champs
+        // dans DevJwtServiceImpl.
+        //
+        // APRES les setField, et non avant : la construction lit jwtIssuer, qui
+        // serait encore nul. C'est aussi pourquoi l'initialisation n'est pas
+        // dans le constructeur — les valeurs viennent de @Value.
+        ReflectionTestUtils.invokeMethod(jwtService, "construireLesAnalyseurs");
     }
 
     private User developer() {

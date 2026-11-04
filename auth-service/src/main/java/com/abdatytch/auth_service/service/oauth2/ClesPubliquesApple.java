@@ -166,6 +166,35 @@ public class ClesPubliquesApple {
         return m.group(1);
     }
 
+    /**
+     * Pourquoi l'analyseur est construit ici, et non une fois au demarrage.
+     *
+     * <p>Ailleurs dans ce depot, {@code Jwts.parser()...build()} a ete sorti du
+     * chemin des requetes : {@code build()} de jjwt fait une recherche
+     * {@link java.util.ServiceLoader}, donc une lecture de JAR sur le disque.
+     * Huit sites ont ete corriges en construisant l'analyseur une fois.
+     *
+     * <p>Celui-ci ne l'est pas, pour deux raisons.
+     *
+     * <ol>
+     *   <li>La cle est resolue <b>par appel</b>, reactivement, par
+     *       {@code clePour(kid)} — qui peut aller rechercher le JWKS d'Apple. Un
+     *       analyseur unique avec {@code verifyWith} figerait une cle ; passer
+     *       par un localisateur synchrone obligerait a restructurer la
+     *       resolution, dans la verification la plus sensible du parcours
+     *       Apple.</li>
+     *   <li>La lecture disque n'a plus lieu : le cache {@code ServiceLoader} de
+     *       jjwt est <b>global a la JVM</b>, et {@code JwtServiceImpl} construit
+     *       ses analyseurs en {@code @PostConstruct}. Il est donc chaud avant la
+     *       premiere requete, et ce {@code build()} ne fait plus qu'un travail
+     *       en memoire.</li>
+     * </ol>
+     *
+     * <p>La seconde raison est une dependance <b>indirecte</b>, et c'est sa
+     * faiblesse : retirer le {@code @PostConstruct} de {@code JwtServiceImpl}
+     * remettrait une lecture disque ici, sur le parcours de connexion Apple.
+     * A reconsiderer si ce chemin devient chaud.
+     */
     private Jws<Claims> lireEtVerifier(String jeton, PublicKey cle) {
         return Jwts.parser()
                 .verifyWith(cle)
