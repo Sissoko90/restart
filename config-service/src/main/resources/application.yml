@@ -36,4 +36,19 @@ management:
         include: health,info,refresh
   endpoint:
     health:
-      show-details: always
+      # `always` -> `when-authorized`.
+      #
+      # /actuator/health est le seul endpoint que la SecurityConfig laisse
+      # ouvert a tous, parce que Consul l'interroge sans porter de jeton et
+      # sans venir forcement du meme hote. Son CORPS etait donc public, avec le
+      # detail de chaque composant.
+      #
+      # Je ne peux pas enumerer ce que ces details exposent sans lancer le
+      # service — et c'est precisement la raison de reduire plutot que de
+      # supposer. Consul ne lit que le champ `status`, qui reste rendu.
+      #
+      # Aucune authentification n'existe ici, donc `when-authorized` equivaut
+      # en pratique a ne jamais montrer le detail. C'est voulu : le jour ou
+      # l'authentification HTTP sera posee, l'exploitant authentifie le
+      # retrouvera sans qu'on y retouche.
+      show-details: when-authorized

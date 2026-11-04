@@ -41,6 +41,58 @@
 			<groupId>org.springframework.cloud</groupId>
 			<artifactId>spring-cloud-config-server</artifactId>
 		</dependency>
+
+		<!--
+		  Securite SERVLET, et non reactive.
+
+		  Ce module est le seul du depot a tourner sur Tomcat :
+		  spring-cloud-config-server amene spring-boot-starter-web. La chaine se
+		  declare donc avec SecurityFilterChain et HttpSecurity, et non avec
+		  leurs equivalents WebFlux employes par les neuf autres services.
+
+		  ATTENTION : cette dependance ACTIVE la securite Spring. Sans la
+		  SecurityConfig qui l'accompagne, tous les endpoints exigeraient une
+		  authentification avec un mot de passe engendre a chaque demarrage et
+		  imprime dans les journaux — les onze clients perdraient leur
+		  configuration en silence, leur import etant `optional:` avec
+		  `fail-fast: false`.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security</artifactId>
+		</dependency>
+
+		<!--
+		  Pour PrivateNetworks, et pour lui seul.
+
+		  La definition d'un reseau prive n'est PAS recopiee ici : elle existe
+		  dans platform-commons precisement parce qu'une copie ecrite a la main
+		  avait `startsWith("172.")`, ce qui accepte 172.0.0.0/8 alors que la
+		  plage privee s'arrete a 172.31. La recopier reproduirait le defaut que
+		  ce module partage a ete cree pour supprimer.
+
+		  L'exclusion de WebFlux est deliberee : platform-commons le porte en
+		  portee compile, et l'amener ici mettrait Netty sur le classpath d'une
+		  application Tomcat. Spring resterait en mode servlet —
+		  WebApplicationType.deduceFromClasspath() choisit SERVLET des que
+		  spring-webmvc est present — mais ce serait de la dependance morte.
+
+		  Consequence a connaitre : seules les classes de platform-commons SANS
+		  type reactif sont utilisables ici. PrivateNetworks.contient(String) est
+		  une fonction pure sur une chaine. Employer une classe qui touche
+		  ServerWebExchange leverait une NoClassDefFoundError a l'execution.
+		-->
+		<dependency>
+			<groupId>com.abdatytch</groupId>
+			<artifactId>platform-commons</artifactId>
+			<version>${project.version}</version>
+			<exclusions>
+				<exclusion>
+					<groupId>org.springframework.boot</groupId>
+					<artifactId>spring-boot-starter-webflux</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.cloud</groupId>
 			<artifactId>spring-cloud-starter-consul-discovery</artifactId>
@@ -71,6 +123,41 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!--
+		  Pour exercer la chaine avec MockMvc.
+		  Une protection qu'aucun test n'appelle est une protection qu'on croit
+		  en place : c'est ce qui avait rendu media-service entierement
+		  injoignable sans qu'aucun test ne le dise.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!--
+		  @AutoConfigureMockMvc vit ICI, et non dans spring-boot-starter-test.
+
+		  Spring Boot 4 a separe les auto-configurations de test par technologie.
+		  Le depot connait deja le cas symetrique : spring-boot-webflux-test est
+		  un artefact distinct, note lors de la bascule des tests de
+		  controleurs d'auth-service. Ici c'est la variante SERVLET, parce que ce
+		  module est le seul a tourner sur Tomcat.
+
+		  Verifie, pas suppose : la classe AutoConfigureMockMvc est bien dans
+		  spring-boot-webmvc-test-4.0.6.jar et absente du starter.
+
+		  Ce que l'annotation apporte et qu'un MockMvc monte a la main n'aurait
+		  pas : les filtres servlet du contexte, dont springSecurityFilterChain.
+		  Sans eux, le test monterait le DispatcherServlet nu et passerait en
+		  n'exercant aucune regle de securite.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-webmvc-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

@@ -139,6 +139,24 @@ for module in $REPERTOIRES; do
     if [ "$module" = "config-service" ]; then
         # Servi avant la passerelle, par les services eux-memes au demarrage.
         a_route="non"; a_acces="non"
+        # BLOC ne s'applique PAS : ce module est le seul SERVLET du depot.
+        #
+        # Verifie par dependency:tree, pas suppose : spring-cloud-config-server
+        # amene spring-boot-starter-web, donc Tomcat 11 et spring-webmvc. Un fil
+        # par requete, bloquant par conception. reactor-core n'est present que
+        # transitivement, par Spring Cloud Commons.
+        #
+        # Or BlockHound ne surveille que les fils portant le marqueur
+        # NonBlocking de Reactor. Aucun fil de travail de Tomcat ne le porte :
+        # un NoBlockingCallsTest ici installerait le detecteur, son controle
+        # negatif passerait, et les cas reels ne mesureraient RIEN. C'est
+        # exactement le mode d'echec que ce depot combat — un test vert qui
+        # n'observe pas ce qu'il annonce.
+        #
+        # Le declarer « NON » reclamait donc un manque impossible a combler
+        # correctement. Un tableau de bord qui reclame l'incomblable apprend a
+        # ne plus etre lu.
+        a_bloc="non"
     fi
 
     # --- Note : acquis sur applicables ---
