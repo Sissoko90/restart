@@ -87,7 +87,12 @@ logging:
 app:
   email:
     enabled: ${EMAIL_ENABLED:true}
-    from: ${EMAIL_FROM:noreply@abdatech.com}
+    # Aucune adresse de repli : le domaine abdatech.com n'est plus porte par ce
+    # projet, et une adresse d'apparence valide ferait partir des courriels que
+    # le serveur distant refuse sans que rien ne designe la cause. Vide, l'echec
+    # survient a l'envoi, avec un message explicite. auth-service emploie deja
+    # ${EMAIL_FROM} sans defaut.
+    from: ${EMAIL_FROM:}
     verification-url: http://localhost:3000/verify-email
     reset-password-url: http://localhost:3000/reset-password
 

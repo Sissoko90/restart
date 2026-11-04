@@ -53,7 +53,7 @@ import static com.abdatytch.auth_service.testutil.ConfianceDEssai.aucunAppareilD
 @DisplayName("AdminAuthServiceImpl - connexion des administrateurs")
 class AdminAuthServiceImplTest {
 
-    private static final String EMAIL = "tech@abdatech.test";
+    private static final String EMAIL = "tech@restart.test";
     private static final String TELEPHONE = "+22300000009";
     private static final String MOT_DE_PASSE = "MotDePasseTechnique123!";
     private static final String SECRET_TOTP = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
@@ -94,7 +94,7 @@ class AdminAuthServiceImplTest {
                         userRepository, totpService, serviceDeVerrouillage(),
                         com.abdatytch.auth_service.testutil.CodesDeSecoursDEssai
                                 .aucunCodeDeSecours(),
-                        metriques(), "AbdaTech Test");
+                        metriques(), "Restart Test");
 
         com.abdatytch.auth_service.service.impl.AuthServiceImpl serviceDeConnexion =
                 new com.abdatytch.auth_service.service.impl.AuthServiceImpl(

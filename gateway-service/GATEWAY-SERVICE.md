@@ -1446,6 +1446,6 @@ Le **Gateway Service** est un composant critique qui:
 
 ---
 
-**Auteur:** Abdaty Technologies  
+**Auteur:** Restart  
 **Version:** 1.0.0  
 **Date:** 27 Janvier 2026

@@ -252,7 +252,7 @@ class NoBlockingCallsTest {
                 serviceDeVerrouillage(),
                 com.abdatytch.auth_service.testutil.CodesDeSecoursDEssai
                         .aucunCodeDeSecours(),
-                metriques(), "AbdaTech Test");
+                metriques(), "Restart Test");
     }
 
     private AccountLockoutServiceImpl serviceDeVerrouillage() {

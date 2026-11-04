@@ -62,11 +62,11 @@ class SecondFacteurServiceImplTest {
         service = new SecondFacteurServiceImpl(
                 userRepository, totpService, serviceDeVerrouillage(),
                 com.abdatytch.auth_service.testutil.CodesDeSecoursDEssai
-                        .aucunCodeDeSecours(), metriques(), "AbdaTech Test");
+                        .aucunCodeDeSecours(), metriques(), "Restart Test");
 
         admin = new User();
         admin.setId("admin-1");
-        admin.setEmail("admin@abdatech.test");
+        admin.setEmail("admin@restart.test");
         admin.setTotpSecret(SECRET_ACTUEL);
         admin.setTotpEnabled(true);
 

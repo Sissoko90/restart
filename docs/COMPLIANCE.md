@@ -153,7 +153,7 @@ recouvrent pas :
 - un **utilisateur final** appartient à l'application d'un développeur client.
   Son identité vit dans `auth-service`, qui est le service d'authentification
   *offert en tant que service* ;
-- un **développeur** est un client d'AbdaTech. Son identité vit dans
+- un **développeur** est un client de Restart. Son identité vit dans
   `interface-service`, qui est le portail.
 
 Fusionner les deux donnerait à l'administrateur du portail le pouvoir d'agir sur

@@ -278,7 +278,7 @@ public final class AppConstants {
      * une adresse. Un libelle errone se corrige ; une redirection vers localhost
      * en production casse la connexion.
      */
-    public static final String TOTP_EMETTEUR_DEFAUT = "AbdaTech Restart";
+    public static final String TOTP_EMETTEUR_DEFAUT = "Restart";
     // Administration des comptes - messages de confirmation
     public static final String COMPTE_DEVERROUILLE_MESSAGE = "Compte deverrouille";
     public static final String LOG_INFO_ADMIN_LOCKOUT_STATUS =
@@ -485,13 +485,13 @@ public final class AppConstants {
 
     /** Messages courts, pour le repli par SMS. Pas de lieu : 160 caracteres. */
     public static final String ALERTE_SMS_MOT_DE_PASSE =
-            "AbdaTech : le mot de passe de votre compte vient d'etre modifie. "
+            "Restart : le mot de passe de votre compte vient d'etre modifie. "
             + "Si ce n'est pas vous, contactez-nous immediatement.";
     public static final String ALERTE_SMS_ADRESSE =
-            "AbdaTech : l'adresse electronique de votre compte vient d'etre "
+            "Restart : l'adresse electronique de votre compte vient d'etre "
             + "modifiee. Si ce n'est pas vous, contactez-nous immediatement.";
     public static final String ALERTE_SMS_NUMERO =
-            "AbdaTech : ce numero n'est plus celui de votre compte. Si ce n'est "
+            "Restart : ce numero n'est plus celui de votre compte. Si ce n'est "
             + "pas vous, contactez-nous immediatement.";
 
     // ------------------------------------------------------------------

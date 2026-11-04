@@ -53,7 +53,7 @@ class SettingErasureServiceTest {
     void toutesSupprimees() {
         when(repository.findByUserId(PORTEUR)).thenReturn(Flux.just(
                 preference("langue", "fr"),
-                preference("contact", "awa.traore@abdatech.ml"),
+                preference("contact", "awa.traore@restart.test"),
                 preference("theme", "sombre")));
 
         StepVerifier.create(service.erase(PORTEUR))

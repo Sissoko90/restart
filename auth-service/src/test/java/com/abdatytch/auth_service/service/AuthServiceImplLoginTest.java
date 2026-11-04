@@ -255,9 +255,9 @@ class AuthServiceImplLoginTest {
             // chercher que par telephone : un compte joignable par
             // /auth/admin/login ne l'etait pas par /auth/login.
             User admin = activeUser();
-            admin.setEmail("admin@abdatech.test");
+            admin.setEmail("admin@restart.test");
 
-            when(userRepository.findByEmail("admin@abdatech.test")).thenReturn(Mono.just(admin));
+            when(userRepository.findByEmail("admin@restart.test")).thenReturn(Mono.just(admin));
             when(passwordEncoder.matches(PASSWORD, HASH)).thenReturn(true);
             when(userRepository.save(any(User.class)))
                     .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
@@ -269,7 +269,7 @@ class AuthServiceImplLoginTest {
                     .thenReturn(new AuthResponse());
 
             LoginRequest parAdresse = new LoginRequest();
-            parAdresse.setIdentifier("admin@abdatech.test");
+            parAdresse.setIdentifier("admin@restart.test");
             parAdresse.setPassword(PASSWORD);
 
             StepVerifier.create(authService.login(parAdresse, IP, USER_AGENT))
@@ -278,16 +278,16 @@ class AuthServiceImplLoginTest {
 
             // Et surtout : la recherche par telephone n'a PAS ete tentee avec
             // une adresse en guise de numero.
-            verify(userRepository, never()).findByPhoneNumber("admin@abdatech.test");
+            verify(userRepository, never()).findByPhoneNumber("admin@restart.test");
         }
 
         @Test
         @DisplayName("identifier est prioritaire sur phoneNumber")
         void identifierPrioritaire() {
             User admin = activeUser();
-            admin.setEmail("admin@abdatech.test");
+            admin.setEmail("admin@restart.test");
 
-            when(userRepository.findByEmail("admin@abdatech.test")).thenReturn(Mono.just(admin));
+            when(userRepository.findByEmail("admin@restart.test")).thenReturn(Mono.just(admin));
             when(passwordEncoder.matches(PASSWORD, HASH)).thenReturn(true);
             when(userRepository.save(any(User.class)))
                     .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
@@ -299,7 +299,7 @@ class AuthServiceImplLoginTest {
                     .thenReturn(new AuthResponse());
 
             LoginRequest lesDeux = request();
-            lesDeux.setIdentifier("admin@abdatech.test");
+            lesDeux.setIdentifier("admin@restart.test");
 
             StepVerifier.create(authService.login(lesDeux, IP, USER_AGENT))
                     .expectNextCount(1)
@@ -552,7 +552,7 @@ class AuthServiceImplLoginTest {
                 userRepository, totpService, serviceDeVerrouillage(),
                 com.abdatytch.auth_service.testutil.CodesDeSecoursDEssai
                         .aucunCodeDeSecours(),
-                metriques(), "AbdaTech Test");
+                metriques(), "Restart Test");
     }
 
     private AccountLockoutServiceImpl serviceDeVerrouillage() {

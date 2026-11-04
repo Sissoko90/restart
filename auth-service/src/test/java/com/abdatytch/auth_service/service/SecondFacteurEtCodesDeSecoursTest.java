@@ -123,7 +123,7 @@ class SecondFacteurEtCodesDeSecoursTest {
 
         secondFacteur = new SecondFacteurServiceImpl(
                 userRepository, totpService, verrouillage, codesDeSecours,
-                metriques(), "AbdaTech");
+                metriques(), "Restart");
     }
 
     private List<CodeDeSecours> pourLeCompte(String userId) {
@@ -218,7 +218,7 @@ class SecondFacteurEtCodesDeSecoursTest {
                             revocationQuiNeFaitRien()),
                     new CodeDeSecoursServiceImpl(casse,
                             new MotDePasseServiceImpl(new BCryptPasswordEncoder(4)), 10),
-                    metriques(), "AbdaTech");
+                    metriques(), "Restart");
 
             // Une panne sur la table des codes ne doit pas fermer la connexion
             // par TOTP : le TOTP est verifie AVANT, et n'en depend pas.
@@ -241,7 +241,7 @@ class SecondFacteurEtCodesDeSecoursTest {
                     userRepository, totpService, verrouillage,
                     new CodeDeSecoursServiceImpl(casse,
                             new MotDePasseServiceImpl(new BCryptPasswordEncoder(4)), 10),
-                    metriques(), "AbdaTech");
+                    metriques(), "Restart");
             compte.setFailedLoginAttempts(0);
 
             StepVerifier.create(avecDepotCasse.verifier(compte, CODE_TOTP_FAUX, IP))

@@ -108,7 +108,7 @@ class SecondFacteurLibreServiceTest {
         secondFacteur = new SecondFacteurServiceImpl(
                 userRepository, totpService, verrouillage,
                 com.abdatytch.auth_service.testutil.CodesDeSecoursDEssai
-                        .aucunCodeDeSecours(), metriques(), "AbdaTech");
+                        .aucunCodeDeSecours(), metriques(), "Restart");
     }
 
     private static AuthMetrics metriques() {

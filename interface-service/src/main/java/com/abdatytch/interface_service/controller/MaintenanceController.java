@@ -205,7 +205,7 @@ public class MaintenanceController {
                 config.put("totpEnabled", user.getTotpEnabled());
 
                 if (user.getTotpSecret() != null && !user.getTotpSecret().isEmpty()) {
-                    String qrCodeUrl = totpService.generateQrCodeUrl(user.getEmail(), user.getTotpSecret(), "AbdaTech Admin");
+                    String qrCodeUrl = totpService.generateQrCodeUrl(user.getEmail(), user.getTotpSecret(), "Restart Admin");
                     config.put("qrCodeUrl", qrCodeUrl);
                 }
 
@@ -236,7 +236,7 @@ public class MaintenanceController {
 
                 // Générer un nouveau secret TOTP
                 String newTotpSecret = totpService.generateTotpSecret();
-                String qrCodeUrl = totpService.generateQrCodeUrl(user.getEmail(), newTotpSecret, "AbdaTech Admin");
+                String qrCodeUrl = totpService.generateQrCodeUrl(user.getEmail(), newTotpSecret, "Restart Admin");
 
                 user.setTotpSecret(newTotpSecret);
 

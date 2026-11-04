@@ -132,6 +132,10 @@ admin:
 maintenance:
   phone: ${MAINTENANCE_PHONE:}
   password: ${MAINTENANCE_PASSWORD:}
+  # Etait ecrite en dur dans MaintenanceSeeder (maintenance@abdatech.com), sur
+  # un domaine que le projet ne porte plus. Defaut vide : sans les TROIS
+  # valeurs, le compte de maintenance n'est pas cree, et le service demarre.
+  email: ${MAINTENANCE_EMAIL:}
 
 # ==========================================================
 # ALERTES CRITIQUES DE SÉCURITÉ

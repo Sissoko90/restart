@@ -2,7 +2,7 @@
 # ==========================================================
 # Conformité des licences des dépendances
 # ==========================================================
-# AbdaTech distribue Restart sous licence propriétaire (voir LICENSE).
+# Restart est distribué sous licence propriétaire (voir LICENSE).
 # Certaines licences libres l'interdisent : les licences à réciprocité
 # forte obligent à publier le code source de l'œuvre dérivée — donc de
 # la plateforme entière.

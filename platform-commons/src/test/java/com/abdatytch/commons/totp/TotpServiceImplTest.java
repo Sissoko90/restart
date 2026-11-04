@@ -216,12 +216,12 @@ class TotpServiceImplTest {
         @Test
         @DisplayName("l'URL porte le schéma, le secret et les paramètres attendus")
         void formatOtpauth() {
-            String url = service.generateQrCodeUrl("admin@abdatech.com", "ABCDEF234567", "AbdaTech");
+            String url = service.generateQrCodeUrl("admin@restart.test", "ABCDEF234567", "Restart");
 
             assertThat(url)
                     .startsWith("otpauth://totp/")
                     .contains("secret=ABCDEF234567")
-                    .contains("issuer=AbdaTech")
+                    .contains("issuer=Restart")
                     .contains("algorithm=SHA1")
                     .contains("digits=6")
                     .contains("period=30");
@@ -235,7 +235,7 @@ class TotpServiceImplTest {
             // un émetteur choisi par l'utilisateur, ce qui invite à confondre le
             // compte avec celui d'un autre service.
             String url = service.generateQrCodeUrl(
-                    "victime@abdatech.com&issuer=Banque", "SECRET234567", "AbdaTech");
+                    "victime@restart.test&issuer=Banque", "SECRET234567", "Restart");
 
             assertThat(url.split("issuer=", -1))
                     .withFailMessage("l'URL contient deux paramètres `issuer` : "

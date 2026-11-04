@@ -92,11 +92,11 @@ public class RecoverySecretScheduler {
      */
     private void sendRecoverySecretEmail(User admin, String encryptedSecret) {
         try {
-            String subject = " Nouveau Recovery Secret - AbdaTech Admin";
+            String subject = " Nouveau Recovery Secret - Restart Admin";
 
             String body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>"
                     + "<div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;'>"
-                    + "<h1 style='color: white; margin: 0;'> AbdaTech</h1>"
+                    + "<h1 style='color: white; margin: 0;'> Restart</h1>"
                     + "<p style='color: rgba(255,255,255,0.9); margin: 10px 0 0 0;'>Système Sécurisé</p>"
                     + "</div>"
                     + "<div style='padding: 30px; background: #f9f9f9;'>"
@@ -126,7 +126,7 @@ public class RecoverySecretScheduler {
                     + "</div>"
                     + "<div style='background: #333; color: white; padding: 20px; text-align: center;'>"
                     + "<p style='margin: 0; font-size: 12px; color: rgba(255,255,255,0.7);'>"
-                    + "Cet email a été envoyé automatiquement par le système AbdaTech."
+                    + "Cet email a été envoyé automatiquement par le système Restart."
                     + "</p>"
                     + "</div>"
                     + "</div>";

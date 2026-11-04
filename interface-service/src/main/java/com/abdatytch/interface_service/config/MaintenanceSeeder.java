@@ -53,6 +53,21 @@ public class MaintenanceSeeder implements CommandLineRunner {
     @Value("${maintenance.password}")
     private String maintenancePassword;
 
+    /**
+     * Adresse du compte de maintenance, qui était <b>écrite en dur</b>.
+     *
+     * <p>C'était {@code maintenance@abdatech.com}, sur un domaine que ce projet
+     * ne porte plus. Une adresse en dur dans le code est une adresse qu'on ne
+     * corrige pas sans recompiler — et celle-ci est enregistrée sur un compte
+     * réel, donc c'est elle qui recevrait les courriels de ce compte.
+     *
+     * <p>Défaut vide, et le compte n'est pas créé sans elle : même politique que
+     * le téléphone et le mot de passe ci-dessus. Un compte créé sur une valeur
+     * de repli porterait une identité lisible dans le dépôt.
+     */
+    @Value("${maintenance.email:}")
+    private String maintenanceEmail;
+
     @Override
     public void run(String... args) {
         seedMaintenanceUser();
@@ -68,10 +83,11 @@ public class MaintenanceSeeder implements CommandLineRunner {
         // défaut vide dans config-repo, donc une plateforme qui ne configure
         // pas ce compte se lève sans lui au lieu d'échouer.
         if (maintenancePhone == null || maintenancePhone.isBlank()
-                || maintenancePassword == null || maintenancePassword.isBlank()) {
-            log.info("Compte de maintenance non créé : MAINTENANCE_PHONE et "
-                    + "MAINTENANCE_PASSWORD ne sont pas renseignés. Aucun compte "
-                    + "de repli n'est créé.");
+                || maintenancePassword == null || maintenancePassword.isBlank()
+                || maintenanceEmail == null || maintenanceEmail.isBlank()) {
+            log.info("Compte de maintenance non créé : MAINTENANCE_PHONE, "
+                    + "MAINTENANCE_PASSWORD et MAINTENANCE_EMAIL ne sont pas tous "
+                    + "renseignés. Aucun compte de repli n'est créé.");
             return;
         }
 
@@ -92,7 +108,7 @@ public class MaintenanceSeeder implements CommandLineRunner {
             User maintenance = new User();
             maintenance.generateId();
             maintenance.setUsername("maintenance@" + maintenancePhone);
-            maintenance.setEmail("maintenance@abdatech.com");
+            maintenance.setEmail(maintenanceEmail);
             maintenance.setPhoneNumber(maintenancePhone);
             maintenance.setFirstName("Maintenance");
             maintenance.setLastName("User");
@@ -124,7 +140,16 @@ public class MaintenanceSeeder implements CommandLineRunner {
                 // Le secret TOTP n'est PAS journalisé : c'est la graine du second
                 // facteur, et les journaux partent vers Loki où ils sont conservés.
                 log.info(" Secret TOTP généré pour le compte de maintenance");
-                String maskedQrUrl = totpService.generateQrCodeUrl("maintenance@abdatech.com", totpSecret, "AbdaTech Maintenance");
+                // L'adresse du COMPTE, et non un litteral.
+                //
+                // C'etait une seconde adresse ecrite en dur, distincte de celle
+                // posee sur le compte quelques lignes plus haut. L'etiquette du
+                // QR code annoncait donc une adresse que le compte ne porte
+                // pas : l'exploitant scanne un code libelle pour quelqu'un
+                // d'autre, et son authentificateur affiche un compte qui
+                // n'existe pas sous ce nom.
+                String maskedQrUrl = totpService.generateQrCodeUrl(
+                        maintenanceEmail, totpSecret, "Restart Maintenance");
                 maskedQrUrl = maskedQrUrl.replaceAll("secret=[A-Z2-7]+", "secret=****");
                 log.info(" QR Code URL: {}", maskedQrUrl);
                 log.warn("IMPORTANT: Configurez l'authentification TOTP avec le secret ci-dessus!");

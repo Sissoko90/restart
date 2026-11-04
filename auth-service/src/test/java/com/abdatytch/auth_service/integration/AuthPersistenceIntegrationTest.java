@@ -174,7 +174,7 @@ class AuthPersistenceIntegrationTest {
     private User newUser() {
         User user = new User();
         user.setId(UUID.randomUUID().toString());
-        user.setEmail("essai-" + uniqueSuffix + "@abdatech.com");
+        user.setEmail("essai-" + uniqueSuffix + "@restart.test");
         user.setPhoneNumber("+223" + uniqueSuffix.replaceAll("\\D", "0").substring(0, 6) + "00");
         user.setCountryCode("ML");
         user.setFirstName("Awa");
@@ -286,7 +286,7 @@ class AuthPersistenceIntegrationTest {
             UserRoleAssignment assignment = new UserRoleAssignment();
             assignment.setId(UUID.randomUUID().toString());
             assignment.setUserId(userId);
-            assignment.setEmail("essai-" + uniqueSuffix + "-" + role.name() + "@abdatech.com");
+            assignment.setEmail("essai-" + uniqueSuffix + "-" + role.name() + "@restart.test");
             assignment.setRole(role);
             assignment.setIsActive(active);
             assignment.setCreatedAt(LocalDateTime.now());

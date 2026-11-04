@@ -1,4 +1,4 @@
-Copyright (c) 2026 AbdaTech Technologie. Tous droits réservés.
+Copyright (c) 2026 Restart. Tous droits réservés.
 
 LICENCE PROPRIÉTAIRE — RESTART
 
@@ -6,7 +6,7 @@ LICENCE PROPRIÉTAIRE — RESTART
 
    Le présent logiciel « Restart », son code source, sa documentation et tout
    élément qui l'accompagne (ci-après « le Logiciel ») sont la propriété
-   exclusive d'AbdaTech Technologie.
+   exclusive de Restart.
 
    La mise à disposition du Logiciel, y compris sur un dépôt accessible en
    lecture, n'emporte aucune cession de droits et ne constitue pas une
@@ -16,7 +16,7 @@ LICENCE PROPRIÉTAIRE — RESTART
 
    Aucun droit d'utilisation, de copie, de modification, de fusion, de
    publication, de distribution, de sous-licence ou de vente n'est accordé,
-   sauf autorisation écrite préalable d'AbdaTech Technologie.
+   sauf autorisation écrite préalable de Restart.
 
    Sont notamment interdits sans cette autorisation :
 
@@ -38,10 +38,10 @@ LICENCE PROPRIÉTAIRE — RESTART
 
 4. CONTRIBUTIONS
 
-   Toute contribution proposée au Logiciel est réputée cédée à AbdaTech
-   Technologie, qui peut l'intégrer, la modifier et l'exploiter sans
-   restriction ni contrepartie. Le contributeur garantit détenir les droits
-   sur ce qu'il propose.
+   Toute contribution proposée au Logiciel est réputée cédée à Restart, qui
+   peut l'intégrer, la modifier et l'exploiter sans restriction ni
+   contrepartie. Le contributeur garantit détenir les droits sur ce qu'il
+   propose.
 
 5. COMPOSANTS TIERS
 
@@ -64,7 +64,7 @@ LICENCE PROPRIÉTAIRE — RESTART
 
 7. LIMITATION DE RESPONSABILITÉ
 
-   EN AUCUN CAS ABDATECH TECHNOLOGIE NE POURRA ÊTRE TENUE RESPONSABLE D'UNE
+   EN AUCUN CAS RESTART NE POURRA ÊTRE TENUE RESPONSABLE D'UNE
    RÉCLAMATION, D'UN DOMMAGE OU DE TOUTE AUTRE RESPONSABILITÉ, CONTRACTUELLE,
    DÉLICTUELLE OU AUTRE, DÉCOULANT DU LOGICIEL, DE SON UTILISATION OU DE TOUTE
    AUTRE OPÉRATION LE CONCERNANT.
@@ -76,5 +76,10 @@ LICENCE PROPRIÉTAIRE — RESTART
 
 ---
 
-Pour toute demande de licence commerciale ou de partenariat :
-contact@abdatech.ml
+Pour toute demande de licence commerciale ou de partenariat, ouvrir une
+discussion sur le dépôt :
+https://github.com/Sissoko90/restart
+
+Une adresse électronique de contact remplacera cette voie lorsqu'elle sera
+arrêtée. L'ancienne adresse a été retirée plutôt que remplacée : une voie de
+contact qui n'aboutit pas est pire qu'une voie indirecte.

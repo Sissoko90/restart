@@ -78,7 +78,7 @@ class AccountErasureServiceTest {
 
         utilisateur = new User();
         utilisateur.setId(PORTEUR);
-        utilisateur.setEmail("awa.traore@abdatech.ml");
+        utilisateur.setEmail("awa.traore@restart.test");
         utilisateur.setPhoneNumber("+22370000000");
         utilisateur.setCountryCode("ML");
         utilisateur.setFirstName("Awa");

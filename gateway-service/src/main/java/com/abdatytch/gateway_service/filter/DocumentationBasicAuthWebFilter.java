@@ -81,7 +81,7 @@ public class DocumentationBasicAuthWebFilter implements WebFilter, Ordered {
             "/api/v1/docs");
 
     private static final String PREFIXE_BASIC = "Basic ";
-    private static final String DOMAINE = "Documentation AbdaTech";
+    private static final String DOMAINE = "Documentation Restart";
 
     @Value("${gateway.documentation.utilisateur:}")
     private String utilisateurAttendu;

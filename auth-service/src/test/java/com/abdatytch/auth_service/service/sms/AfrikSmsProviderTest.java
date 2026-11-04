@@ -59,7 +59,7 @@ class AfrikSmsProviderTest {
     // les publierait dans le depot, ce qui annulerait la precaution.
     private static final String CLIENT_ID = "00000000";
     private static final String CLE_API = "cle-api-factice-pour-les-tests-0000";
-    private static final String EXPEDITEUR = "ABDATECH";
+    private static final String EXPEDITEUR = "RESTART";
     private static final String NUMERO = "+228 90 90 90 90";
     private static final String CONTENU = "Votre code Restart est 482913";
 
@@ -186,13 +186,13 @@ class AfrikSmsProviderTest {
                         return Mono.just(json(HttpStatus.OK, CORPS_SUCCES));
                     });
             var avecNomTropLong = new AfrikSmsProvider(constructeur, registre, disjoncteurReel(), URL, CLIENT_ID,
-                    CLE_API, "ABDATECH-RESTART-PLATEFORME", 5);
+                    CLE_API, "RESTART-PLATEFORME-LONGUE", 5);
 
             StepVerifier.create(avecNomTropLong.envoyer(NUMERO, CONTENU)).verifyComplete();
 
             assertThat(parametreDecode("SenderId"))
                     .hasSize(AfrikSmsProvider.LONGUEUR_MAX_EXPEDITEUR)
-                    .isEqualTo("ABDATECH-RE");
+                    .isEqualTo("RESTART-PLA");
         }
 
         /**

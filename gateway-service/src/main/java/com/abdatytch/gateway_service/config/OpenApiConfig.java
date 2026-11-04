@@ -17,6 +17,12 @@ import java.util.List;
 @Configuration
 public class OpenApiConfig {
 
+    @org.springframework.beans.factory.annotation.Value("${app.contact.email:}")
+    private String adresseDeContact;
+
+    @org.springframework.beans.factory.annotation.Value("${app.contact.url:}")
+    private String siteDeContact;
+
     @Bean
     public OpenAPI gatewayOpenAPI() {
         return new OpenAPI()
@@ -25,7 +31,7 @@ public class OpenApiConfig {
                         .description("""
                                 # API Gateway - Point d'Entrée Unique
                                 
-                                Bienvenue dans la documentation centralisée de l'API Abdaty Technologies.
+                                Bienvenue dans la documentation centralisée de l'API Restart.
                                 
                                 ##Architecture Microservices
                                 
@@ -85,7 +91,8 @@ public class OpenApiConfig {
                                 
                                 ##Support
                                 
-                                Pour toute question ou problème, contactez-nous à contact@abdatech.ml
+                                Les coordonnées de contact figurent dans le champ `info.contact`
+                                de ce document, lorsqu'elles sont configurées.
                                 
                                 ##Versions
                                 
@@ -96,17 +103,42 @@ public class OpenApiConfig {
                                 """
 )
                         .version("1.0.0")
-                        .contact(new Contact()
-                                .name("Abdaty Technologies")
-                                .email("contact@abdatech.ml")
-                                .url("https://abdatytch.com"))
-                        .license(new License()
-                                .name("Propriétaire")
-                                .url("https://abdatytch.com/license")))
+                        .contact(contact())
+                        .license(new License().name("Proprietaire - Restart")))
                 .servers(List.of(
                         new Server()
                                 .url("http://localhost:8081")
                                 .description("API Gateway - Développement")
                 ));
+    }
+
+    /**
+     * Le contact, avec seulement les champs reellement configures.
+     *
+     * <p>Ils etaient ecrits en dur : une adresse electronique et deux URL. On ne
+     * les corrige pas sans recompiler, et elles finissent dans la documentation
+     * <b>publique</b> de l'API — une adresse perimee y invite a ecrire a
+     * personne.
+     *
+     * <p>Le nom est toujours pose : c'est le produit, il ne depend d'aucun
+     * reglage. L'adresse et l'URL ne le sont que si elles valent quelque chose.
+     * Un contact vide dans un document OpenAPI est pire qu'un contact absent,
+     * parce qu'il annonce un canal qui n'existe pas.
+     *
+     * <p>Ce bloc n'est pas factorise dans platform-commons, et c'est delibere :
+     * ce module ne contient que ce dont une divergence entre services
+     * <b>creerait une faille</b>. Quatre blocs de contact qui divergent
+     * produisent une incoherence cosmetique, pas un defaut de securite — et l'y
+     * mettre obligerait le module partage a dependre des modeles OpenAPI.
+     */
+    private Contact contact() {
+        Contact contact = new Contact().name("Restart");
+        if (adresseDeContact != null && !adresseDeContact.isBlank()) {
+            contact.email(adresseDeContact);
+        }
+        if (siteDeContact != null && !siteDeContact.isBlank()) {
+            contact.url(siteDeContact);
+        }
+        return contact;
     }
 }

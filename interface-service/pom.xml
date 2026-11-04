@@ -14,7 +14,7 @@
 	<artifactId>interface-service</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>Interface Service</name>
-	<description>Service d'interface pour les développeurs AbdaTech</description>
+	<description>Service d'interface pour les développeurs Restart</description>
 	
 	<properties>
 		<!-- Paramètres Flyway (surchargeables en ligne de commande) -->

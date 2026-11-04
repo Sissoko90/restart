@@ -24,7 +24,7 @@ public class OpenApiConfig {
                 .description("Service de gestion des fichiers média - Architecture Réactive")
                 .version("1.0.0")
                 .contact(new Contact()
-                    .name("Abdaty Technologies")
+                    .name("Restart")
                     .email("contact@abdaty.com"))
                 .license(new License()
                     .name("Apache 2.0")

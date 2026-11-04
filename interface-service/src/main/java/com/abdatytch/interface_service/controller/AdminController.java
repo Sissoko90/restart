@@ -420,7 +420,7 @@ public class AdminController {
                     </div>
                     </div>
                     <div style='background: #333; color: white; padding: 20px; text-align: center;'>
-                    <p style='margin: 0; font-size: 12px; color: rgba(255,255,255,0.7);'>Cet email a été envoyé automatiquement par le système AbdaTech.</p>
+                    <p style='margin: 0; font-size: 12px; color: rgba(255,255,255,0.7);'>Cet email a été envoyé automatiquement par le système Restart.</p>
                     </div>
                     </div>
                     """
@@ -485,7 +485,7 @@ public class AdminController {
                     </div>
                     </div>
                     <div style='background: #333; color: white; padding: 20px; text-align: center;'>
-                    <p style='margin: 0; font-size: 12px; color: rgba(255,255,255,0.7);'>Cet email a été envoyé automatiquement par le système AbdaTech.</p>
+                    <p style='margin: 0; font-size: 12px; color: rgba(255,255,255,0.7);'>Cet email a été envoyé automatiquement par le système Restart.</p>
                     </div>
                     </div>
                     """
@@ -751,7 +751,7 @@ URGENT - ATTAQUE ADMIN EN COURS
                     Ce lien expirera dans 24 heures.
 
                     Cordialement,
-                    Équipe de sécurité AbdaTech
+                    Équipe de sécurité Restart
                     """
 ,
                     user.getEmail(),
@@ -803,7 +803,7 @@ URGENT - ATTAQUE ADMIN EN COURS
                     Ce lien expirera dans 24 heures.
 
                     Cordialement,
-                    Équipe de sécurité AbdaTech
+                    Équipe de sécurité Restart
                     """
 , user.getEmail(), LocalDateTime.now(), ipAddress, user.getFailedLoginAttempts(), user.getPostConfirmationAttempts(), maintenanceUrl);
                 emailService.sendCriticalAlertEmail(criticalAlertEmail, subject, message).subscribe();

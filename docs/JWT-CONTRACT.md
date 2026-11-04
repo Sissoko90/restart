@@ -60,7 +60,7 @@ la validation échoue de façon non déterministe.
 ```yaml
 jwt:
   dev:
-    audience: abdatech-developers,gateway-service,auth-service,user-service,media-service,quotas-service,setting-service
+    audience: restart-developers,gateway-service,auth-service,user-service,media-service,quotas-service,setting-service
 ```
 
 Chaque consommateur exige que **sa** propre audience figure dans le tableau :

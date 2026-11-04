@@ -108,7 +108,7 @@ class WebAuthnVerifierTest {
     /** Enregistre une credential via l'authentificateur emule. */
     private Enregistrement enregistrer(Challenge challenge) {
         PublicKeyCredentialCreationOptions options = new PublicKeyCredentialCreationOptions(
-                new PublicKeyCredentialRpEntity(RP_ID, "AbdaTech Restart"),
+                new PublicKeyCredentialRpEntity(RP_ID, "Restart"),
                 new PublicKeyCredentialUserEntity(
                         "utilisateur-1".getBytes(), "utilisateur-1", "Awa Traore"),
                 challenge,
@@ -194,7 +194,7 @@ class WebAuthnVerifierTest {
                     new WebAuthnAuthenticatorAdaptor(EmulatorUtil.PACKED_AUTHENTICATOR));
 
             PublicKeyCredentialCreationOptions options = new PublicKeyCredentialCreationOptions(
-                    new PublicKeyCredentialRpEntity(RP_ID, "AbdaTech Restart"),
+                    new PublicKeyCredentialRpEntity(RP_ID, "Restart"),
                     new PublicKeyCredentialUserEntity(
                             "utilisateur-1".getBytes(), "utilisateur-1", "Awa Traore"),
                     challenge,

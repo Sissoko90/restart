@@ -43,7 +43,22 @@ public class EmailServiceImpl implements EmailService {
         this.mailSender = mailSender;
     }
 
-    @Value("${app.email.from:noreply@abdatech.com}")
+    /**
+     * Adresse d'expedition, sans valeur de repli plausible.
+     *
+     * <p>Le defaut etait {@code noreply@abdatech.com}, sur un domaine que ce
+     * projet ne porte plus. Garder une adresse de repli d'apparence valide est
+     * le pire des cas : l'envoi part, le serveur distant refuse ou classe en
+     * indesirable, et rien ne designe la cause.
+     *
+     * <p>Vide, l'echec survient a l'ENVOI avec un message explicite, et non au
+     * demarrage — la politique du depot est de ne jamais refuser de demarrer
+     * pour une variable absente.
+     *
+     * <p>auth-service emploie deja {@code ${EMAIL_FROM}} sans defaut : ce
+     * changement rapproche les deux services au lieu de les laisser divergents.
+     */
+    @Value("${app.email.from:}")
     private String fromEmail;
 
     @Value("${app.email.verification-url:http://localhost:3000/verify-email}")
@@ -61,7 +76,7 @@ public class EmailServiceImpl implements EmailService {
                 SimpleMailMessage message = new SimpleMailMessage();
                 message.setFrom(fromEmail);
                 message.setTo(email);
-                message.setSubject("Vérifiez votre adresse email - AbdaTech");
+                message.setSubject("Vérifiez votre adresse email - Restart");
                 
                 String verificationUrl = verificationBaseUrl + "?token=" + token;
                 String emailBody = buildVerificationEmailBody(firstName, verificationUrl);
@@ -88,7 +103,7 @@ public class EmailServiceImpl implements EmailService {
                 SimpleMailMessage message = new SimpleMailMessage();
                 message.setFrom(fromEmail);
                 message.setTo(email);
-                message.setSubject("Réinitialisation de votre mot de passe - AbdaTech");
+                message.setSubject("Réinitialisation de votre mot de passe - Restart");
 
                 String resetUrl = resetPasswordBaseUrl + "?token=" + token;
                 String emailBody = buildPasswordResetEmailBody(firstName, resetUrl);
@@ -191,7 +206,7 @@ public class EmailServiceImpl implements EmailService {
         return String.format("""
             Bonjour %s,
             
-            Bienvenue sur AbdaTech ! 
+            Bienvenue sur Restart ! 
             
             Pour activer votre compte développeur, veuillez cliquer sur le lien ci-dessous :
             
@@ -202,7 +217,7 @@ public class EmailServiceImpl implements EmailService {
             Si vous n'avez pas créé de compte, vous pouvez ignorer cet email.
             
             Cordialement,
-            L'équipe AbdaTech
+            L'équipe Restart
             """
 , firstName, verificationUrl);
     }

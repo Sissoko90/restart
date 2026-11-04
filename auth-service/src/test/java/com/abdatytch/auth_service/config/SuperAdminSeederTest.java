@@ -39,7 +39,7 @@ import static org.mockito.Mockito.*;
 @DisplayName("SuperAdminSeeder - creation du responsable technique")
 class SuperAdminSeederTest {
 
-    private static final String EMAIL = "tech@abdatech.test";
+    private static final String EMAIL = "tech@restart.test";
     private static final String MOT_DE_PASSE = "MotDePasseTechnique123!";
 
     @Mock private UserRepository userRepository;

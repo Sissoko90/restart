@@ -1017,4 +1017,4 @@ GATEWAY_SECRET_KEY=gw_secret_key_xyz789
 
 **Version:** 1.0.0  
 **Date:** Février 2026  
-**Auteur:** Abdaty Technologies
+**Auteur:** Restart

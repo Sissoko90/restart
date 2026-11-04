@@ -81,7 +81,7 @@ class ProfileErasureServiceTest {
         profil.setCountry("Mali");
         profil.setPostalCode("BP1");
         Map<String, String> preferences = new HashMap<>();
-        preferences.put("contact", "awa.traore@abdatech.ml");
+        preferences.put("contact", "awa.traore@restart.test");
         profil.setPreferences(preferences);
 
         when(userRepository.findByAuthUserId(PORTEUR)).thenReturn(Mono.just(utilisateur));

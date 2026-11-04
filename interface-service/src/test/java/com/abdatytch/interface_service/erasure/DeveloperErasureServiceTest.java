@@ -54,7 +54,7 @@ class DeveloperErasureServiceTest {
         developpeur = new User();
         developpeur.setId(DEVELOPPEUR);
         developpeur.setUsername("awa.dev");
-        developpeur.setEmail("awa.traore@abdatech.ml");
+        developpeur.setEmail("awa.traore@restart.test");
         developpeur.setPhoneNumber("+22370000000");
         developpeur.setFirstName("Awa");
         developpeur.setLastName("Traoré");

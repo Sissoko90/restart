@@ -129,7 +129,7 @@ class JwtWebFilterTest {
     private String developerToken() {
         return token(Map.of(
                         "developerId", "11111111-2222-3333-4444-555555555555",
-                        "email", "dev@abdatech.com",
+                        "email", "dev@restart.test",
                         "role", "ROLE_DEVELOPER",
                         "type", "developer"),
                 ISSUER, List.of("restart-developers"), authorityKeys.getPrivate(), 60_000);
