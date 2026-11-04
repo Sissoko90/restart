@@ -71,7 +71,7 @@
 		<java.version>17</java.version>
 
 		<!-- Spring Cloud : doit rester compatible avec la version de Spring Boot ci-dessus -->
-		<spring-cloud.version>2025.1.0</spring-cloud.version>
+		<spring-cloud.version>2025.1.4</spring-cloud.version>
 
 		<!-- Bibliothèques transverses -->
 		<jjwt.version>0.12.5</jjwt.version>
