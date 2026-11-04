@@ -102,6 +102,35 @@
 		<spring-data-bom.version>2025.1.6</spring-data-bom.version>
 		<!-- CVE-2026-42198, 54291 : pilote JDBC PostgreSQL -->
 		<postgresql.version>42.7.12</postgresql.version>
+
+		<!--
+		  Les trois suivantes ferment des vulnerabilites TRANSITIVES, invisibles
+		  jusqu'au 2026-11-04.
+
+		  Elles ne sont declarees dans aucun POM : elles arrivent par l'arbre.
+		  Trivy ne les voyait pas parce qu'il lisait les pom.xml et retombait sur
+		  les seules dependances DIRECTES quand sa resolution reseau echouait.
+		  Mesure : meme code, 0 ligne de CVE sur une execution et 756 sur la
+		  suivante. Le garde-fou analyse desormais les JAR reellement produits
+		  (voir .github/workflows/security.yml), donc le perimetre est stable.
+
+		  Les noms de propriete sont VERIFIES par help:evaluate, pas supposes :
+		  `bouncycastle.version` et `lz4.version` rendent « null object or
+		  invalid expression » et sont donc epingles en dependencyManagement
+		  plus bas. Une propriete inventee serait ignoree en silence, et la
+		  vulnerabilite resterait ouverte en paraissant corrigee.
+		-->
+		<!-- CVE CRITIQUE : tomcat-embed-core. Seul config-service est servlet,
+		     mais il sert la configuration de toute la plateforme. 11.0.21 est la
+		     version de Boot 4.0.6 ; le correctif est en 11.0.22. -->
+		<tomcat.version>11.0.27</tomcat.version>
+		<!-- CVE CRITIQUE : netty-handler. Netty porte TOUT le trafic de la
+		     plateforme — les neuf autres modules sont reactifs. 4.2.12 est la
+		     version de Boot 4.0.6 ; le correctif est en 4.2.17. -->
+		<netty.version>4.2.20.Final</netty.version>
+		<!-- CVE-2026-40983, 40984 (ELEVEES) : micrometer-core, sur le chemin de
+		     chaque metrique. Correctif en 1.16.6. -->
+		<micrometer.version>1.16.8</micrometer.version>
 		<testcontainers.version>1.21.3</testcontainers.version>
 		<license-plugin.version>2.4.0</license-plugin.version>
 	</properties>
@@ -124,6 +153,58 @@
 				<groupId>org.xerial.snappy</groupId>
 				<artifactId>snappy-java</artifactId>
 				<version>1.1.10.9</version>
+			</dependency>
+
+			<!--
+			  BouncyCastle : CVE CRITIQUE sur bcprov-jdk18on, en 1.81.
+
+			  C'est une bibliotheque de CRYPTOGRAPHIE : elle signe et chiffre.
+			  Une faille y porte sur tout ce qui en depend.
+
+			  DEUX lignes coexistent dans l'arbre complet — constate en le
+			  resolvant — mais une seule est livree :
+			    - bcprov-jdk18on 1.81, portee COMPILE : epinglee ici ;
+			    - bcprov/bcpkix/bcutil-jdk15on 1.70 (publies en 2021), portee
+			      TEST, amenes par com.webauthn4j:webauthn4j-test. Ils ne
+			      partent pas en production et sortent donc du perimetre
+			      analyse, qui est la portee runtime.
+
+			  bcpkix et bcutil-jdk18on ne sont pas dans l'arbre aujourd'hui.
+			  Ils sont epingles par anticipation : chez BouncyCastle ces trois
+			  artefacts doivent suivre la MEME ligne de version, et les laisser
+			  divergents produit des erreurs de chargement de classe a
+			  l'execution, pas a la compilation. Un epinglage en
+			  dependencyManagement n'ajoute rien a l'arbre : il ne vaut que si
+			  l'artefact y entre.
+			-->
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcprov-jdk18on</artifactId>
+				<version>1.86</version>
+			</dependency>
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcpkix-jdk18on</artifactId>
+				<version>1.86</version>
+			</dependency>
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcutil-jdk18on</artifactId>
+				<version>1.86</version>
+			</dependency>
+
+			<!--
+			  lz4-java : CVE-2026-106451, ELEVEE. Arrive transitivement par
+			  Kafka, qui l'emploie pour la compression des messages.
+
+			  Noter le groupId : `at.yawk.lz4` et non `org.lz4`. C'est un fork,
+			  celui que Kafka resout. Epingler `org.lz4:lz4-java` n'aurait aucun
+			  effet sur cet arbre — l'artefact present ne porte pas ce groupId.
+			-->
+			<dependency>
+				<groupId>at.yawk.lz4</groupId>
+				<artifactId>lz4-java</artifactId>
+				<version>1.11.4</version>
 			</dependency>
 			<!--
 			  Jackson 3 : jackson-core ET jackson-databind, tous deux epingles.

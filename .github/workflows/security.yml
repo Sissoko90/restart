@@ -130,17 +130,26 @@ jobs:
       # reellement produits. Le perimetre devient exactement ce qui est
       # livre, il ne depend plus du reseau, et il est reproductible.
       #
-      # Portee `runtime` : compile + runtime, sans test ni provided. Analyser
-      # les dependances de test signalerait des vulnerabilites qui
-      # n'atteignent jamais la production, et chaque faux positif erode la
-      # confiance dans la barriere.
+      # Portee `runtime` : compile + runtime, sans test. Analyser les
+      # dependances de test signalerait des vulnerabilites qui n'atteignent
+      # jamais la production, et chaque faux positif erode la confiance dans
+      # la barriere.
+      #
+      # ATTENTION AU NOM DU DRAPEAU : `-DincludeScope`, et NON
+      # `-Dmdep.includeScope`. Le second est ignore EN SILENCE — mesure sur
+      # auth-service :
+      #   -Dmdep.includeScope=runtime  -> 331 JAR, dont 3 BouncyCastle de test
+      #   (aucun filtre)               -> 331 JAR, dont 3  [identique]
+      #   -DincludeScope=runtime       -> 274 JAR, dont 0
+      # Sur le reacteur complet : 425 sans filtre, 366 avec. C'est le meme
+      # piege que les proprietes inventees du POM — un reglage qui parait
+      # applique et ne l'est pas.
       - name: Resoudre l'arbre reel des dependances
         run: |
           mvn -B -ntp -DskipTests install \
             dependency:copy-dependencies \
             -DoutputDirectory="${{ github.workspace }}/arbre-resolu" \
-            -Dmdep.includeScope=runtime \
-            -Dmdep.useRepositoryLayout=false
+            -DincludeScope=runtime
           echo "JAR resolus : $(ls -1 "${{ github.workspace }}/arbre-resolu"/*.jar | wc -l)"
 
       # Un plancher, pour la meme raison que dans les gardes du depot : si la
@@ -150,10 +159,11 @@ jobs:
         run: |
           NB=$(ls -1 "${{ github.workspace }}/arbre-resolu"/*.jar 2>/dev/null | wc -l)
           echo "JAR presents : $NB"
+          # 366 mesures en local au 2026-11-04, portee runtime, reacteur
+          # complet. Le plancher a 300 laisse de la marge pour une dependance
+          # retiree, tout en attrapant une resolution a moitie echouee.
           if [ "$NB" -lt 300 ]; then
-            echo "::error::Seulement $NB JAR resolus, attendu plus de 300."\
-                 "L'analyse porterait sur un perimetre tronque et rendrait un"\
-                 "vert trompeur."
+            echo "::error::Seulement $NB JAR resolus, attendu plus de 300. L'analyse porterait sur un perimetre tronque et rendrait un vert trompeur."
             exit 1
           fi
 
