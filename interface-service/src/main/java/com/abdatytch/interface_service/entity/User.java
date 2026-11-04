@@ -60,11 +60,20 @@ public class User extends BaseEntity {
     @Column("password_reset_expires_at")
     private LocalDateTime passwordResetExpiresAt;
 
+    /**
+     * Empreinte SHA-256 du jeton de rafraichissement, 64 caracteres hexadecimaux.
+     *
+     * <p>Jamais la valeur presentee par le client. Le champ
+     * {@code refreshToken}, qui portait cette valeur EN CLAIR, a ete retire
+     * avec sa colonne par la migration V9 : deux colonnes coexistaient pour le
+     * meme etat — celle-ci, creee par V1, et la version en clair ajoutee par
+     * V3 avec un index dessus — et c'est la dangereuse que le code employait.
+     *
+     * <p>Voir {@code EmpreinteDeSecret} dans platform-commons pour le calcul,
+     * et la migration V9 pour la raison.
+     */
     @Column("refresh_token_hash")
     private String refreshTokenHash;
-
-    @Column("refresh_token")
-    private String refreshToken;
 
     @Column("refresh_token_expires_at")
     private LocalDateTime refreshTokenExpiresAt;
@@ -147,7 +156,6 @@ public class User extends BaseEntity {
     public String getPasswordResetToken() { return passwordResetToken; }
     public LocalDateTime getPasswordResetExpiresAt() { return passwordResetExpiresAt; }
     public String getRefreshTokenHash() { return refreshTokenHash; }
-    public String getRefreshToken() { return refreshToken; }
     public LocalDateTime getRefreshTokenExpiresAt() { return refreshTokenExpiresAt; }
     public String getEmailVerificationToken() { return emailVerificationToken; }
     public String getEmailOtpCode() { return emailOtpCode; }
@@ -176,7 +184,6 @@ public class User extends BaseEntity {
     public void setPasswordResetToken(String passwordResetToken) { this.passwordResetToken = passwordResetToken; }
     public void setPasswordResetExpiresAt(LocalDateTime passwordResetExpiresAt) { this.passwordResetExpiresAt = passwordResetExpiresAt; }
     public void setRefreshTokenHash(String refreshTokenHash) { this.refreshTokenHash = refreshTokenHash; }
-    public void setRefreshToken(String refreshToken) { this.refreshToken = refreshToken; }
     public void setRefreshTokenExpiresAt(LocalDateTime refreshTokenExpiresAt) { this.refreshTokenExpiresAt = refreshTokenExpiresAt; }
     public void setEmailVerificationToken(String emailVerificationToken) { this.emailVerificationToken = emailVerificationToken; }
     public void setEmailOtpCode(String emailOtpCode) { this.emailOtpCode = emailOtpCode; }

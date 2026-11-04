@@ -84,9 +84,28 @@ public interface UserService {
     Mono<Void> updateLastLogin(UUID userId);
 
     /**
-     * Trouve un utilisateur par refresh token
+     * Trouve un utilisateur par son jeton de rafraichissement.
+     *
+     * <p>Le jeton est transforme en EMPREINTE avant la recherche : la base n'en
+     * detient que l'empreinte depuis la migration V9.
      */
     Mono<UserResponse> findByRefreshToken(String refreshToken);
+
+    /**
+     * Echange un jeton de rafraichissement contre une nouvelle paire.
+     *
+     * <p>La frappe des jetons vit ICI et non dans le controleur, qui signait
+     * les siens en HMAC256 avec un secret symetrique — illisibles par les huit
+     * services, qui valident du RS256 par JWKS. La connexion emettait deja ses
+     * jetons par cette voie ; le rafraichissement la rejoint.
+     *
+     * <p>Rend la meme forme que {@code login} : {@code accessToken},
+     * {@code refreshToken}, {@code expiresIn}, {@code tokenType}.
+     *
+     * @throws com.abdatytch.interface_service.exception.BusinessException si le
+     *         jeton est inconnu, perime, ou si le compte est inactif
+     */
+    Mono<java.util.Map<String, Object>> refreshTokens(String refreshToken);
 
     /**
      * Met à jour le refresh token d'un utilisateur

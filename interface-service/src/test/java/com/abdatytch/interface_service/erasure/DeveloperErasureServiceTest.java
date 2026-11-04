@@ -62,7 +62,8 @@ class DeveloperErasureServiceTest {
         developpeur.setRecoverySecretHash("secret-de-recuperation");
         developpeur.setTotpSecret("GEZDGNBVGY3TQOJQ");
         developpeur.setTotpEnabled(true);
-        developpeur.setRefreshToken("jeton-de-rafraichissement");
+        // Seule l'empreinte existe depuis la migration V9 : la colonne
+        // `refresh_token`, qui portait la valeur en clair, a ete supprimee.
         developpeur.setRefreshTokenHash("empreinte-du-jeton");
         developpeur.setEmailOtpCode("123456");
         developpeur.setPasswordResetToken("jeton-de-reinitialisation");
@@ -161,7 +162,6 @@ class DeveloperErasureServiceTest {
         void jetonsEtCodesEffaces() {
             User apres = apresEffacement();
 
-            assertThat(apres.getRefreshToken()).isNull();
             assertThat(apres.getRefreshTokenHash()).isNull();
             assertThat(apres.getEmailOtpCode()).isNull();
             assertThat(apres.getPasswordResetToken()).isNull();

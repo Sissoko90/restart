@@ -1,5 +1,6 @@
 package com.abdatytch.interface_service.service.impl;
 
+import com.abdatytch.commons.security.EmpreinteDeSecret;
 import com.abdatytch.commons.security.SecretMasking;
 import com.abdatytch.interface_service.constants.ApplicationConstants;
 import com.abdatytch.interface_service.dto.request.LoginRequest;
@@ -138,7 +139,21 @@ public class UserServiceImpl implements UserService {
                         "tokenType", "Bearer",
                         "user", userResponse
                     );
-                }))
+                })
+                // LA CAUSE RACINE DU RAFRAICHISSEMENT MORT.
+                //
+                // La connexion emettait un jeton de rafraichissement et ne le
+                // persistait NULLE PART : `updateLastLoginAndCache` n'ecrit que
+                // `lastLoginAt`, et `generateRefreshToken` ne fait que signer.
+                // `updateRefreshToken` n'avait qu'un seul appelant — le flux de
+                // rafraichissement lui-meme. Le premier rafraichissement ne
+                // pouvait donc rien trouver, et rendait une erreur.
+                //
+                // L'empreinte est enregistree ICI, a l'emission. C'est le seul
+                // moment ou l'on detient a la fois le compte et le jeton.
+                .flatMap(reponse -> updateRefreshToken(
+                            user.getId(), (String) reponse.get("refreshToken"))
+                        .thenReturn(reponse)))
                 .doOnSuccess(response -> {
                     UserResponse userResponse = (UserResponse) response.get("user");
                     metrics.incrementUserLogin(userResponse.getId().toString());
@@ -597,41 +612,112 @@ public class UserServiceImpl implements UserService {
                 .then();
     }
 
+    /**
+     * Retrouve un compte a partir du jeton de rafraichissement PRESENTE.
+     *
+     * <p>Le jeton est transforme en empreinte avant la recherche : la base ne
+     * detient que l'empreinte depuis la migration V9. Elle interrogeait
+     * auparavant la colonne en clair, ajoutee par V3 a cote de la colonne
+     * d'empreinte creee par V1 — deux magasins pour un meme etat, et c'est le
+     * dangereux qui servait.
+     */
     @Override
     public Mono<UserResponse> findByRefreshToken(String refreshToken) {
-        log.debug("Recherche utilisateur par refresh token");
-        
-        return userRepository.findByRefreshToken(refreshToken)
+        log.debug("Recherche utilisateur par empreinte du refresh token");
+
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return Mono.error(new BusinessException(
+                    "Refresh token invalide", "INVALID_REFRESH_TOKEN"));
+        }
+
+        return userRepository.findByRefreshTokenHash(EmpreinteDeSecret.empreinte(refreshToken))
                 .switchIfEmpty(Mono.error(new BusinessException("Refresh token invalide", "INVALID_REFRESH_TOKEN")))
                 .flatMap(user -> cacheUser(user).thenReturn(user))
                 .map(userMapper::toResponse);
     }
 
+    /**
+     * Echange un jeton de rafraichissement contre une nouvelle paire RS256.
+     *
+     * <p>La rotation est <b>complete</b> : le jeton presente devient inutilisable
+     * des que le nouveau est enregistre, parce que l'empreinte stockee est
+     * remplacee. Sans cela, un jeton intercepte resterait valable jusqu'a son
+     * expiration en parallele du nouveau.
+     *
+     * <p>Les jetons sont frappes par {@code devJwtService}, comme a la
+     * connexion. Le controleur en signait de son cote en HMAC256, que personne
+     * ne pouvait valider.
+     */
+    @Override
+    public Mono<Map<String, Object>> refreshTokens(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return Mono.error(new BusinessException(
+                    "Refresh token invalide", "INVALID_REFRESH_TOKEN"));
+        }
+
+        return userRepository.findByRefreshTokenHash(EmpreinteDeSecret.empreinte(refreshToken))
+                .switchIfEmpty(Mono.error(new BusinessException(
+                        "Refresh token invalide", "INVALID_REFRESH_TOKEN")))
+                .flatMap(user -> Mono.fromCallable(() -> {
+                            String accessToken = devJwtService.generateToken(user);
+                            String nouveauRafraichissement = devJwtService.generateRefreshToken(user);
+                            return Map.<String, Object>of(
+                                    "accessToken", accessToken,
+                                    "refreshToken", nouveauRafraichissement,
+                                    "expiresIn", devJwtService.getAccessTokenExpiration(),
+                                    "tokenType", "Bearer");
+                        })
+                        .flatMap(reponse -> updateRefreshToken(
+                                    user.getId(), (String) reponse.get("refreshToken"))
+                                .thenReturn(reponse)))
+                .doOnSuccess(unused -> log.info("Paire de jetons renouvelee"));
+    }
+
+    /**
+     * Enregistre l'EMPREINTE du jeton, jamais le jeton.
+     *
+     * <p>Le parametre reste le jeton en clair : c'est l'appelant qui l'a, et
+     * lui faire calculer l'empreinte reporterait la decision sur chaque site
+     * d'appel. Un seul endroit sait comment ce secret est stocke.
+     */
     @Override
     public Mono<Void> updateRefreshToken(UUID userId, String refreshToken) {
-        log.debug("Mise à jour du refresh token pour l'utilisateur: {}", userId);
-        
+        log.debug("Mise à jour de l'empreinte du refresh token pour l'utilisateur: {}", userId);
+
         return userRepository.findById(userId)
                 .switchIfEmpty(Mono.error(new BusinessException("Utilisateur non trouvé", "USER_NOT_FOUND")))
                 .flatMap(user -> {
-                    user.setRefreshToken(refreshToken);
+                    user.setRefreshTokenHash(EmpreinteDeSecret.empreinte(refreshToken));
                     user.setRefreshTokenExpiresAt(LocalDateTime.now().plusDays(7)); // 7 jours
                     return saveUserWithCache(user);
                 })
                 .then();
     }
 
+    /**
+     * Invalide le jeton de rafraichissement d'un compte.
+     *
+     * <p>Rend un {@code Mono} vide si aucun compte ne correspond, et c'est
+     * voulu : une deconnexion presentant un jeton inconnu ne doit pas renseigner
+     * l'appelant sur son existence. Mais le site d'appel doit savoir que
+     * « rien n'a ete invalide » et « invalidation reussie » se ressemblent ici —
+     * voir le javadoc de la deconnexion dans {@code AuthController}.
+     */
     @Override
     public Mono<Void> invalidateRefreshToken(String refreshToken) {
         log.debug("Invalidation du refresh token");
-        
-        return userRepository.findByRefreshToken(refreshToken)
+
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return Mono.empty();
+        }
+
+        return userRepository.findByRefreshTokenHash(EmpreinteDeSecret.empreinte(refreshToken))
                 .flatMap(user -> {
-                    user.setRefreshToken(null);
+                    user.setRefreshTokenHash(null);
                     user.setRefreshTokenExpiresAt(null);
                     return saveUserWithCache(user);
                 })
                 .then()
-                .doOnSuccess(unused -> log.info("Refresh token invalidé avec succès"));
+                .doOnSuccess(unused -> log.info("Refresh token invalidé"));
     }
 }

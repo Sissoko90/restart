@@ -64,10 +64,18 @@ public interface UserRepository extends ReactiveCrudRepository<User, UUID> {
     Mono<User> findByEmailVerificationToken(String token);
 
     /**
-     * Trouve un utilisateur par refresh token
+     * Trouve un utilisateur par l'EMPREINTE de son jeton de rafraichissement.
+     *
+     * <p>La requete portait sur `refresh_token`, la colonne en CLAIR, supprimee
+     * par la migration V9 : deux colonnes coexistaient pour le meme etat, et
+     * c'est la dangereuse que le code interrogeait. L'appelant doit donc passer
+     * {@code EmpreinteDeSecret.empreinte(jeton)}, jamais le jeton lui-meme.
+     *
+     * <p>Le nom dit `Hash` pour que le site d'appel ne puisse pas se tromper :
+     * `findByRefreshToken(jeton)` invitait a passer la valeur presentee.
      */
-    @Query("SELECT * FROM users WHERE refresh_token = :refreshToken AND refresh_token_expires_at > NOW() AND is_active = true")
-    Mono<User> findByRefreshToken(String refreshToken);
+    @Query("SELECT * FROM users WHERE refresh_token_hash = :refreshTokenHash AND refresh_token_expires_at > NOW() AND is_active = true")
+    Mono<User> findByRefreshTokenHash(String refreshTokenHash);
 
     /**
      * Trouve un utilisateur par token de confirmation admin

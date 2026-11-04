@@ -7,19 +7,18 @@ import com.abdatytch.interface_service.dto.request.ResetPasswordWithOtpRequest;
 import com.abdatytch.interface_service.dto.request.VerifyEmailRequest;
 import com.abdatytch.interface_service.dto.request.VerifyPhoneRequest;
 import com.abdatytch.interface_service.dto.response.UserResponse;
+import com.abdatytch.interface_service.exception.BusinessException;
+import com.abdatytch.interface_service.service.IDevJwtService;
 import com.abdatytch.interface_service.service.UserService;
-import com.auth0.jwt.JWT;
-import com.auth0.jwt.algorithms.Algorithm;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
-import java.util.Date;
-import java.util.List;
 import java.util.Map;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -36,18 +35,21 @@ public class AuthController {
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
     private final UserService userService;
-    
-    @Value("${jwt.secret}")
-    private String jwtSecret;
-    
-    @Value("${jwt.expiration}")
-    private long jwtExpiration;
-    
-    @Value("${jwt.refresh-expiration}")
-    private long jwtRefreshExpiration;
 
-    public AuthController(UserService userService) {
+    /**
+     * L'autorite de signature, pour la REVOCATION a la deconnexion.
+     *
+     * <p>Les trois {@code @Value} qui vivaient ici — {@code jwt.secret},
+     * {@code jwt.expiration}, {@code jwt.refresh-expiration} — ont ete retires
+     * avec le second mecanisme de signature HMAC qu'ils alimentaient. Un
+     * secret SYMETRIQUE n'a rien a faire dans le service qui detient les cles
+     * privees RSA de la plateforme.
+     */
+    private final IDevJwtService jwtService;
+
+    public AuthController(UserService userService, IDevJwtService jwtService) {
         this.userService = userService;
+        this.jwtService = jwtService;
     }
 
     @PostMapping("/register")
@@ -172,87 +174,101 @@ public class AuthController {
                 .doOnSuccess(unused -> log.info("Mot de passe réinitialisé avec succès pour: {}", request.getEmail()));
     }
 
+    /**
+     * Rafraîchit la paire de jetons.
+     *
+     * <h3>Ce qui était cassé, et de TROIS façons indépendantes</h3>
+     *
+     * <ol>
+     *   <li>la connexion <b>ne persistait pas</b> le jeton qu'elle émettait.
+     *       {@code updateRefreshToken} n'avait qu'un seul appelant : ce flux
+     *       lui-même. Le premier rafraîchissement ne pouvait rien trouver ;</li>
+     *   <li>la recherche portait sur la colonne <b>en clair</b>
+     *       {@code refresh_token}, jamais écrite — alors que {@code V1} avait
+     *       créé {@code refresh_token_hash}, le bon magasin ;</li>
+     *   <li>les nouveaux jetons étaient signés en <b>HMAC256</b> avec
+     *       {@code ${jwt.secret}}, alors que les huit services valident du
+     *       <b>RS256</b> par JWKS. {@code Algorithm.HMAC256} n'existait que
+     *       dans cette classe, et aucun validateur de la plateforme n'accepte
+     *       HS256 : les jetons rendus n'étaient utilisables nulle part.</li>
+     * </ol>
+     *
+     * <p>Un second mécanisme de signature, avec un secret <b>symétrique</b>,
+     * dans le service qui est l'autorité JWT de la plateforme. Il est retiré :
+     * la frappe des jetons appartient à {@code UserService}, qui le fait déjà
+     * pour la connexion, avec les clés RSA et le {@code kid} publié au JWKS.
+     *
+     * <p>Le refus est un <b>401</b> et non un 500 : un jeton de
+     * rafraîchissement inconnu ou périmé est un défaut d'authentification, pas
+     * une panne du serveur. Il rendait une {@code RuntimeException} générique.
+     */
     @PostMapping("/refresh-token")
-    @Operation(summary = "Rafraîchir le token", description = "Génère un nouveau token d'accès")
-    public Mono<Map<String, String>> refreshToken(@RequestBody Map<String, String> request) {
-        String refreshToken = request.get("refreshToken");
+    @Operation(summary = "Rafraîchir le token", description = "Génère une nouvelle paire de jetons RS256")
+    public Mono<Map<String, Object>> refreshToken(@RequestBody Map<String, String> request) {
         log.info("Demande de rafraîchissement de token");
-        
-        // Valider le refresh token et générer nouveaux tokens
-        return userService.findByRefreshToken(refreshToken)
-                .switchIfEmpty(Mono.error(new RuntimeException("Refresh token invalide")))
-                .flatMap(user -> {
-                    // Générer nouveaux tokens JWT
-                    String newAccessToken = generateAccessToken(user);
-                    String newRefreshToken = generateRefreshToken(user);
-                    
-                    // Mettre à jour le refresh token en base
-                    return userService.updateRefreshToken(user.getId(), newRefreshToken)
-                            .thenReturn(Map.of(
-                                "accessToken", newAccessToken,
-                                "refreshToken", newRefreshToken,
-                                "expiresIn", "3600",
-                                "tokenType", "Bearer"
-                            ));
-                })
+
+        return userService.refreshTokens(request.get("refreshToken"))
                 .doOnSuccess(tokens -> log.info("Tokens rafraîchis avec succès"))
-                .doOnError(error -> log.error("Erreur lors du rafraîchissement: {}", error.getMessage()));
+                .onErrorResume(BusinessException.class, refus -> {
+                    // Le motif est journalise, jamais rendu : distinguer
+                    // « inconnu » de « perime » renseignerait un appelant sur
+                    // l'existence du jeton.
+                    log.warn("Rafraîchissement refusé : {}", refus.getMessage());
+                    return Mono.error(new ResponseStatusException(
+                            HttpStatus.UNAUTHORIZED, "Jeton de rafraîchissement invalide"));
+                });
     }
 
     /**
-     * Génère un token d'accès JWT
+     * Déconnexion : invalide le jeton de rafraîchissement ET révoque l'accès.
+     *
+     * <h3>Ce qui était cassé</h3>
+     *
+     * Cette méthode rendait <b>204</b> en ne révoquant rien. Elle mettait à
+     * {@code null} une colonne que la connexion n'écrivait jamais, et
+     * {@code .onErrorResume(error -> Mono.empty())} avalait tout échec — y
+     * compris celui de l'invalidation. Un développeur qui se déconnectait
+     * gardait un jeton d'accès valable jusqu'à son expiration.
+     *
+     * <p>Le mécanisme de révocation existait et <b>fonctionnait</b> :
+     * {@code DevTokenBlacklistServiceImpl} alimente Redis, et
+     * {@code validateTokenReactive} le consulte. Il n'était simplement pas
+     * appelé ici.
+     *
+     * <p>Le jeton d'accès est donc révoqué <b>en plus</b> du jeton de
+     * rafraîchissement, quand l'appelant le fournit. Révoquer l'un sans l'autre
+     * ne ferme pas la session : le rafraîchissement seul laisse l'accès courant
+     * vivant, et l'accès seul laisse le porteur en obtenir un nouveau.
+     *
+     * <p>Le code reste <b>204</b> même si rien ne correspondait : une
+     * déconnexion ne doit pas renseigner l'appelant sur l'existence d'un jeton.
+     * Mais les erreurs ne sont plus avalées en silence — elles sont
+     * journalisées avec leur cause.
      */
-    private String generateAccessToken(UserResponse user) {
-        try {
-            Algorithm algorithm = Algorithm.HMAC256(jwtSecret);
-            
-            return JWT.create()
-                    .withIssuer("interface-service")
-                    .withSubject(user.getId().toString())
-                    .withClaim("email", user.getEmail())
-                    .withClaim("firstName", user.getFirstName())
-                    .withClaim("lastName", user.getLastName())
-                    .withClaim("roles", List.of("USER"))
-                    .withIssuedAt(new Date())
-                    .withExpiresAt(new Date(System.currentTimeMillis() + jwtExpiration * 1000))
-                    .sign(algorithm);
-        } catch (Exception e) {
-            log.error("Erreur lors de la génération du token JWT: {}", e.getMessage());
-            throw new RuntimeException("Erreur génération token", e);
-        }
-    }
-
-    /**
-     * Génère un refresh token
-     */
-    private String generateRefreshToken(UserResponse user) {
-        try {
-            Algorithm algorithm = Algorithm.HMAC256(jwtSecret);
-            
-            return JWT.create()
-                    .withIssuer("interface-service")
-                    .withSubject(user.getId().toString())
-                    .withClaim("type", "refresh")
-                    .withIssuedAt(new Date())
-                    .withExpiresAt(new Date(System.currentTimeMillis() + jwtRefreshExpiration * 1000))
-                    .sign(algorithm);
-        } catch (Exception e) {
-            log.error("Erreur lors de la génération du refresh token: {}", e.getMessage());
-            throw new RuntimeException("Erreur génération refresh token", e);
-        }
-    }
-
     @PostMapping("/logout")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @Operation(summary = "Déconnexion", description = "Invalide les tokens de l'utilisateur")
+    @Operation(summary = "Déconnexion", description = "Invalide le jeton de rafraîchissement et révoque le jeton d'accès")
     public Mono<Void> logout(@RequestBody Map<String, String> request) {
         String refreshToken = request.get("refreshToken");
+        String accessToken = request.get("accessToken");
         log.info("Demande de déconnexion");
-        
-        // Invalider le refresh token en base/cache
+
+        // `revokeToken` est synchrone et analyse le jeton : hors du fil de la
+        // requete, comme toute operation qui calcule sur le chemin reactif.
+        Mono<Void> revocation = (accessToken == null || accessToken.isBlank())
+                ? Mono.empty()
+                : Mono.<Void>fromRunnable(() -> jwtService.revokeToken(accessToken))
+                        .subscribeOn(Schedulers.boundedElastic());
+
         return userService.invalidateRefreshToken(refreshToken)
-                .doOnSuccess(unused -> log.info("Déconnexion réussie - Token invalidé"))
-                .doOnError(error -> log.error("Erreur lors de la déconnexion: {}", error.getMessage()))
-                .onErrorResume(error -> Mono.empty()); // Continue même si l'invalidation échoue
+                .then(revocation)
+                .doOnSuccess(unused -> log.info("Déconnexion traitée"))
+                // Le detail est journalise : l'avaler sans trace etait le
+                // defaut. L'appelant recoit 204 dans tous les cas, mais
+                // l'exploitant voit ce qui a echoue.
+                .onErrorResume(error -> {
+                    log.error("Déconnexion incomplète : {}", error.getMessage(), error);
+                    return Mono.empty();
+                });
     }
 }

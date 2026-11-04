@@ -116,7 +116,10 @@ public class DeveloperErasureService {
         developer.setTotpSecret(null);
         developer.setTotpEnabled(false);
 
-        developer.setRefreshToken(null);
+        // Seule l'empreinte reste a effacer : la colonne `refresh_token`, qui
+        // portait la valeur en clair, a ete supprimee par la migration V9. Deux
+        // colonnes coexistaient pour le meme etat, et c'est la dangereuse que le
+        // code employait.
         developer.setRefreshTokenHash(null);
         developer.setRefreshTokenExpiresAt(null);
 
