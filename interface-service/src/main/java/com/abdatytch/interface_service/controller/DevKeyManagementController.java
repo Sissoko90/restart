@@ -91,6 +91,30 @@ public class DevKeyManagementController {
 
                     return ResponseEntity.ok(response);
                 }))
+                // Un refus n'est pas une panne, et les confondre coute cher ici.
+                //
+                // Quand la rotation est desactivee — ce qui est le cas PAR
+                // DEFAUT — le service rend desormais une IllegalStateException.
+                // La rendre en 500 dirait a l'exploitant que le service est
+                // casse, alors que la plateforme va bien et qu'il manque un
+                // reglage. 409 est le code juste : la requete est bien formee,
+                // mais l'etat courant du service l'interdit.
+                //
+                // Avant, ce cas rendait 200 avec « rotation completed
+                // successfully » : le service rendait un Mono VIDE, que le
+                // .then() ci-dessus transformait en reponse de succes, avec un
+                // newKeyId inchange.
+                .onErrorResume(IllegalStateException.class, refus -> {
+                    log.warn("Rotation des cles refusee : {}", refus.getMessage());
+                    Map<String, Object> reponse = new LinkedHashMap<>();
+                    reponse.put("status", "refused");
+                    reponse.put("message", refus.getMessage());
+                    reponse.put("currentKeyId", keyRotationService.getCurrentKeyId());
+                    reponse.put("timestamp", java.time.Instant.now().toString());
+                    return Mono.just(ResponseEntity
+                            .status(org.springframework.http.HttpStatus.CONFLICT)
+                            .body(reponse));
+                })
                 .onErrorResume(e -> {
                     log.error(" Dev key rotation failed", e);
                     Map<String, Object> error = new LinkedHashMap<>();

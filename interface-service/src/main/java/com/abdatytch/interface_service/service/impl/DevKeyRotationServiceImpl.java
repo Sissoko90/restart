@@ -274,11 +274,57 @@ public class DevKeyRotationServiceImpl implements IDevKeyRotationService {
         return currentKeyId;
     }
 
+    /**
+     * Fait tourner la paire de signature.
+     *
+     * <h3>Rotation désactivée : une ERREUR, et non un Mono vide</h3>
+     *
+     * LE DEFAUT CORRIGE. {@code jwt.dev.key.rotation.enabled} vaut <b>false par
+     * defaut</b>. Cette methode rendait alors {@code Mono.empty()}, et le
+     * {@code .then(...)} de {@code DevKeyManagementController} transformait ce
+     * vide en {@code 200 {"status":"success"}} annoncant une rotation
+     * accomplie — avec un {@code newKeyId} <b>inchange</b>, celui de la cle
+     * courante.
+     *
+     * <p>Un exploitant qui fait tourner les cles apres une suspicion de
+     * compromission s'entendait donc dire que c'etait fait, sans aucun moyen de
+     * s'en apercevoir : la reponse etait identique a celle d'une rotation
+     * reussie.
+     *
+     * <p>Un {@code Mono} vide est le pire des trois etats possibles : il ne
+     * ressemble ni a un succes ni a une erreur, et chaque appelant en decide
+     * autrement. Celui-ci l'a lu comme un succes. Le signaler en erreur typee
+     * laisse l'appelant distinguer « refuse parce que desactive » de « echoue ».
+     *
+     * <h3>La generation RSA ne tourne plus sur le fil appelant</h3>
+     *
+     * {@code Mono.fromCallable} sans {@code subscribeOn} execute son corps sur
+     * le fil qui souscrit — pour un appel HTTP, une EventLoop de Netty. Or
+     * engendrer une paire RSA-2048 coute des dizaines a des centaines de
+     * millisecondes de calcul, et {@code new SecureRandom()} lit
+     * {@code /dev/urandom}. La politique du depot est « zero blocage sur le
+     * chemin d'une requete » — voir {@code docs/NON-BLOCKING.md}.
+     *
+     * <h3>Ce que cette methode ne fait PAS, et qui reste a decider</h3>
+     *
+     * La rotation n'est <b>pas durable</b> : {@code keyCache} vit en memoire, et
+     * seul l'IDENTIFIANT de la cle est ecrit dans Redis, jamais la matiere de la
+     * cle. Au redemarrage, {@code loadInitialKeys()} recharge la cle configuree
+     * et la cle pivotee est perdue — les jetons qu'elle a signes deviennent
+     * inverifiables. Avec plusieurs instances, celle qui pivote signe avec une
+     * cle absente du JWKS des autres.
+     *
+     * <p>Y remedier demande de decider si Redis detient de la matiere de cle
+     * privee. C'est une decision de conception, pas un correctif.
+     */
     @Override
     public Mono<Void> rotateKeys() {
         if (!rotationEnabled) {
-            log.warn(" Dev key rotation is disabled");
-            return Mono.empty();
+            log.warn("Rotation des cles refusee : jwt.dev.key.rotation.enabled est faux");
+            return Mono.error(new IllegalStateException(
+                    "La rotation des cles est desactivee. Renseigner "
+                    + "jwt.dev.key.rotation.enabled=true pour l'autoriser. Aucune cle "
+                    + "n'a ete modifiee."));
         }
 
         return Mono.fromCallable(() -> {
@@ -314,6 +360,11 @@ public class DevKeyRotationServiceImpl implements IDevKeyRotationService {
 
             return newKeyId;
         })
+        // Place AVANT le flatMap : seule la generation RSA est deplacee, la
+        // suite reste sur le fil reactif ou Redis l'attend. Un subscribeOn pose
+        // en fin de chaine deplacerait tout, y compris l'appel Redis, qui est
+        // deja non bloquant.
+        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
         .flatMap(newKeyId ->
             redisTemplate.opsForValue()
                 .set(REDIS_CURRENT_KEY_ID, newKeyId)
