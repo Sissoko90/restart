@@ -72,11 +72,24 @@
 			<version>1.3.25</version>
 		</dependency>
 		
-		<!-- MinIO Client (S3 Compatible) -->
+		<!--
+		  MinIO Client (compatible S3).
+
+		  8.5.7 -> 8.6.0 : CVE-2025-59952, ELEVEE. Le client minio-java est
+		  vulnerable a une substitution de valeur par balise XML. Ce service
+		  parle a MinIO pour chaque envoi et chaque telechargement de piece
+		  d'identite — c'est le chemin ou passent les documents chiffres.
+
+		  La version est ecrite ICI et non geree par une propriete : elle n'est
+		  dans la BOM d'aucun parent, et ce module est le seul a dependre de
+		  MinIO. Trivy la signalait deux fois — sur ce POM et sur la racine —
+		  parce qu'il analyse chaque fichier separement ; c'est la meme et
+		  unique occurrence.
+		-->
 		<dependency>
 			<groupId>io.minio</groupId>
 			<artifactId>minio</artifactId>
-			<version>8.5.7</version>
+			<version>8.6.0</version>
 		</dependency>
 		
 		<!-- MaxMind GeoIP2 for geolocation -->
