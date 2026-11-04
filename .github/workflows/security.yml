@@ -241,7 +241,20 @@ jobs:
   owasp:
     name: OWASP Dependency-Check
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 60 -> 120 minutes, et la mesure l'impose.
+    #
+    # Premiere execution avec la cle NVD, cache froid : demarree a 15:26:19,
+    # tuee a 16:26:37 -- soit 60 min et 18 s. GitHub rapporte un job expire
+    # comme « cancelled », ce qui ne ressemble ni a un succes ni a un echec.
+    #
+    # LE PIEGE QUE CELA CREAIT : `actions/cache` n'ecrit son cache qu'a la FIN
+    # du job. Expire, il n'ecrit rien -- donc l'execution suivante repart a
+    # froid et expire aussi. Une boucle ou le cache ne se remplit jamais, et ou
+    # le second avis ne tourne jamais.
+    #
+    # La premiere execution doit donc pouvoir ABOUTIR. Les suivantes liront le
+    # cache et prendront quelques minutes.
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
