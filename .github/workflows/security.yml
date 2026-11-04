@@ -140,16 +140,30 @@ jobs:
           scanners: vuln
 
   # ------------------------------------------------------------------
-  # 4. OWASP Dependency-Check — second avis, hebdomadaire
+  # 4. OWASP Dependency-Check — second avis
   # ------------------------------------------------------------------
   # Deux outils sur le même périmètre n'est pas redondant : leurs bases
   # de correspondance diffèrent, et chacun voit des paquets que l'autre
-  # manque. Celui-ci dépend du NVD, plus lent, d'où l'exécution planifiée.
+  # manque.
+  #
+  # CE JOB N'EST PLUS IGNORE SUR UN PUSH, et le changement est voulu.
+  #
+  # Il portait `if: schedule || workflow_dispatch`, donc « Skipped » sur
+  # chaque push. Et sur 26 exécutions du workflow — 15 pull_request,
+  # 11 push, zéro schedule — il n'avait jamais tourné une seule fois.
+  #
+  # Pire : même lancé, il ne scannait rien. L'étape faisait `exit 0`
+  # avec un simple ::warning:: quand NVD_API_KEY est absent, donc un job
+  # VERT sans analyse. Un second avis déclaré, planifié, et inerte.
+  #
+  # Désormais l'absence de la clé fait ÉCHOUER le job, avec le message
+  # qui dit quoi faire. Un garde-fou qui ne peut pas fonctionner doit se
+  # voir, pas se taire : c'est la seule différence entre une protection
+  # et un décor.
   owasp:
     name: OWASP Dependency-Check
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v4
@@ -160,18 +174,47 @@ jobs:
           distribution: temurin
           cache: maven
 
+      # La base du NVD est volumineuse, et son téléchargement est le poste
+      # de coût de ce job. La mettre en cache évite de la retirer à chaque
+      # push, ce qui serait intenable maintenant que le job tourne à
+      # chaque fois.
+      - name: Cache de la base NVD
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/owasp/dependency-check-data
+          key: nvd-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            nvd-${{ runner.os }}-
+
       - name: Analyser
-        # Sans NVD_API_KEY le téléchargement de la base est fortement limité
-        # par le NVD et peut dépasser l'heure. La clé est gratuite :
-        # https://nvd.nist.gov/developers/request-an-api-key
+        # Sans NVD_API_KEY, le NVD limite très fortement le téléchargement :
+        # l'analyse dépasse l'heure et échoue. La clé est gratuite.
+        #
+        # ÉCHEC et non `exit 0`. Rendre vert sans avoir analysé est la forme
+        # la plus trompeuse de succès, et c'est exactement ce que ce job
+        # faisait.
+        #
+        # Le secret passe par `env:` et non par une interpolation `${{ }}`
+        # dans la commande. Deux raisons : la valeur n'est pas substituée
+        # dans le texte du script — donc rien à casser ni à injecter si elle
+        # contient un caractère shell — et elle n'apparaît pas dans la ligne
+        # de commande du processus, lisible par `ps`.
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
-          if [ -z "${{ secrets.NVD_API_KEY }}" ]; then
-            echo "::warning::NVD_API_KEY absent — analyse ignorée."
-            echo "Ajouter le secret NVD_API_KEY pour activer ce second avis."
-            exit 0
+          if [ -z "$NVD_API_KEY" ]; then
+            echo "::error::NVD_API_KEY absent : ce second avis ne peut pas fonctionner, et ce job echoue plutot que de rendre un vert sans avoir rien analyse."
+            echo "Ajouter le secret NVD_API_KEY (gratuit) :"
+            echo "  https://nvd.nist.gov/developers/request-an-api-key"
+            echo "Puis : Settings > Secrets and variables > Actions > New repository secret"
+            exit 1
           fi
-          mvn -B -ntp org.owasp:dependency-check-maven:check \
-            -DnvdApiKey='${{ secrets.NVD_API_KEY }}' \
+          # Version ÉPINGLÉE. Elle ne l'était pas :
+          # `org.owasp:dependency-check-maven:check` sans version résout la
+          # dernière publiée — un outil de sécurité qui change sous nos pieds
+          # d'un push à l'autre, sans qu'aucun commit ne le dise.
+          mvn -B -ntp org.owasp:dependency-check-maven:13.0.0:check \
+            -DnvdApiKey="$NVD_API_KEY" \
             -DfailBuildOnCVSS=7 \
             -Dformats=HTML,SARIF
 
