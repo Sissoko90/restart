@@ -4,6 +4,7 @@ import com.abdatytch.commons.security.JwksKeyProvider;
 import com.abdatytch.user_service.constants.AppConstants;
 import com.abdatytch.user_service.constants.SecurityConstants;
 import com.abdatytch.user_service.exception.InvalidTokenException;
+import com.abdatytch.user_service.exception.ValidationIndisponibleException;
 import com.abdatytch.user_service.service.TokenBlacklistService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -76,9 +77,17 @@ public class JwtTokenValidator {
         try {
             log.debug(SecurityConstants.LOG_DEBUG_VALIDATING_TOKEN);
 
-            // Vérifier qu'au moins une clé publique est disponible
+            // Aucune cle publique : la plateforme est incapable de JUGER, et le
+            // jeton n'est pas en cause.
+            //
+            // C'etait une InvalidTokenException, donc un 401 — le client
+            // renouvelait un jeton qui n'avait rien, le renouvellement echouait
+            // pour la meme raison (JWKS injoignable), et tous les utilisateurs
+            // se trouvaient deconnectes pendant la panne. Le type dit maintenant
+            // la difference, et la reponse est une erreur serveur.
             if (jwksKeyProvider.getDefaultPublicKey() == null) {
-                return Mono.error(new InvalidTokenException("No public key available for JWT validation"));
+                return Mono.error(new ValidationIndisponibleException(
+                        "Aucune cle publique disponible : validation JWT impossible"));
             }
 
             // Clé résolue par `kid` de l'en-tête JWS (obligatoire pendant une rotation :

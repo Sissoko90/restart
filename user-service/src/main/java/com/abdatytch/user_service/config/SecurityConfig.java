@@ -188,7 +188,36 @@ public class SecurityConfig {
                             java.util.Map.of("alg", "RS256", "typ", "JWT"),
                             claimsMap);
                 })
-                .onErrorMap(error -> new org.springframework.security.oauth2.jwt.JwtException(
-                        "Invalid JWT token", error));
+                // BadJwtException, et NON JwtException : c'est la difference
+                // entre 401 et 500.
+                //
+                // LE DEFAUT CORRIGE. Spring Security ne rend un 401 que pour un
+                // BadJwtException ; tout autre JwtException devient un
+                // AuthenticationServiceException, donc un 500. Verifie dans le
+                // bytecode de JwtReactiveAuthenticationManager.onError
+                // (spring-security-oauth2-resource-server 7.1.1), pas suppose.
+                //
+                // Ce service rendait donc 500 a TOUT jeton refuse — expire
+                // compris, c'est-a-dire le cas le plus courant qui existe,
+                // puisque chaque jeton finit par expirer. Un client qui
+                // declenche son rafraichissement sur 401 ne le declenchait
+                // jamais. Et GlobalExceptionHandler declare bien 401 pour
+                // InvalidTokenException : il n'etait jamais atteint, l'erreur
+                // survenant dans le filtre Security, en amont du controleur.
+                //
+                // La distinction porte sur le TYPE et non sur un message : un
+                // statut lie au texte d'un message change des qu'on reformule le
+                // message.
+                .onErrorMap(com.abdatytch.user_service.exception.InvalidTokenException.class,
+                        erreur -> new org.springframework.security.oauth2.jwt.BadJwtException(
+                                "Jeton refuse", erreur))
+                // Tout le reste reste une erreur SERVEUR, et c'est voulu :
+                // ValidationIndisponibleException (JWKS injoignable) et une
+                // panne de la liste de revocation ne disent rien du jeton de
+                // l'appelant. Les habiller en 401 ferait deconnecter tout le
+                // monde au moment ou la plateforme est deja en difficulte.
+                .onErrorMap(erreur -> !(erreur instanceof org.springframework.security.oauth2.jwt.JwtException),
+                        erreur -> new org.springframework.security.oauth2.jwt.JwtException(
+                                "Validation du jeton impossible", erreur));
     }
 }
