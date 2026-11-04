@@ -41,6 +41,38 @@ public class JwtAuthenticationWebFilter implements WebFilter {
     @Value("${jwt.audience:setting-service}")
     private String expectedAudience;
 
+    /**
+     * L'analyseur JWT, construit UNE fois.
+     *
+     * <p>{@code Jwts.parser()...build()} etait appele a chaque requete portant
+     * un jeton. Or {@code build()} de jjwt fait une recherche
+     * {@link java.util.ServiceLoader}, qui <b>lit des JAR sur le disque</b> :
+     * un appel bloquant sur une EventLoop, sur le chemin de chaque requete
+     * authentifiee.
+     *
+     * <p>Cacher l'analyseur est sur : {@code keyLocator()} resout la cle au
+     * moment de l'analyse, par le {@code kid} de l'en-tete JWS, donc la rotation
+     * de cles continue de fonctionner. Voir
+     * {@code media-service/JwtAuthenticationWebFilter} pour la trace qui l'a
+     * revele.
+     */
+    private volatile io.jsonwebtoken.JwtParser parser;
+
+    /**
+     * Construit l'analyseur apres l'injection des {@code @Value}.
+     *
+     * <p>Et non dans le constructeur, ou l'emetteur et l'audience attendus
+     * seraient encore nuls.
+     */
+    @jakarta.annotation.PostConstruct
+    void construireLAnalyseur() {
+        parser = Jwts.parser()
+                .keyLocator(entete -> jwksKeyProvider.keyLocator().locate(entete))
+                .requireIssuer(expectedIssuer)
+                .requireAudience(expectedAudience)
+                .build();
+    }
+
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String authHeader = exchange.getRequest().getHeaders().getFirst("Authorization");
@@ -73,11 +105,9 @@ public class JwtAuthenticationWebFilter implements WebFilter {
     }
 
     private Claims parse(String token) {
-        return Jwts.parser()
-                .keyLocator(jwksKeyProvider.keyLocator())
-                .requireIssuer(expectedIssuer)
-                .requireAudience(expectedAudience)
-                .build()
+        // L'analyseur construit au demarrage : le reconstruire ici ferait une
+        // lecture disque sur une EventLoop. Voir le champ.
+        return parser
                 .parseSignedClaims(token)
                 .getPayload();
     }

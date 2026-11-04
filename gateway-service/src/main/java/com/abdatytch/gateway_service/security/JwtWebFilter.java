@@ -76,6 +76,19 @@ public class JwtWebFilter implements WebFilter {
         this.jwksKeyProvider = jwksKeyProvider;
         this.revocationChecker = revocationChecker;
         this.expectedIssuer = expectedIssuer;
+
+        // L'analyseur est construit ICI, et non dans un @PostConstruct.
+        //
+        // L'emetteur arrive en argument de constructeur : rien n'oblige a
+        // attendre le conteneur. Et surtout, SecurityConfig comme
+        // JwtWebFilterTest construisent ce filtre par `new` — un @PostConstruct
+        // n'aurait pas tourne dans le test, l'analyseur serait reste nul, et
+        // TOUS les jetons auraient ete refuses. C'est exactement ce que les
+        // tests ont signale quand j'ai essaye cette voie.
+        this.parser = Jwts.parser()
+                .keyLocator(entete -> jwksKeyProvider.keyLocator().locate(entete))
+                .requireIssuer(expectedIssuer)
+                .build();
         String audienceCsv = expectedAudience == null ? "" : expectedAudience;
         this.acceptedAudiences = Arrays.stream(audienceCsv.split(","))
                 .map(String::trim)
@@ -189,16 +202,35 @@ public class JwtWebFilter implements WebFilter {
     private static final String CHEMIN_DU_JETON_TEMPORAIRE =
             "/api/v1/auth-sdk/oauth2/complete-profile";
 
+    /**
+     * L'analyseur JWT, construit UNE fois.
+     *
+     * <p>{@code Jwts.parser()...build()} etait appele dans {@link #validateToken},
+     * donc <b>a chaque requete</b> traversant la passerelle. Or {@code build()}
+     * de jjwt fait une recherche {@link java.util.ServiceLoader}, qui <b>lit des
+     * JAR sur le disque</b>.
+     *
+     * <p>Le {@code Mono.fromCallable} ci-dessous n'y change rien : sans saut
+     * d'ordonnanceur, il s'execute sur le fil qui souscrit — une EventLoop
+     * Netty. C'est donc un appel bloquant sur le chemin de chaque requete, dans
+     * le composant le plus chaud de la plateforme.
+     *
+     * <p>Cacher l'analyseur est sur : {@code keyLocator()} resout la cle au
+     * moment de l'analyse, par le {@code kid} de l'en-tete JWS, donc la rotation
+     * de cles continue de fonctionner — c'est precisement ce que le javadoc de
+     * {@code JwksKeyProvider.keyLocator()} garantit. L'audience, elle, est
+     * verifiee separement par {@code requireValidAudience}.
+     */
+    private final io.jsonwebtoken.JwtParser parser;
+
     private Mono<Claims> validateToken(String token, String path) {
         return Mono.fromCallable(() -> {
             if (jwksKeyProvider.getDefaultPublicKey() == null) {
                 throw new IllegalStateException("Aucune clé publique disponible pour la validation");
             }
 
-            Claims claims = Jwts.parser()
-                    .keyLocator(jwksKeyProvider.keyLocator())
-                    .requireIssuer(expectedIssuer)
-                    .build()
+            // L'analyseur construit au demarrage : voir le champ.
+            Claims claims = parser
                     .parseSignedClaims(token)
                     .getPayload();
 

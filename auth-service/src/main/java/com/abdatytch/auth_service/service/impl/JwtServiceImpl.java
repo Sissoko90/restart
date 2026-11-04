@@ -255,12 +255,41 @@ public class JwtServiceImpl implements IJwtService {
      * où plusieurs clés publiques sont valides simultanément (période de grâce).
      * L'ancien code utilisait getFirstPublicKey(), dont l'ordre n'est pas déterministe.
      */
+    /**
+     * Les DEUX variantes d'analyseur, construites une fois chacune.
+     *
+     * <p>{@code build()} de jjwt fait une recherche
+     * {@link java.util.ServiceLoader}, qui <b>lit des JAR sur le disque</b>. Le
+     * construire a chaque validation mettait donc un appel bloquant sur le
+     * chemin de chaque requete authentifiee — ce que la politique de ce depot
+     * interdit, et ce que BlockHound a fini par signaler sur media-service.
+     *
+     * <p>Deux champs et non un : cette methode rend un analyseur qui exige
+     * l'emetteur ou non, selon l'appelant. Les fusionner changerait le contrat
+     * de verification.
+     */
+    private volatile JwtParser parserAvecEmetteur;
+    private volatile JwtParser parserSansEmetteur;
+
+    /**
+     * Construit les deux analyseurs apres l'injection des {@code @Value}.
+     *
+     * <p>Et non dans le constructeur, ou {@code jwtIssuer} serait encore nul.
+     */
+    @jakarta.annotation.PostConstruct
+    void construireLesAnalyseurs() {
+        parserSansEmetteur = Jwts.parser()
+                .keyLocator(entete -> jwksKeyProvider.keyLocator().locate(entete))
+                .build();
+        parserAvecEmetteur = Jwts.parser()
+                .keyLocator(entete -> jwksKeyProvider.keyLocator().locate(entete))
+                .requireIssuer(jwtIssuer)
+                .build();
+    }
+
     private JwtParser jwtParser(boolean requireIssuer) {
-        var builder = Jwts.parser().keyLocator(jwksKeyProvider.keyLocator());
-        if (requireIssuer) {
-            builder.requireIssuer(jwtIssuer);
-        }
-        return builder.build();
+        // Les analyseurs sont construits au demarrage : voir les champs.
+        return requireIssuer ? parserAvecEmetteur : parserSansEmetteur;
     }
 
     /**

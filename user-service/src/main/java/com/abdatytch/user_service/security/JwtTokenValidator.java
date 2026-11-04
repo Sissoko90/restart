@@ -33,6 +33,39 @@ public class JwtTokenValidator {
     @Value("${jwt.issuer:interface-service}")
     private String expectedIssuer;
 
+    /**
+     * L'analyseur JWT, construit UNE fois.
+     *
+     * <p>{@code Jwts.parser()...build()} etait appele a chaque validation. Or
+     * {@code build()} de jjwt fait une recherche
+     * {@link java.util.ServiceLoader}, qui <b>lit des JAR sur le disque</b> :
+     * un appel bloquant sur une EventLoop, sur le chemin de chaque requete
+     * authentifiee.
+     *
+     * <p>Cacher l'analyseur est sur : {@code keyLocator()} resout la cle au
+     * moment de l'analyse, par le {@code kid} de l'en-tete JWS, donc la rotation
+     * de cles continue de fonctionner. Voir
+     * {@code media-service/JwtAuthenticationWebFilter} pour la trace qui l'a
+     * revele.
+     *
+     * <p>Ce validateur n'exige pas d'audience, contrairement aux filtres des
+     * autres services. C'est le contrat existant, non modifie ici.
+     */
+    private volatile io.jsonwebtoken.JwtParser parser;
+
+    /**
+     * Construit l'analyseur apres l'injection des {@code @Value}.
+     *
+     * <p>Et non dans le constructeur, ou l'emetteur attendu serait encore nul.
+     */
+    @jakarta.annotation.PostConstruct
+    void construireLAnalyseur() {
+        parser = Jwts.parser()
+                .requireIssuer(expectedIssuer)
+                .keyLocator(entete -> jwksKeyProvider.keyLocator().locate(entete))
+                .build();
+    }
+
     public JwtTokenValidator(JwksKeyProvider jwksKeyProvider, TokenBlacklistService tokenBlacklistService) {
         this.jwksKeyProvider = jwksKeyProvider;
         this.tokenBlacklistService = tokenBlacklistService;
@@ -50,10 +83,9 @@ public class JwtTokenValidator {
 
             // Clé résolue par `kid` de l'en-tête JWS (obligatoire pendant une rotation :
             // plusieurs clés publiques sont valides simultanément)
-            Claims claims = Jwts.parser()
-                    .requireIssuer(expectedIssuer)
-                    .keyLocator(jwksKeyProvider.keyLocator())
-                    .build()
+            // L'analyseur construit au demarrage : le reconstruire ici ferait
+            // une lecture disque sur une EventLoop. Voir le champ.
+            Claims claims = parser
                     .parseSignedClaims(token)
                     .getPayload();
 

@@ -58,6 +58,63 @@ public class JwtAuthenticationWebFilter implements WebFilter {
     private String expectedAudience;
 
     /**
+     * L'analyseur JWT, construit UNE fois.
+     *
+     * <h3>Le defaut corrige</h3>
+     *
+     * {@code Jwts.parser()...build()} etait appele dans {@code validateJwtToken},
+     * donc <b>a chaque requete portant un jeton</b>. Or {@code build()} de jjwt
+     * fait une recherche {@link java.util.ServiceLoader}, qui <b>lit des JAR sur
+     * le disque</b> :
+     *
+     * <pre>
+     * BlockingOperationError: Blocking call! java.io.RandomAccessFile#readBytes
+     *   at java.util.ServiceLoader$LazyClassPathLookupIterator.parse
+     *   at io.jsonwebtoken.impl.lang.Services.loadFirst
+     *   at io.jsonwebtoken.impl.DefaultJwtParserBuilder.build
+     *   at JwtAuthenticationWebFilter.validateJwtToken
+     * </pre>
+     *
+     * Un appel bloquant sur une EventLoop, sur le chemin de chaque requete
+     * authentifiee — exactement ce que la politique de ce depot interdit. Le
+     * cout etait reel en plus : un analyseur construit par requete.
+     *
+     * <h3>Pourquoi il n'etait visible qu'en integration continue</h3>
+     *
+     * jjwt met le resultat de sa recherche en cache. Le <b>premier</b> appel
+     * paie la lecture disque ; les suivants non. En local, un test precedent
+     * rechauffait ce cache depuis un fil ordinaire avant que BlockHound ne soit
+     * arme. Sur le runner, l'ordre des classes de test etait different — et cet
+     * ordre depend du balayage du systeme de fichiers, qui n'est pas le meme sur
+     * macOS et sur Linux.
+     *
+     * <h3>Pourquoi cacher l'analyseur est sur</h3>
+     *
+     * {@code JwksKeyProvider.keyLocator()} resout la cle <b>au moment de
+     * l'analyse</b>, par le {@code kid} de l'en-tete JWS, en lisant le cache
+     * vivant des cles. Un analyseur reutilise suit donc la rotation de cles
+     * comme un analyseur neuf. Ce qui est fige, ce sont l'emetteur et l'audience
+     * attendus — qui ne changent pas a chaud.
+     */
+    private volatile io.jsonwebtoken.JwtParser parser;
+
+    /**
+     * Construit l'analyseur apres l'injection des {@code @Value}.
+     *
+     * <p>Et non dans le constructeur : {@code expectedIssuer} et
+     * {@code expectedAudience} y seraient encore nuls, et
+     * {@code requireIssuer(null)} ferait echouer toute verification.
+     */
+    @jakarta.annotation.PostConstruct
+    void construireLAnalyseur() {
+        parser = Jwts.parser()
+                .keyLocator(entete -> jwksKeyProvider.keyLocator().locate(entete))
+                .requireIssuer(expectedIssuer)
+                .requireAudience(expectedAudience)
+                .build();
+    }
+
+    /**
      * Peuple le contexte de sécurité quand un jeton est présent, et ne refuse
      * <b>jamais</b> l'absence de jeton.
      *
@@ -117,11 +174,9 @@ public class JwtAuthenticationWebFilter implements WebFilter {
 
             // 1. Parser et vérifier signature (clé résolue par `kid` de l'en-tête JWS,
             // indispensable pendant une rotation de clés)
-            Claims claims = Jwts.parser()
-                .keyLocator(jwksKeyProvider.keyLocator())
-                .requireIssuer(expectedIssuer)
-                .requireAudience(expectedAudience)
-                .build()
+            // L'analyseur est celui construit au demarrage : le reconstruire ici
+            // ferait une lecture disque sur une EventLoop. Voir le champ.
+            Claims claims = parser
                 .parseSignedClaims(token)
                 .getPayload();
 

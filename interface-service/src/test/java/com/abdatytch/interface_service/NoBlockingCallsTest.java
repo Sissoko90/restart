@@ -81,13 +81,7 @@ class NoBlockingCallsTest {
     @BeforeAll
     static void installBlockHound() {
         Schedulers.shutdownNow();
-        // Le chargement de classes est autorise : voir le javadoc de
-        // media-service/NoBlockingCallsTest. BlockHound arme la detection pour
-        // TOUTE la JVM, et un chargement de classe paresseux depuis un JAR
-        // faisait echouer, en integration continue seulement, des tests sans
-        // rapport avec le non-blocage.
-        BlockHound.install(builder ->
-                builder.allowBlockingCallsInside("java.lang.ClassLoader", "loadClass"));
+        BlockHound.install();
     }
 
     @Mock private ProjectRepository projectRepository;
