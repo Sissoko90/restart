@@ -1,4 +1,4 @@
-﻿# ==========================================================
+# ==========================================================
 # Revue des dépendances ajoutées par une PR
 # ==========================================================
 # Complète security.yml, qui analyse l'état du dépôt. Ici on regarde
@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/dependency-review-action@v4
         with:
