@@ -93,7 +93,7 @@
 		  Ce sont des montees de CORRECTIF dans la meme version mineure. Elles
 		  depassent ce que Boot 4.0.6 a valide, ce qui est le compromis assume
 		  face a trois vulnerabilites CRITIQUES — dont un contournement de
-		  politique de securite dans spring-webflux. Les 2404 tests verifient
+		  politique de securite dans spring-webflux. Les 2512 tests verifient
 		  l'absence de regression.
 		-->
 		<!-- CVE-2026-47890 (CRITIQUE), 47892, 41850, 41842 : webflux et framework -->
@@ -109,15 +109,15 @@
 	<dependencyManagement>
 		<dependencies>
 			<!--
-			  Deux versions epinglees ICI et non par une propriete : la BOM de
+			  Trois versions epinglees ICI et non par une propriete : la BOM de
 			  Spring Boot n'expose ni `snappy.version` ni de propriete pour
 			  Jackson 3 — verifie par help:evaluate, les deux rendent « null
 			  object or invalid expression ». Une propriete inventee serait
 			  ignoree en silence, et la vulnerabilite resterait ouverte en
 			  paraissant corrigee.
 
-			  snappy-java arrive transitivement par Kafka ; jackson-core par la
-			  serialisation.
+			  snappy-java arrive transitivement par Kafka ; jackson-core et
+			  jackson-databind par la serialisation.
 			-->
 			<!-- CVE-2026-108106, 93451 : deni de service et debordement de tampon -->
 			<dependency>
@@ -125,11 +125,51 @@
 				<artifactId>snappy-java</artifactId>
 				<version>1.1.10.9</version>
 			</dependency>
-			<!-- CVE-2026-68494 : 4.0.6 resout 3.1.2, le correctif est en 3.1.4 -->
+			<!--
+			  Jackson 3 : jackson-core ET jackson-databind, tous deux epingles.
+			  Spring Boot 4.0.6 resout 3.1.2 pour les deux.
+
+			  3.1.4 -> 3.1.8. Cinq CVE, divulguees apres le dernier passage vert
+			  de l'integration continue :
+			    - jackson-core    CVE-2026-89425  deni de service, StringBuilder
+			                                      sans borne sur jeton malforme
+			    - jackson-databind CVE-2026-54512 EXECUTION DE CODE ARBITRAIRE,
+			                                      contournement du
+			                                      PolymorphicTypeValidator
+			    - jackson-databind CVE-2026-54513 contournement menant a une
+			                                      execution de code arbitraire
+			    - jackson-databind CVE-2026-68497 deni de service, analyse
+			                                      numerique sans borne
+			    - jackson-databind CVE-2026-91776 deni de service, cache sans
+			                                      borne dans TypeDeserializerBase
+			    - jackson-databind CVE-2026-91777 deni de service, completion de
+			                                      reference avant quadratique
+
+			  La plus haute version corrective exigee est 3.1.7. On prend 3.1.8,
+			  dernier correctif de la ligne 3.1 — celle que cible Spring Boot.
+			  Rester dans la ligne mineure evite d'introduire les changements de
+			  3.2.x pour une correction de securite.
+
+			  jackson-databind n'etait PAS epingle : seul core l'etait, et
+			  databind restait a 3.1.2 par la BOM. C'est lui qui portait les deux
+			  CVE d'execution de code — le plus grave des six — sur une
+			  plateforme qui deserialise du JSON a chaque requete.
+
+			  Epingles ICI et non par une propriete : la BOM de Spring Boot
+			  n'expose aucune propriete pour Jackson 3 — verifie par
+			  help:evaluate, qui rend « null object or invalid expression ». Une
+			  propriete inventee serait ignoree en silence, et la vulnerabilite
+			  resterait ouverte en paraissant corrigee.
+			-->
 			<dependency>
 				<groupId>tools.jackson.core</groupId>
 				<artifactId>jackson-core</artifactId>
-				<version>3.1.4</version>
+				<version>3.1.8</version>
+			</dependency>
+			<dependency>
+				<groupId>tools.jackson.core</groupId>
+				<artifactId>jackson-databind</artifactId>
+				<version>3.1.8</version>
 			</dependency>
 			<dependency>
 				<groupId>org.springframework.cloud</groupId>

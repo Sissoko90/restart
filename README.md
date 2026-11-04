@@ -264,9 +264,9 @@ mvn -pl gateway-service test           # un seul module
 
 ### État des tests
 
-**2404 tests**, 0 échec. Répartition : auth 1127 · platform-commons 276 ·
-gateway 262 · interface 199 · user 176 · security 141 · media 132 · setting 40 ·
-quotas 38 · config 13.
+**2512 tests**, 0 échec. Répartition : auth 1127 · platform-commons 277 ·
+gateway 262 · interface 231 · user 205 · security 145 · media 132 · setting 61 ·
+quotas 59 · config 13.
 
 Plancher de couverture : **21,41 %** des instructions, **13,60 %** des branches.
 
