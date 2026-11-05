@@ -234,16 +234,16 @@ class RoutageCoherentTest {
             if (prefixes != null && service != null) {
                 // SEULS les services du reacteur sont retenus.
                 //
-                // Le YAML declare aussi des routes vers tenant-service — dont
-                // AUCUN dossier n'existe dans ce depot — et vers geo-service et
+                // Le YAML declare aussi des routes vers geo-service et
                 // payment-service, qui sont encore des squelettes hors
                 // reacteur. Exiger que CheminCible les connaisse reviendrait a
                 // lui faire declarer des services qui ne peuvent pas repondre,
                 // et le mode maintenance couvrirait des chemins vides.
                 //
                 // Ces routes fantomes sont un defaut A PART : une requete vers
-                // /api/v1/tenants/** echoue a la resolution Consul, donc en 503
-                // ou en 500, et non en 404 propre.
+                // /api/v1/geo/** echoue a la resolution Consul, donc en 503 ou
+                // en 500, et non en 404 propre. Elles subsistent parce que les
+                // deux modules sont prevus.
                 if (duReacteur.contains(service)) {
                     // Un predicat peut porter PLUSIEURS chemins separes par des
                     // virgules : Path=/api/v1/developers,/api/v1/projects. Les

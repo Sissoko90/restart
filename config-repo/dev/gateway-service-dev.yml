@@ -244,17 +244,6 @@ geolocation:
                 name: mediaCircuitBreaker
                 fallbackUri: forward:/fallback/media
         
-        # Tenant Service Routes (SaaS Multi-Tenant)
-        - id: tenant-service
-          uri: lb://tenant-service
-          predicates:
-            - Path=/api/v1/tenants/**
-          filters:
-            - StripPrefix=2
-            - name: CircuitBreaker
-              args:
-                name: tenantCircuitBreaker
-                fallbackUri: forward:/fallback/tenants
       
       default-filters:
         - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin

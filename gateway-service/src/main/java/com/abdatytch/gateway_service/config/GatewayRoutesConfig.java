@@ -295,29 +295,25 @@ public class GatewayRoutesConfig {
                 .PUT("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "security-service", defaultCircuitBreaker))
                 .DELETE("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "security-service", defaultCircuitBreaker))
             )
-            // Route: /api/v1/notifications/** notification-service
+            // notification-service N'EST PAS route ici, et c'est delibere.
             //
-            // La boite de reception du porteur. Le prefixe public est identique
-            // au chemin interne : CheminCible retire /api/v1 et n'a aucune
-            // reecriture a appliquer, car /notifications ne collisionne avec
-            // rien.
+            // J'avais ajoute une route /api/v1/notifications/** a cet endroit,
+            // sans voir qu'une route YAML pour le MEME chemin existait deja
+            // (config-repo/dev/gateway-service-dev.yml, id: notification-service).
+            // Comme le RouterFunctionMapping de Spring a une priorite plus
+            // forte que le RoutePredicateHandlerMapping de Spring Cloud
+            // Gateway, la mienne masquait la sienne : deux declarations pour un
+            // chemin, dont une seule agissait.
             //
-            // LE FLUX TEMPS REEL N'EST PAS ICI, et c'est essentiel.
+            // Les deux routes de ce service vivent donc en YAML :
+            //   /api/v1/notifications/**    la boite de reception (REST)
+            //   /api/v1/notifications-flux  le flux temps reel (WebSocket)
             //
-            // Ce RouterFunction proxifie avec WebClient, qui ne sait PAS
-            // effectuer une montee en protocole WebSocket. Un chemin de flux
-            // place sous /api/v1/notifications/** serait de surcroit masque :
-            // le RouterFunctionMapping de Spring a une priorite plus forte que
-            // le RoutePredicateHandlerMapping de Spring Cloud Gateway.
-            //
-            // Le flux passe donc par /api/v1/notifications-flux — un SEGMENT
-            // distinct, qui ne correspond pas a /notifications/** — declare en
-            // YAML avec lb://notification-service. Spring Cloud Gateway, lui,
-            // gere nativement la montee en protocole.
-            .nest(path("/api/v1/notifications/**"), builder -> builder
-                .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
-                .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
-            )
+            // Et le flux DOIT y rester : ce RouterFunction proxifie avec
+            // WebClient, qui ne sait pas effectuer une montee en protocole.
+            // Son chemin porte un tiret et non un segment sous
+            // /notifications/, pour qu'aucune route de ce fichier ne puisse le
+            // capter un jour.
             // Surfaces d'administration de quotas-service et setting-service.
             //
             // Elles n'etaient routees nulle part, et /api/v1/admin/** les
