@@ -40,14 +40,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # L'historique complet est nécessaire : un secret retiré d'un commit
           # reste dans les commits précédents, et reste donc compromis.
           fetch-depth: 0
 
       - name: Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -64,16 +64,16 @@ jobs:
       actions: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: temurin
           cache: maven
 
       - name: Initialiser CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: java-kotlin
           # `security-and-quality` couvre les requêtes CWE, dont celles
@@ -84,7 +84,7 @@ jobs:
         run: mvn -B -ntp -DskipTests package
 
       - name: Analyser
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: /language:java-kotlin
 
@@ -100,9 +100,9 @@ jobs:
       security-events: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: temurin
@@ -178,7 +178,7 @@ jobs:
           scanners: vuln
 
       - name: Publier dans l'onglet Sécurité
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy.sarif
@@ -199,7 +199,7 @@ jobs:
           scanners: secret,misconfig
 
       - name: Publier l'analyse du dépôt
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-depot.sarif
@@ -280,9 +280,9 @@ jobs:
     timeout-minutes: 350
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: temurin
@@ -302,7 +302,7 @@ jobs:
       # chaque fois. C'est ce qui permet à une base partielle d'être reprise.
       - name: Restaurer la base NVD
         id: cache-nvd
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ~/.m2/repository/org/owasp/dependency-check-data
           key: nvd-${{ runner.os }}-${{ github.run_id }}
@@ -351,7 +351,7 @@ jobs:
       # meme journee.
       - name: Sauvegarder la base NVD
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ~/.m2/repository/org/owasp/dependency-check-data
           key: nvd-${{ runner.os }}-${{ github.run_id }}
@@ -385,7 +385,7 @@ jobs:
             -DfailBuildOnCVSS=7 \
             -Dformats=HTML,SARIF
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: rapport-owasp
@@ -401,9 +401,9 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: temurin
@@ -415,7 +415,7 @@ jobs:
       - name: Vérifier la compatibilité avec une distribution propriétaire
         run: ./scripts/license-check.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: inventaire-licences
