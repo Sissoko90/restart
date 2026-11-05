@@ -23,3 +23,13 @@ CREATE DATABASE setting_service_db;
 -- pouvait pas copier les surcharges existantes — aucune requête SQL ne traverse
 -- deux bases.
 CREATE DATABASE security_service_db;
+
+-- Base des notifications.
+--
+-- Ajoutee en meme temps que l'entree de notification-service dans le reacteur.
+-- ModuleLivrableTest.chaqueBaseEstCreee a refuse le build tant qu'elle
+-- manquait, et c'est exactement son role : la configuration nommait
+-- notification_service_db, ce script ne la creait pas, et Flyway aurait echoue
+-- au demarrage sur « database does not exist » — un module tout vert et
+-- incapable de demarrer.
+CREATE DATABASE notification_service_db;

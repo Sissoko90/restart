@@ -1,0 +1,49 @@
+# ==========================================================
+# Proprietes de test - notification-service
+# ==========================================================
+# Le test `contextLoads` ne doit pas exiger une infrastructure vivante.
+# Meme forme que setting-service, quotas-service et les autres : on exclut les
+# auto-configurations qui refusent de demarrer sans leur dependance.
+#
+# A REMPLACER PAR TESTCONTAINERS le jour ou ce service aura de vrais tests sur
+# ses depots. La limite est connue et inscrite en memoire du projet : avec
+# R2DBC desactive, une colonne manquante reste invisible jusqu'au demarrage
+# reel. Ce fichier rend le test de contexte executable, il ne prouve pas que le
+# schema est juste.
+# ==========================================================
+
+spring:
+  autoconfigure:
+    exclude:
+      # R2DBC : sans URL, le ConnectionPool refuse de s'instancier, et son
+      # indicateur de sante fait tomber tout le point d'entree actuator.
+      - org.springframework.boot.r2dbc.autoconfigure.R2dbcAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.R2dbcDataAutoConfiguration
+      - org.springframework.boot.data.r2dbc.autoconfigure.R2dbcRepositoriesAutoConfiguration
+      # Flyway ouvrirait une connexion JDBC au demarrage.
+      - org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration
+
+  # Le serveur de configuration et Consul ne tournent pas pendant les tests.
+  cloud:
+    config:
+      enabled: false
+    consul:
+      enabled: false
+      discovery:
+        enabled: false
+
+  # Une adresse d'expediteur est posee ICI, et non laissee vide.
+  #
+  # La valeur par defaut de production est vide a dessein — un expediteur
+  # invente ferait rejeter les courriels. Mais un test qui verifie le REFUS
+  # d'envoyer faute d'expediteur doit pouvoir distinguer « non configure » de
+  # « configure ». D'ou une valeur explicite, sur un domaine reserve aux
+  # exemples par la RFC 2606 : .test ne resout jamais.
+  mail:
+    host: localhost
+    port: 1025
+
+notification:
+  email:
+    from: notifications@example.test
+    reply-to: notifications@example.test

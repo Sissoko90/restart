@@ -65,6 +65,20 @@
 		<module>quotas-service</module>
 		<module>setting-service</module>
 		<module>security-service</module>
+		<!--
+		  notification-service entre dans le reacteur.
+
+		  Il etait absent de cette liste : son POM existait, declarait une
+		  vingtaine de dependances, et AUCUN build ne le compilait. Un module
+		  hors reacteur ne beneficie ni du dependencyManagement du parent, ni des
+		  epinglages de CVE, ni d'un seul test.
+
+		  geo-service et payment-service restent dehors : ce sont encore des
+		  squelettes de 13 lignes, et leurs POM portent le meme gabarit
+		  servlet + JPA + MySQL que celui-ci avant reecriture. Les faire entrer
+		  sans les reecrire casserait le build.
+		-->
+		<module>notification-service</module>
 	</modules>
 
 	<properties>

@@ -1,6 +1,30 @@
 # ==========================================
 # NOTIFICATION SERVICE - Configuration DEV
 # ==========================================
+#
+# CE FICHIER A ETE REECRIT. Le precedent etait un gabarit venu d'une autre
+# architecture que celle de ce depot, et le suivre aurait reintroduit ce que la
+# plateforme a elimine :
+#
+#   driver-class-name: com.mysql.cj.jdbc.Driver   -> la plateforme est PostgreSQL
+#   spring.jpa + MySQLDialect                     -> JPA est BLOQUANT, et la
+#                                                    politique du depot est zero
+#                                                    blocage sur le chemin
+#                                                    requete, verifiee par
+#                                                    BlockHound
+#   ddl-auto: update                              -> le schema vient de Flyway ;
+#                                                    laisser Hibernate le
+#                                                    modifier retire toute trace
+#                                                    de ce qui a change
+#   show-sql: true                                -> chaque requete journalisee
+#   spring.json.trusted.packages: "*"             -> voir plus bas
+#   noreply@dev.microservices.com                 -> reste de gabarit, ce n'est
+#                                                    pas un domaine de ce projet
+#   from-number: +1234567890                      -> valeur bouchon
+#
+# Rien de tout cela n'etait actif : le module n'etait pas dans le reacteur,
+# personne ne le compilait. Mais c'etait la premiere chose qu'aurait lue
+# quiconque reprenait ce service.
 
 server:
   port: 8086
@@ -8,35 +32,63 @@ server:
 spring:
   application:
     name: notification-service
-  
-  # DATABASE CONFIGURATION
-  # Note: datasource credentials sont chargés depuis .env via DotenvConfig
-  datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 5
-      connection-timeout: 30000
-  
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.MySQLDialect
-        format_sql: true
-  
+
+  # ==========================================
+  # PERSISTANCE : R2DBC pour le service, JDBC pour les migrations
+  # ==========================================
+  # Meme forme qu'auth-service, user-service, interface-service et
+  # setting-service. R2DBC est le pilote reactif utilise a chaque requete ;
+  # Flyway ouvre une connexion JDBC au DEMARRAGE seulement, donc il ne touche
+  # pas le chemin requete.
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_NOTIFICATION:notification_service_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    pool:
+      initial-size: 5
+      max-size: 10
+      max-idle-time: 30m
+      validation-query: SELECT 1
+
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_NOTIFICATION:notification_service_db}
+    user: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  # ==========================================
+  # KAFKA : ce service est d'abord un CONSOMMATEUR
+  # ==========================================
+  # Seuls `bootstrap-servers`, `group-id` et `auto-offset-reset` sont lus ici :
+  # le consommateur reactif construit ses proprietes en code
+  # (ReactiveKafkaConsumerConfig) et deserialise en String avant de parser avec
+  # Jackson.
+  #
+  # Les `key-deserializer` / `value-deserializer` du fichier precedent sont donc
+  # RETIRES : ils decrivaient un consommateur @KafkaListener que ce module n'a
+  # pas. Avec eux, qui lisait ce fichier croyait que le JsonDeserializer de
+  # Spring etait a l'oeuvre.
+  #
+  # `spring.json.trusted.packages: "*"` est retire pour la meme raison, et il
+  # merite d'etre nomme : il autorise la deserialisation de N'IMPORTE QUELLE
+  # classe presente au classpath a partir d'un message du bus. Il est inerte ici
+  # — rien ne le lit — mais il est encore pose dans application-dev.yml, donc
+  # commun a tous les services. Qui ajouterait un JsonDeserializer en heriterait
+  # sans le savoir.
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
-      group-id: notification-service-group-dev
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "*"
+      group-id: notification-service-group
       auto-offset-reset: earliest
-  
+
+  # ==========================================
+  # SMTP
+  # ==========================================
+  # Le port 1025 par defaut est celui de MailHog / Mailpit : en developpement, le
+  # courriel est capture et non remis. C'est voulu — un envoi reel depuis un
+  # poste de developpement atteindrait de vraies adresses.
   mail:
     host: ${SMTP_HOST:localhost}
     port: ${SMTP_PORT:1025}
@@ -45,11 +97,17 @@ spring:
     properties:
       mail:
         smtp:
-          auth: false
+          auth: ${SMTP_AUTH:false}
           starttls:
-            enable: false
-  
-  # OAuth2 Resource Server - autorité JWT = interface-service (plus de Keycloak)
+            enable: ${SMTP_STARTTLS:false}
+          # Un envoi SMTP qui n'expire jamais retient un thread de
+          # boundedElastic indefiniment. Trois delais, parce que SMTP a trois
+          # phases et qu'un seul d'entre eux ne couvre pas les deux autres.
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
+  # Autorite JWT = interface-service
   security:
     oauth2:
       resourceserver:
@@ -57,18 +115,43 @@ spring:
           issuer-uri: ${JWT_ISSUER_URI:http://localhost:8088}
           jwk-set-uri: ${JWKS_URL:http://localhost:8088/dev/.well-known/jwks.json}
 
+# ==========================================
+# CANAUX DE NOTIFICATION
+# ==========================================
 notification:
-  sms:
-    provider: ${SMS_PROVIDER:mock}
-    api-key: ${SMS_PROVIDER_API_KEY}
-    api-secret: ${SMS_PROVIDER_API_SECRET}
-    from-number: ${SMS_FROM_NUMBER:+1234567890}
-  
-  push:
-    fcm:
-      server-key: ${FCM_SERVER_KEY}
-      sender-id: ${FCM_SENDER_ID:dev-sender-id}
-  
   email:
-    from: ${SMTP_FROM:noreply@dev.microservices.com}
-    reply-to: ${SMTP_FROM:noreply@dev.microservices.com}
+    # VIDE par defaut, et non une adresse inventee.
+    #
+    # Le fichier precedent posait noreply@dev.microservices.com — un domaine
+    # etranger a ce projet. Une valeur par defaut plausible mais fausse est pire
+    # qu'une valeur absente : elle fait croire que la configuration est faite, et
+    # les courriels partent avec une adresse d'expediteur qui n'existe pas, donc
+    # se font rejeter par les serveurs destinataires.
+    #
+    # Le demarrage n'est PAS bloque, conformement a la politique du projet : le
+    # service refuse d'envoyer et le dit, plutot que de ne pas demarrer.
+    from: ${NOTIFICATION_EMAIL_FROM:}
+    reply-to: ${NOTIFICATION_EMAIL_REPLY_TO:}
+
+  # Les deux canaux ci-dessous ne sont PAS implementes a ce stade, et la
+  # configuration le dit au lieu de le laisser croire. `provider: mock` sans
+  # implementation derriere ressemblait a un canal fonctionnel en mode simule.
+  sms:
+    enabled: false
+  push:
+    enabled: false
+
+# ==========================================
+# OBSERVABILITE
+# ==========================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: notification-service
