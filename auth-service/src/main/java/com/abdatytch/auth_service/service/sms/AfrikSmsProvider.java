@@ -3,7 +3,7 @@ package com.abdatytch.auth_service.service.sms;
 import com.abdatytch.auth_service.constants.ErrorCode;
 import com.abdatytch.auth_service.constants.ServiceConstants;
 import com.abdatytch.auth_service.exception.AuthException;
-import com.abdatytch.auth_service.service.IDisjoncteurSortant;
+import com.abdatytch.commons.resilience.IDisjoncteurSortant;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;

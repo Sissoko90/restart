@@ -2,7 +2,7 @@ package com.abdatytch.auth_service.client;
 
 import com.abdatytch.auth_service.constants.ErrorCode;
 import com.abdatytch.auth_service.exception.AuthException;
-import com.abdatytch.auth_service.service.IDisjoncteurSortant;
+import com.abdatytch.commons.resilience.IDisjoncteurSortant;
 import com.abdatytch.auth_service.service.ServiceTokenProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

@@ -2,8 +2,8 @@ package com.abdatytch.auth_service.service.oauth2;
 
 import com.abdatytch.auth_service.constants.ErrorCode;
 import com.abdatytch.auth_service.exception.AuthException;
-import com.abdatytch.auth_service.service.IDisjoncteurSortant;
-import com.abdatytch.auth_service.service.impl.DisjoncteurSortantServiceImpl;
+import com.abdatytch.commons.resilience.IDisjoncteurSortant;
+import com.abdatytch.auth_service.config.DisjoncteurSortantConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.jsonwebtoken.Jwts;
@@ -96,7 +96,7 @@ class ClesPubliquesAppleTest {
     }
 
     private static IDisjoncteurSortant disjoncteurReel() {
-        return new DisjoncteurSortantServiceImpl(
+        return DisjoncteurSortantConfig.pour(
                 CircuitBreakerRegistry.ofDefaults(), 50f, 100, 100, 30L);
     }
 

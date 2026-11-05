@@ -3,7 +3,7 @@ package com.abdatytch.auth_service.service.oauth2;
 import com.abdatytch.auth_service.constants.AppConstants;
 import com.abdatytch.auth_service.constants.ErrorCode;
 import com.abdatytch.auth_service.exception.AuthException;
-import com.abdatytch.auth_service.service.IDisjoncteurSortant;
+import com.abdatytch.commons.resilience.IDisjoncteurSortant;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;

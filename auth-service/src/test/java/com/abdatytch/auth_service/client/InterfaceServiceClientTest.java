@@ -62,8 +62,8 @@ class InterfaceServiceClientTest {
      * pour le suivant — ce serait un etat partage entre tests, c'est-a-dire
      * l'ordre d'execution comme condition de reussite.
      */
-    private static com.abdatytch.auth_service.service.IDisjoncteurSortant disjoncteurReel() {
-        return new com.abdatytch.auth_service.service.impl.DisjoncteurSortantServiceImpl(
+    private static com.abdatytch.commons.resilience.IDisjoncteurSortant disjoncteurReel() {
+        return com.abdatytch.auth_service.config.DisjoncteurSortantConfig.pour(
                 io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry.ofDefaults(),
                 50f, FENETRE, APPELS_MINIMUM, 30L);
     }
@@ -75,7 +75,7 @@ class InterfaceServiceClientTest {
 
     private static InterfaceServiceClient clientFige(
             ServiceTokenProvider fournisseur,
-            com.abdatytch.auth_service.service.IDisjoncteurSortant disjoncteur) {
+            com.abdatytch.commons.resilience.IDisjoncteurSortant disjoncteur) {
         WebClient.Builder constructeur = WebClient.builder()
                 .exchangeFunction(requete -> Mono.never());
         InterfaceServiceClient client = new InterfaceServiceClient(

@@ -1,6 +1,6 @@
 package com.abdatytch.auth_service.config;
 
-import com.abdatytch.auth_service.service.IDisjoncteurSortant;
+import com.abdatytch.commons.resilience.IDisjoncteurSortant;
 import com.abdatytch.auth_service.service.oauth2.ClesPubliquesApple;
 import com.abdatytch.auth_service.service.oauth2.FournisseurApple;
 import com.abdatytch.auth_service.service.oauth2.SecretClientApple;

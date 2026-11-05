@@ -5,7 +5,7 @@ import com.abdatytch.auth_service.constants.ErrorCode;
 import com.abdatytch.auth_service.dto.response.OAuth2UserInfo;
 import com.abdatytch.auth_service.enums.OAuthProvider;
 import com.abdatytch.auth_service.exception.AuthException;
-import com.abdatytch.auth_service.service.IDisjoncteurSortant;
+import com.abdatytch.commons.resilience.IDisjoncteurSortant;
 import io.jsonwebtoken.Claims;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;

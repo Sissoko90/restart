@@ -1,4 +1,4 @@
-package com.abdatytch.auth_service.service.impl;
+package com.abdatytch.auth_service.config;
 
 import com.abdatytch.auth_service.constants.ErrorCode;
 import com.abdatytch.auth_service.exception.AuthException;
@@ -34,12 +34,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * compilation, il suit un changement de client HTTP, et il se teste.
  */
 @DisplayName("DisjoncteurSortant — ce qui compte comme un echec de dependance")
-class DisjoncteurSortantServiceImplTest {
+class DisjoncteurSortantConfigTest {
 
     @Test
     @DisplayName("une indisponibilite declaree compte")
     void indisponibiliteCompte() {
-        assertThat(DisjoncteurSortantServiceImpl.estUneIndisponibilite(
+        assertThat(DisjoncteurSortantConfig.estUneIndisponibilite(
                 new AuthException(ErrorCode.SERVICE_UNAVAILABLE)))
                 .withFailMessage("une indisponibilite declaree ne compte pas : le "
                         + "disjoncteur ne s'ouvrirait jamais, et chaque appel paierait "
@@ -53,7 +53,7 @@ class DisjoncteurSortantServiceImplTest {
             "PHONE_NOT_VERIFIED", "USER_NOT_FOUND", "VALIDATION_ERROR"})
     @DisplayName("aucun refus metier ne compte comme un echec de dependance")
     void refusMetierNeComptePas(ErrorCode code) {
-        assertThat(DisjoncteurSortantServiceImpl.estUneIndisponibilite(
+        assertThat(DisjoncteurSortantConfig.estUneIndisponibilite(
                 new AuthException(code)))
                 .withFailMessage("""
                         %s compte comme une panne de dependance.
@@ -76,13 +76,13 @@ class DisjoncteurSortantServiceImplTest {
     @Test
     @DisplayName("une panne du fournisseur SMS compte, son refus non")
     void fournisseurSmsPanneContreRefus() {
-        assertThat(DisjoncteurSortantServiceImpl.estUneIndisponibilite(
+        assertThat(DisjoncteurSortantConfig.estUneIndisponibilite(
                 new AuthException(ErrorCode.SMS_PROVIDER_UNAVAILABLE)))
                 .withFailMessage("une panne du fournisseur SMS ne compte pas : le "
                         + "disjoncteur restera ferme et chaque OTP paiera le delai")
                 .isTrue();
 
-        assertThat(DisjoncteurSortantServiceImpl.estUneIndisponibilite(
+        assertThat(DisjoncteurSortantConfig.estUneIndisponibilite(
                 new AuthException(ErrorCode.SMS_SERVICE_ERROR)))
                 .withFailMessage("un refus du fournisseur compte comme une panne : une "
                         + "cle d'API invalide ouvrirait le disjoncteur au lieu de "
@@ -96,9 +96,9 @@ class DisjoncteurSortantServiceImplTest {
         // Un oubli de traduction dans un client ne doit pas faire passer une
         // panne pour un succes : c'est l'erreur exactement inverse de celle de
         // la configuration d'origine, et elle est tout aussi silencieuse.
-        assertThat(DisjoncteurSortantServiceImpl.estUneIndisponibilite(
+        assertThat(DisjoncteurSortantConfig.estUneIndisponibilite(
                 new IllegalStateException("panne inattendue"))).isTrue();
-        assertThat(DisjoncteurSortantServiceImpl.estUneIndisponibilite(
+        assertThat(DisjoncteurSortantConfig.estUneIndisponibilite(
                 new java.io.IOException("socket fermee"))).isTrue();
     }
 
@@ -111,9 +111,9 @@ class DisjoncteurSortantServiceImplTest {
         // /actuator/circuitbreakers — un disjoncteur qu'on ne voit pas
         // s'ouvrir ne vaut pas grand-chose.
         CircuitBreakerRegistry registre = CircuitBreakerRegistry.ofDefaults();
-        new DisjoncteurSortantServiceImpl(registre, 50f, 10, 5, 30L);
+        DisjoncteurSortantConfig.pour(registre, 50f, 10, 5, 30L);
 
-        assertThat(registre.getConfiguration(DisjoncteurSortantServiceImpl.CONFIGURATION))
+        assertThat(registre.getConfiguration(com.abdatytch.commons.resilience.DisjoncteurSortant.CONFIGURATION))
                 .withFailMessage("la configuration n'est pas dans le registre : les "
                         + "instances creees avec elle echapperaient aux metriques")
                 .isPresent();

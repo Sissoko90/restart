@@ -29,6 +29,25 @@
 			<artifactId>spring-boot-starter-webflux</artifactId>
 		</dependency>
 
+		<!--
+			Resilience4j, pour le disjoncteur des appels sortants.
+
+			DEUX artefacts seulement, et pas le starter : ce module porte le
+			mecanisme (DisjoncteurSortant), pas l'auto-configuration. Les
+			annotations de resilience4j sont inertes dans ce depot — ni
+			aspectjweaver ni spring-boot-starter-aop — et son artefact
+			d'auto-configuration refuse de demarrer sur Spring Boot 4. Voir le
+			commentaire de `resilience4j.version` dans le POM racine.
+		-->
+		<dependency>
+			<groupId>io.github.resilience4j</groupId>
+			<artifactId>resilience4j-circuitbreaker</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>io.github.resilience4j</groupId>
+			<artifactId>resilience4j-reactor</artifactId>
+		</dependency>
+
 		<!-- Auto-configuration Spring Boot -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

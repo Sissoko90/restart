@@ -654,8 +654,8 @@ class AfrikSmsProviderTest {
      * fournisseur, pas sur le disjoncteur. Avec une fenetre de 100 appels, il
      * ne s'ouvre jamais ici et ne masque aucune assertion.
      */
-    private static com.abdatytch.auth_service.service.IDisjoncteurSortant disjoncteurReel() {
-        return new com.abdatytch.auth_service.service.impl.DisjoncteurSortantServiceImpl(
+    private static com.abdatytch.commons.resilience.IDisjoncteurSortant disjoncteurReel() {
+        return com.abdatytch.auth_service.config.DisjoncteurSortantConfig.pour(
                 io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry.ofDefaults(),
                 50f, 100, 100, 30L);
     }
