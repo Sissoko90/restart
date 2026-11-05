@@ -56,6 +56,62 @@ public class MaintenanceController {
     @Value("${MAINTENANCE_SECRET_KEY}")
     private String maintenanceSecretKey;
 
+    /**
+     * Le secret admin, lu comme <b>propriété Spring</b> et non dans
+     * l'environnement du processus.
+     *
+     * <h3>Le défaut corrigé, et il fermait cet endpoint</h3>
+     *
+     * Ce contrôleur lisait {@code System.getenv("ADMIN_SECRET_KEY")}. Or
+     * {@code DotenvConfig} dépose les valeurs de {@code .env} dans un
+     * {@code MapPropertySource} de l'{@code Environment} Spring —
+     * {@code System.getenv} est immuable en Java et ne peut pas être alimenté
+     * ainsi. Renseigner {@code ADMIN_SECRET_KEY} dans {@code .env}, ce que
+     * {@code .env.example} demande, n'avait donc <b>aucun effet ici</b> :
+     * {@code getenv} rendait {@code null},
+     * {@code SecretComparisonUtil.matches(null, ...)} rendait {@code false}, et
+     * {@code /maintenance/auth} répondait 403 à tout le monde. Seul un
+     * {@code export} dans le shell de l'exploitant le faisait fonctionner.
+     *
+     * <h3>Un secret, un nom, un lecteur</h3>
+     *
+     * {@code AdminSecretFilter} vérifie le <b>même en-tête</b>
+     * {@code X-Admin-Secret} sur {@code /admin/**}, et lisait
+     * {@code ${admin.secret.key:}}. Deux lecteurs d'un même secret avec deux
+     * sources différentes : l'un pouvait accepter ce que l'autre refusait, et
+     * les faire concorder demandait de renseigner la valeur deux fois, de deux
+     * façons.
+     *
+     * <p>La propriété est désormais la seule source, et
+     * {@code config-repo/dev/interface-service-dev.yml} la relie à
+     * {@code ADMIN_SECRET_KEY}.
+     *
+     * <h3>Le défaut VIDE est délibéré</h3>
+     *
+     * La politique du projet est de ne pas bloquer le démarrage sur une
+     * variable absente. {@code matches} refuse sur une valeur vide : l'endpoint
+     * est donc <b>fermé</b> tant que le secret n'est pas configuré, jamais
+     * ouvert — et {@code verifierConfiguration} le dit au démarrage, parce que
+     * cela ne se réparera pas tout seul.
+     */
+    @Value("${admin.secret.key:}")
+    private String adminSecretKey;
+
+    /**
+     * Annonce au démarrage ce que ce contrôleur ne protège pas.
+     *
+     * <p>Sans cela, un secret non configuré ne se manifeste qu'au premier appel
+     * refusé — et comme le refus est un 403 banal, personne ne fait le lien
+     * avec la configuration.
+     */
+    @jakarta.annotation.PostConstruct
+    void verifierConfiguration() {
+        if (adminSecretKey == null || adminSecretKey.isBlank()) {
+            log.error("admin.secret.key n'est pas configure : /maintenance/auth "
+                    + "refusera TOUS les appels. Renseigner ADMIN_SECRET_KEY.");
+        }
+    }
+
     public MaintenanceController(UserRepository userRepository,
                                PasswordEncoder passwordEncoder,
                                TotpService totpService,
@@ -78,28 +134,24 @@ public class MaintenanceController {
             @RequestHeader("X-Maintenance-Identifier") String maintenanceKey,
             @RequestBody MaintenanceAuthRequest request) {
         // Vérifier le secret admin
-        if (!SecretComparisonUtil.matches(System.getenv("ADMIN_SECRET_KEY"), adminSecret)) {
+        if (!SecretComparisonUtil.matches(adminSecretKey, adminSecret)) {
             log.warn(" Tentative d'accès maintenance avec secret admin invalide");
-            return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(Map.of("error", "Secret admin invalide")));
+            return refus();
         }
 
         // Vérifier la clé dure de maintenance
         if (!SecretComparisonUtil.matches(maintenanceSecretKey, maintenanceKey)) {
             log.warn(" Tentative d'accès maintenance avec clé dure invalide");
-            return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(Map.of("error", "Clé de maintenance invalide")));
+            return refus();
         }
 
         // Récupérer l'utilisateur maintenance
         return userRepository.findByPhoneNumber(request.getPhoneNumber())
-            .switchIfEmpty(Mono.error(new RuntimeException("Utilisateur maintenance non trouvé")))
             .flatMap(user -> {
                 // Vérifier le mot de passe
                 if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
                     log.warn(" Tentative d'accès maintenance avec mot de passe incorrect pour {}", request.getPhoneNumber());
-                    return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Mot de passe incorrect")));
+                    return refus();
                 }
 
                 // Vérifier le TOTP
@@ -107,8 +159,7 @@ public class MaintenanceController {
                     .flatMap(totpValid -> {
                         if (!totpValid) {
                             log.warn(" Tentative d'accès maintenance avec TOTP incorrect pour {}", request.getPhoneNumber());
-                            return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                                .body(Map.of("error", "Code TOTP incorrect")));
+                            return refus();
                         }
 
                         // Methode DEDIEE, et non un type glisse dans les
@@ -135,8 +186,65 @@ public class MaintenanceController {
                         return Mono.just(ResponseEntity.ok(response));
                     });
             })
-            .onErrorResume(e -> Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(Map.of("error", "Erreur d'authentification: " + e.getMessage()))));
+            // Numero inconnu : le MEME refus, et non un message distinct.
+            //
+            // Le code precedent levait ici
+            // `new RuntimeException("Utilisateur maintenance non trouve")`, que
+            // le `onErrorResume` ci-dessous renvoyait au client sous la forme
+            // « Erreur d'authentification: Utilisateur maintenance non trouve ».
+            // L'appelant apprenait donc quels numeros correspondent a un compte
+            // de maintenance — sur l'endpoint le plus privilegie de la
+            // plateforme.
+            .switchIfEmpty(Mono.defer(() -> {
+                log.warn(" Tentative d'accès maintenance sur un numéro inconnu");
+                return refus();
+            }))
+            // Une panne reste une panne, et ne se deguise plus en refus.
+            //
+            // Le `onErrorResume` precedent rendait 401 avec
+            // `e.getMessage()` dans le corps : toute erreur de base de donnees
+            // devenait un refus d'authentification, message interne compris. Un
+            // 401 fait reessayer le client avec d'autres identifiants ; un 500
+            // lui dit que le probleme n'est pas chez lui. Et le message, lui,
+            // reste dans le journal.
+            .onErrorResume(e -> {
+                log.error(" Erreur lors de l'authentification de maintenance : {}",
+                        e.getMessage(), e);
+                Map<String, String> corps = Map.of("error", "Erreur interne");
+                return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(corps));
+            });
+    }
+
+    /**
+     * Le refus unique de {@code /maintenance/auth}.
+     *
+     * <h3>Le défaut corrigé : un oracle à cinq réponses</h3>
+     *
+     * Les cinq façons d'échouer donnaient cinq réponses distinctes :
+     *
+     * <pre>
+     * secret admin faux        -> 403 « Secret admin invalide »
+     * cle de maintenance fausse-> 403 « Clé de maintenance invalide »
+     * numero inconnu           -> 401 « ... Utilisateur maintenance non trouvé »
+     * mot de passe faux        -> 401 « Mot de passe incorrect »
+     * code TOTP faux           -> 401 « Code TOTP incorrect »
+     * </pre>
+     *
+     * <p>Un attaquant apprenait donc, à chaque tentative, <b>lequel des cinq
+     * facteurs il avait déjà trouvé</b>. Il pouvait chercher le secret admin
+     * seul, puis la clé de maintenance seule, puis énumérer les numéros, puis
+     * le mot de passe, puis le TOTP — cinq recherches indépendantes au lieu
+     * d'une combinaison. C'est l'endpoint qui délivre le jeton de maintenance,
+     * celui qui permet de changer les identifiants admin et de régénérer son
+     * TOTP.
+     *
+     * <p>Les cinq rendent maintenant le même 401 et le même corps. Le motif
+     * réel est journalisé : l'exploitant le voit, l'appelant non.
+     */
+    private Mono<ResponseEntity<Map<String, String>>> refus() {
+        return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("error", "Authentification refusée")));
     }
 
     /**
@@ -272,7 +380,24 @@ public class MaintenanceController {
                 auditInfo.put("criticalAlertSent", user.getCriticalAlertSent());
                 auditInfo.put("accountLockedUntil", user.getAccountLockedUntil() != null ? user.getAccountLockedUntil().toString() : "null");
                 auditInfo.put("adminConfirmationPending", user.isAdminConfirmationPending());
-                auditInfo.put("totpEnabled", user.getTotpSecret() != null && !user.getTotpSecret().isEmpty());
+
+                // DEUX champs, parce qu'il y a deux etats distincts.
+                //
+                // Ce bloc rendait un seul « totpEnabled », calcule comme
+                // « un secret existe ». Or /totp-config rend un « totpEnabled »
+                // qui lit le DRAPEAU user.getTotpEnabled(). Deux endpoints du
+                // meme controleur publiaient donc le meme nom pour deux choses
+                // differentes, et pouvaient se contredire.
+                //
+                // Les deux etats sont reels et l'ecart est porteur de sens :
+                // l'enrolement TOTP de cette plateforme se fait en deux temps,
+                // un secret est d'abord genere puis confirme. Un secret present
+                // avec un drapeau a faux signifie « enrolement commence, jamais
+                // confirme » — exactement ce qu'un audit doit voir, et ce que
+                // l'ancien champ unique masquait.
+                auditInfo.put("totpEnabled", user.getTotpEnabled());
+                auditInfo.put("totpSecretPresent",
+                        user.getTotpSecret() != null && !user.getTotpSecret().isEmpty());
 
                 return Mono.just(ResponseEntity.ok(auditInfo));
             })

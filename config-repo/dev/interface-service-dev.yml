@@ -112,6 +112,32 @@ admin:
     firstName: ${ADMIN_DEFAULT_FIRSTNAME}
     lastName: ${ADMIN_DEFAULT_LASTNAME}
 
+  # `admin.secret.key` ETAIT ABSENT, et cela fermait toute l'administration.
+  #
+  # AdminSecretFilter lit ${admin.secret.key:} — avec un defaut VIDE — et refuse
+  # en 401 des que la valeur est vide. La propriete n'etait definie nulle part :
+  # ni ici, ni dans application-dev.yml, ni dans le application.yml du module.
+  # Chaque appel a /admin/** repondait donc 401, a la seule exception de
+  # /admin/confirm, exempte parce qu'il est atteint par un clic dans un courriel.
+  #
+  # .env.example documentait bien ADMIN_SECRET_KEY, mais rien ne faisait le lien
+  # entre la variable et la propriete. Le secret existait, portait un nom, et
+  # n'arrivait a aucun lecteur.
+  #
+  # MaintenanceController, lui, lisait System.getenv("ADMIN_SECRET_KEY") —
+  # l'environnement du PROCESSUS, que DotenvConfig ne peut pas alimenter (il
+  # depose ses valeurs dans un MapPropertySource de l'Environment Spring, et
+  # System.getenv est immuable en Java). /maintenance/auth repondait donc 403
+  # sauf si l'exploitant exportait la variable dans son shell. Il lit desormais
+  # cette meme propriete : un seul secret, un seul nom, un seul lecteur.
+  #
+  # Le defaut reste VIDE et non obligatoire : la politique du projet est de ne
+  # pas bloquer le demarrage sur une variable absente. Les deux lecteurs sont
+  # fermes par defaut et le disent en WARN — l'administration est inaccessible,
+  # jamais ouverte.
+  secret:
+    key: ${ADMIN_SECRET_KEY:}
+
 # ==========================================================
 # COMPTE DE MAINTENANCE
 # ==========================================================
