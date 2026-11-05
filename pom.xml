@@ -76,10 +76,56 @@
 		<!-- Bibliothèques transverses -->
 		<jjwt.version>0.12.5</jjwt.version>
 		<springdoc.version>2.7.0</springdoc.version>
-		<resilience4j.version>2.2.0</resilience4j.version>
-		<dotenv.version>3.0.0</dotenv.version>
+		<!--
+		  2.1.0 dans gateway et interface, 2.2.0 dans media et user, et cette
+		  propriete qui disait 2.2.0 sans etre lue par personne : les quatre
+		  modules epinglaient la version dans leur propre POM, ce qui surcharge
+		  le dependencyManagement. Quatre modules, deux versions, une propriete
+		  decorative.
+
+		  2.3.0 ET NON 2.4.0, malgre la proposition de Dependabot (PR 10).
+
+		  Deux raisons mesurees.
+
+		  1. En 2.4.0, resilience4j-spring-boot3 REFUSE de demarrer sur Spring
+		     Boot 4 :
+		       Module 'io.github.resilience4j:resilience4j-spring-boot3' is only
+		       compatible with Spring Boot 3.x
+		     Les cinq modules qui le declaraient ne le declarent plus — il ne
+		     servait qu'aux annotations, inertes ici. Mais Spring Cloud l'amene
+		     encore de lui-meme :
+		       spring-cloud-starter-circuitbreaker-resilience4j:5.0.3
+		         -> spring-cloud-circuitbreaker-resilience4j:5.0.3
+		           -> resilience4j-spring-boot3:2.3.0
+		     En 2.3.0 ce verificateur n'existe pas, donc le contexte demarre.
+		     Monter la famille a 2.4.0 ferait passer cette dependance transitive
+		     a 2.4.0, et auth-service, user-service et media-service ne
+		     demarreraient plus.
+
+		  2. Sans alignement, la famille se SCINDE : les artefacts declares
+		     directement seraient en 2.4.0 pendant que resilience4j-core et
+		     resilience4j-timelimiter, amenes par Spring Cloud, resteraient en
+		     2.3.0. Deux versions d'une meme bibliotheque dans un classpath,
+		     c'est un NoSuchMethodError qui attend son appel.
+
+		  2.4.0 n'apporte par ailleurs aucun correctif de securite : la note de
+		  version ne liste que des fonctionnalites. On suit donc la version que
+		  Spring Cloud a choisie et testee.
+		-->
+		<resilience4j.version>2.3.0</resilience4j.version>
+		<!--
+		  Meme defaut : six modules epinglaient 3.0.0 en dur, donc cette
+		  propriete ne servait a rien. La monter seule n'aurait rien change.
+		-->
+		<dotenv.version>3.2.0</dotenv.version>
 		<reactor-kafka.version>1.3.25</reactor-kafka.version>
-		<blockhound.version>1.0.9.RELEASE</blockhound.version>
+		<!--
+		  N'etait gere NULLE PART : huit modules l'epinglaient, auth-service en
+		  2.0.0 et les sept autres en 2.0.2. Rien ne disait pourquoi
+		  auth-service avait son propre appender de journalisation.
+		-->
+		<loki4j.version>2.1.0</loki4j.version>
+		<blockhound.version>1.0.18.RELEASE</blockhound.version>
 		<jacoco.version>0.8.12</jacoco.version>
 
 		<!--
@@ -149,7 +195,15 @@
 		<!-- CVE-2026-40983, 40984 (ELEVEES) : micrometer-core, sur le chemin de
 		     chaque metrique. Correctif en 1.16.6. -->
 		<micrometer.version>1.16.8</micrometer.version>
-		<testcontainers.version>1.21.3</testcontainers.version>
+		<testcontainers.version>1.21.4</testcontainers.version>
+		<!--
+		  Etait declare dans deux modules (media et user) et dans aucun
+		  pluginManagement : les huit autres prenaient la version du parent
+		  Spring Boot. Un plugin de COMPILATION qui diverge entre modules, c'est
+		  la porte ouverte a un module qui compile et un autre non pour la meme
+		  source.
+		-->
+		<maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
 		<license-plugin.version>2.4.0</license-plugin.version>
 	</properties>
 
@@ -344,6 +398,73 @@
 				<version>${dotenv.version}</version>
 			</dependency>
 
+			<!--
+			  Resilience4j : les quatre artefacts, geres ICI.
+
+			  Ils etaient epingles dans chaque module qui les utilise, et les
+			  versions avaient divergé : 2.1.0 dans gateway-service et
+			  interface-service, 2.2.0 dans media-service et user-service. La
+			  propriete `resilience4j.version` existait deja et disait 2.2.0 —
+			  elle n'etait lue par aucun module.
+			-->
+			<!--
+			  resilience4j-spring-boot3 n'est PAS gere ici, et c'est delibere.
+
+			  En 2.4.0 il refuse de demarrer sur Spring Boot 4, et il ne servait
+			  qu'aux annotations — inertes dans ce depot. Les cinq modules qui le
+			  declaraient ne le declarent plus. Le laisser dans ce
+			  dependencyManagement reviendrait a tenir prete une version pour une
+			  dependance qu'aucun module ne doit reprendre.
+			-->
+			<dependency>
+				<groupId>io.github.resilience4j</groupId>
+				<artifactId>resilience4j-reactor</artifactId>
+				<version>${resilience4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>io.github.resilience4j</groupId>
+				<artifactId>resilience4j-circuitbreaker</artifactId>
+				<version>${resilience4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>io.github.resilience4j</groupId>
+				<artifactId>resilience4j-ratelimiter</artifactId>
+				<version>${resilience4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>io.github.resilience4j</groupId>
+				<artifactId>resilience4j-retry</artifactId>
+				<version>${resilience4j.version}</version>
+			</dependency>
+			<!--
+			  Les ANNOTATIONS vivent dans leur propre artefact.
+
+			  Mesure faite dans les jars du depot local :
+			  io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker est
+			  dans resilience4j-annotations, et non dans
+			  resilience4j-circuitbreaker. interface-service et media-service ne
+			  se servent que des annotations : leur donner les artefacts
+			  d'execution aurait embarque du code que personne n'appelle.
+			-->
+			<dependency>
+				<groupId>io.github.resilience4j</groupId>
+				<artifactId>resilience4j-annotations</artifactId>
+				<version>${resilience4j.version}</version>
+			</dependency>
+
+			<!--
+			  Appender Loki : huit modules l'epinglaient, auth-service en 2.0.0
+			  et les sept autres en 2.0.2. Aucune gestion centrale, donc aucune
+			  raison visible a l'ecart — et un module qui envoie ses journaux
+			  avec une autre version du client est exactement le genre de
+			  divergence qu'on ne remarque qu'en cherchant des journaux absents.
+			-->
+			<dependency>
+				<groupId>com.github.loki4j</groupId>
+				<artifactId>loki-logback-appender</artifactId>
+				<version>${loki4j.version}</version>
+			</dependency>
+
 			<!-- Kafka réactif : version unique (était 1.3.24 dans auth, 1.3.25 dans user) -->
 			<dependency>
 				<groupId>io.projectreactor.kafka</groupId>
@@ -384,6 +505,29 @@
 	</dependencyManagement>
 
 	<build>
+		<!--
+		  Gestion des versions de plugins, pour les modules qui en declarent un.
+
+		  Le plugin de compilation etait declare dans media-service et
+		  user-service avec une version en dur (3.14.1), et nulle part ailleurs :
+		  les huit autres modules prenaient celle du parent Spring Boot. Deux
+		  versions du COMPILATEUR dans un meme build, c'est la possibilite qu'un
+		  module compile une source que l'autre refuse — et le rapport d'erreur
+		  ne mentionnerait jamais le plugin.
+
+		  Les modules gardent leur declaration, pour leur configuration propre
+		  (processeurs d'annotations), mais sans version : elle vient d'ici.
+		-->
+		<pluginManagement>
+			<plugins>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-compiler-plugin</artifactId>
+					<version>${maven-compiler-plugin.version}</version>
+				</plugin>
+			</plugins>
+		</pluginManagement>
+
 		<plugins>
 			<!-- BlockHound instrumente des classes déjà chargées : sur JDK 13+, la JVM
 			     doit autoriser la redéfinition ajoutant des méthodes. Sans ce flag,

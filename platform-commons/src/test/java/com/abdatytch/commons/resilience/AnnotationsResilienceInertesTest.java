@@ -270,7 +270,19 @@ class AnnotationsResilienceInertesTest {
             try (Stream<Path> poms = Files.walk(racine, 3)) {
                 for (Path pom : poms.filter(p -> p.getFileName().toString().equals("pom.xml"))
                         .filter(p -> !p.toString().contains("/target/")).toList()) {
-                    String contenu = Files.readString(pom);
+                    // Les COMMENTAIRES XML sont retires avant le controle.
+                    //
+                    // Sans cela, ce garde-fou se declenchait sur sa propre
+                    // explication : le commentaire qui justifie le retrait de
+                    // resilience4j-spring-boot3 dans quatre POM nomme
+                    // forcement spring-boot-starter-aop et aspectjweaver, pour
+                    // dire pourquoi les annotations restent inertes.
+                    //
+                    // Il signalait donc quatre modules « avec AOP » alors
+                    // qu'aucune dependance n'avait ete ajoutee. Un garde-fou qui
+                    // interdit d'ecrire ce qu'il garde finit par etre desactive,
+                    // et il emporte avec lui la protection qu'il portait.
+                    String contenu = sansCommentairesXml(Files.readString(pom));
                     if (contenu.contains("spring-boot-starter-aop")
                             || contenu.contains("aspectjweaver")) {
                         pomsAvecAop.add(racine.relativize(pom).toString());
@@ -290,6 +302,17 @@ class AnnotationsResilienceInertesTest {
                             Purger DETTE_CONNUE d'abord, puis retirer ce test.""",
                             pomsAvecAop, DETTE_CONNUE.size())
                     .isEmpty();
+        }
+
+        /**
+         * Le POM sans ses commentaires.
+         *
+         * <p>Le contrôle porte sur ce que Maven <b>lit</b>, pas sur ce que le
+         * fichier raconte. Un commentaire qui explique pourquoi l'AOP est
+         * absente ne déclare pas l'AOP.
+         */
+        private String sansCommentairesXml(String pom) {
+            return pom.replaceAll("(?s)<!--.*?-->", "");
         }
     }
 

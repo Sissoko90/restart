@@ -113,7 +113,6 @@
 		<dependency>
 			<groupId>io.github.cdimascio</groupId>
 			<artifactId>dotenv-java</artifactId>
-			<version>3.0.0</version>
 		</dependency>
 
 		<!-- Zipkin Tracing -->
@@ -130,7 +129,6 @@
 		<dependency>
 			<groupId>com.github.loki4j</groupId>
 			<artifactId>loki-logback-appender</artifactId>
-			<version>2.0.2</version>
 		</dependency>
 
 		<!-- openfeign dependencies -->
@@ -148,26 +146,45 @@
 		</dependency>
 
 		<!-- Resilience4j for Rate Limiting and Circuit Breaker -->
-		<dependency>
-			<groupId>io.github.resilience4j</groupId>
-			<artifactId>resilience4j-spring-boot3</artifactId>
-			<version>2.1.0</version>
-		</dependency>
+		<!--
+			resilience4j-spring-boot3 a ete RETIRE, et ce n'est pas un choix de
+			confort : en 2.4.0 il REFUSE de demarrer sur Spring Boot 4.
+
+			  Module 'io.github.resilience4j:resilience4j-spring-boot3' is only
+			  compatible with Spring Boot 3.x
+
+			Mesure : le test de contexte de gateway-service est le seul a
+			l'attraper. En 2.1.0 / 2.2.0 ce controle n'existait pas, donc
+			l'artefact etait la, silencieux.
+
+			Et il ne servait QU'AUX ANNOTATIONS. Ce depot en pose dix
+			(@Retry, @CircuitBreaker dans media-service et interface-service), et
+			elles sont INERTES : ni aspectjweaver ni spring-boot-starter-aop dans
+			aucun POM, donc aucun aspect ne les tisse. Le retrait ne change donc
+			rien au comportement.
+
+			Ce qui marche vraiment est PROGRAMMATIQUE et n'a besoin d'aucune
+			auto-configuration : le registre et l'operateur reactif de
+			coupe-circuit dans gateway-service, le limiteur de debit dans
+			user-service. Les artefacts correspondants sont declares ci-dessous.
+
+			Activer les annotations reste a decider : il faudrait
+			spring-boot-starter-aop et resilience4j-spring-boot4, et @Retry sur une
+			authentification est nocif (il rejoue des tentatives et accelere le
+			verrouillage du compte).
+		-->
 		<dependency>
 			<groupId>io.github.resilience4j</groupId>
 			<artifactId>resilience4j-ratelimiter</artifactId>
-			<version>2.1.0</version>
 		</dependency>
 		<dependency>
 			<groupId>io.github.resilience4j</groupId>
 			<artifactId>resilience4j-circuitbreaker</artifactId>
-			<version>2.1.0</version>
 		</dependency>
 		<!-- Resilience4j Reactor integration pour Circuit Breaker réactif -->
 		<dependency>
 			<groupId>io.github.resilience4j</groupId>
 			<artifactId>resilience4j-reactor</artifactId>
-			<version>2.1.0</version>
 		</dependency>
 
 		<!-- Redis for Rate Limiting -->
@@ -180,7 +197,6 @@
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
-			<version>1.18.30</version>
 			<optional>true</optional>
 		</dependency>
 

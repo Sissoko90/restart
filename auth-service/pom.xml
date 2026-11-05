@@ -171,7 +171,6 @@
 		<dependency>
 			<groupId>io.github.cdimascio</groupId>
 			<artifactId>dotenv-java</artifactId>
-			<version>3.0.0</version>
 		</dependency>
 
 		<!-- Email Support -->
@@ -248,10 +247,23 @@
 			<groupId>org.springframework.cloud</groupId>
 			<artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
 		</dependency>
-		<dependency>
-			<groupId>io.github.resilience4j</groupId>
-			<artifactId>resilience4j-spring-boot3</artifactId>
-		</dependency>
+		<!--
+			resilience4j-spring-boot3 a ete RETIRE.
+
+			En 2.4.0 il REFUSE de demarrer sur Spring Boot 4 :
+
+			  Module 'io.github.resilience4j:resilience4j-spring-boot3' is only
+			  compatible with Spring Boot 3.x
+
+			Ici il etait de surcroit du poids mort : ce module n'importe
+			resilience4j NULLE PART dans son code Java — ni annotation, ni
+			registre, ni operateur. Il tirait une auto-configuration entiere pour
+			personne.
+
+			Il manquait a mon premier inventaire parce qu'il etait declare SANS
+			version : je ne cherchais que les versions epinglees en dur. C'est le
+			demarrage du contexte qui l'a trouve, pas l'analyse des POM.
+		-->
 		<!--
 			Operateurs Reactor de Resilience4j.
 
@@ -449,7 +461,6 @@
         <dependency>
             <groupId>com.github.loki4j</groupId>
             <artifactId>loki-logback-appender</artifactId>
-            <version>2.0.0</version>
         </dependency>
 
 
@@ -559,7 +570,6 @@
 						<path>
 							<groupId>org.projectlombok</groupId>
 							<artifactId>lombok</artifactId>
-							<version>${lombok.version}</version>
 						</path>
 					</annotationProcessorPaths>
 				</configuration>

@@ -153,10 +153,49 @@
 			<groupId>org.springframework.cloud</groupId>
 			<artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
 		</dependency>
+		<!--
+			resilience4j-spring-boot3 a ete RETIRE, et ce n'est pas un choix de
+			confort : en 2.4.0 il REFUSE de demarrer sur Spring Boot 4.
+
+			  Module 'io.github.resilience4j:resilience4j-spring-boot3' is only
+			  compatible with Spring Boot 3.x
+
+			Mesure : le test de contexte de gateway-service est le seul a
+			l'attraper. En 2.1.0 / 2.2.0 ce controle n'existait pas, donc
+			l'artefact etait la, silencieux.
+
+			Et il ne servait QU'AUX ANNOTATIONS. Ce depot en pose dix
+			(@Retry, @CircuitBreaker dans media-service et interface-service), et
+			elles sont INERTES : ni aspectjweaver ni spring-boot-starter-aop dans
+			aucun POM, donc aucun aspect ne les tisse. Le retrait ne change donc
+			rien au comportement.
+
+			Ce qui marche vraiment est PROGRAMMATIQUE et n'a besoin d'aucune
+			auto-configuration : le registre et l'operateur reactif de
+			coupe-circuit dans gateway-service, le limiteur de debit dans
+			user-service. Les artefacts correspondants sont declares ci-dessous.
+
+			Activer les annotations reste a decider : il faudrait
+			spring-boot-starter-aop et resilience4j-spring-boot4, et @Retry sur une
+			authentification est nocif (il rejoue des tentatives et accelere le
+			verrouillage du compte).
+		-->
+		<!--
+			resilience4j-annotations, et RIEN DE PLUS.
+
+			Ce module n'utilise de resilience4j que les ANNOTATIONS (@Retry,
+			@CircuitBreaker) : aucune classe d'execution, aucun registre. Mesure
+			faite en cherchant la classe dans les jars du depot local :
+			io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker vit
+			dans resilience4j-annotations, pas dans resilience4j-circuitbreaker.
+
+			Declarer les artefacts d'execution ici aurait embarque du code que
+			personne n'appelle. Les annotations restent inertes — voir le
+			commentaire ci-dessus.
+		-->
 		<dependency>
 			<groupId>io.github.resilience4j</groupId>
-			<artifactId>resilience4j-spring-boot3</artifactId>
-			<version>2.2.0</version>
+			<artifactId>resilience4j-annotations</artifactId>
 		</dependency>
 		
 		<!-- Spring Cloud Config -->
@@ -200,7 +239,6 @@
 		<dependency>
 			<groupId>com.github.loki4j</groupId>
 			<artifactId>loki-logback-appender</artifactId>
-			<version>2.0.2</version>
 		</dependency>
 		
 		<!-- Lombok -->
@@ -214,7 +252,6 @@
 		<dependency>
 			<groupId>io.github.cdimascio</groupId>
 			<artifactId>dotenv-java</artifactId>
-			<version>3.0.0</version>
 		</dependency>
 		
 		<!-- SpringDoc OpenAPI (Swagger) - WebFlux version -->
@@ -255,7 +292,6 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.14.1</version>
 				<configuration>
 					<source>17</source>
 					<target>17</target>
@@ -263,7 +299,6 @@
 						<path>
 							<groupId>org.projectlombok</groupId>
 							<artifactId>lombok</artifactId>
-							<version>1.18.30</version>
 						</path>
 					</annotationProcessorPaths>
 					<parameters>true</parameters>
