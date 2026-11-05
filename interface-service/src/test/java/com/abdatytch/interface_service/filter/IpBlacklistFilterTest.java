@@ -69,7 +69,17 @@ import static org.mockito.Mockito.when;
 class IpBlacklistFilterTest {
 
     private static final String IP = "203.0.113.7";
-    private static final String PREFIXE = "security:ip:blacklist:";
+
+    /**
+     * Les préfixes sont lus dans {@code ClesRedisSecurite}, et non recopiés.
+     *
+     * <p>Les recopier ici reproduirait le défaut même que ce test garde : une
+     * seconde définition du contrat, libre de diverger.
+     */
+    private static final String PREFIXE =
+            com.abdatytch.commons.security.ClesRedisSecurite.PREFIXE_IP_BLOQUEE;
+    private static final String PREFIXE_VIOLATIONS =
+            com.abdatytch.commons.security.ClesRedisSecurite.PREFIXE_VIOLATIONS_IP;
 
     private ReactiveStringRedisTemplate redis;
     private ReactiveValueOperations<String, String> valeurs;
@@ -94,7 +104,14 @@ class IpBlacklistFilterTest {
         ReflectionTestUtils.setField(filtre, "cacheTtl", 1800L);
         ReflectionTestUtils.setField(filtre, "maxAttempts", 5);
         ReflectionTestUtils.setField(filtre, "blockDuration", 3600L);
-        ReflectionTestUtils.setField(filtre, "redisKeyPrefix", PREFIXE);
+        // Le prefixe N'EST PLUS pose ici : il n'est plus un champ.
+        //
+        // Il l'etait, et ce test le posait lui-meme a la valeur attendue. Il
+        // verifiait donc le defaut ecrit dans le code, jamais la valeur servie
+        // par le serveur de configuration — laquelle etait "blacklist:ip:",
+        // que le Gateway ne lit pas. Voir la classe imbriquee
+        // PrefixeNonConfigurable ci-dessous, qui garde le fait que la propriete
+        // ne revienne pas.
     }
 
     /**
@@ -144,8 +161,10 @@ class IpBlacklistFilterTest {
             // voyait rien, donc le compteur restait a zero indefiniment.
             appel(IP, HttpStatus.UNAUTHORIZED);
 
-            verify(valeurs)
-                    .increment(PREFIXE + "attempts:" + IP);
+            // Le compteur vit dans SON espace de noms, security:ip:violations:,
+            // et non RANGE DANS celui des adresses bloquees comme auparavant
+            // (security:ip:blacklist:attempts:<ip>).
+            verify(valeurs).increment(PREFIXE_VIOLATIONS + IP);
         }
 
         @Test
@@ -377,6 +396,191 @@ class IpBlacklistFilterTest {
                     .withFailMessage("un échec de comptage transforme le refus en "
                             + "erreur serveur")
                     .isEqualTo(HttpStatus.UNAUTHORIZED);
+        }
+    }
+
+    // ==================================================================
+    /**
+     * Le préfixe n'est plus configurable, et ces deux tests l'empêchent de le
+     * redevenir.
+     *
+     * <h2>Le défaut gardé ici, et il était ACTIF</h2>
+     *
+     * Le préfixe était lu par
+     * {@code @Value("${security.ip-blacklist.redis-key-prefix:security:ip:blacklist:}")}.
+     * Le défaut écrit dans le code était le bon ; la valeur déployée ne l'était
+     * pas. {@code config-repo/dev/application-dev.yml} posait
+     * {@code redis-key-prefix: "blacklist:ip:"} — l'ancien préfixe, celui que le
+     * Gateway ne lit pas.
+     *
+     * <p>Un défaut de {@code @Value} ne s'applique qu'en l'<b>absence</b> de la
+     * propriété. Elle était présente, donc elle gagnait : la détection
+     * automatique de ce filtre écrivait ses blocages dans
+     * {@code blacklist:ip:<ip>}, que personne ne lit, pendant que la console
+     * d'administration écrivait dans {@code security:ip:blacklist:<ip>}, que le
+     * Gateway lit.
+     *
+     * <h2>Pourquoi l'ancien test ne pouvait pas le voir</h2>
+     *
+     * Il posait {@code redisKeyPrefix} lui-même, par réflexion, à la valeur
+     * attendue. Un test qui injecte la valeur qu'il va contrôler ne contrôle que
+     * lui-même. Le contrôle devait porter sur ce que la <b>configuration</b>
+     * fait de ce champ — d'où un test qui lit le fichier de configuration.
+     */
+    @Nested
+    @DisplayName("Le prefixe n'est pas configurable")
+    class PrefixeNonConfigurable {
+
+        @Test
+        @DisplayName("aucun champ du filtre n'est lie a une propriete de prefixe")
+        void aucunChampConfigurable() {
+            for (java.lang.reflect.Field champ
+                    : IpBlacklistFilter.class.getDeclaredFields()) {
+                var valeur = champ.getAnnotation(
+                        org.springframework.beans.factory.annotation.Value.class);
+                if (valeur == null) {
+                    continue;
+                }
+                assertThat(valeur.value())
+                        .withFailMessage("le champ %s est lie a une propriete de "
+                                + "prefixe (%s) : une configuration peut de nouveau "
+                                + "rompre le contrat avec le Gateway, et le defaut "
+                                + "serait silencieux puisque lire une cle absente "
+                                + "rend simplement « pas bloque »",
+                                champ.getName(), valeur.value())
+                        .doesNotContain("key-prefix")
+                        .doesNotContain("keyPrefix");
+            }
+        }
+
+        @Test
+        @DisplayName("aucun fichier de configuration ne declare ce prefixe")
+        void configurationSansPrefixe() throws Exception {
+            java.nio.file.Path racine = racineDuDepot();
+
+            assertThat(racine)
+                    .withFailMessage("la racine du depot est introuvable depuis %s : "
+                            + "ce garde-fou ne garde plus rien",
+                            java.nio.file.Paths.get("").toAbsolutePath())
+                    .isNotNull();
+
+            java.nio.file.Path depotDeConfiguration = racine.resolve("config-repo");
+            assertThat(depotDeConfiguration)
+                    .withFailMessage("config-repo est introuvable : ce garde-fou ne "
+                            + "garde plus rien")
+                    .exists();
+
+            java.util.List<String> declarations = new java.util.ArrayList<>();
+            try (var fichiers = java.nio.file.Files.walk(depotDeConfiguration)) {
+                for (java.nio.file.Path fichier : fichiers
+                        .filter(java.nio.file.Files::isRegularFile)
+                        .filter(f -> f.toString().endsWith(".yml")
+                                || f.toString().endsWith(".yaml"))
+                        .toList()) {
+                    declarations.addAll(declarationsDansLeFichier(fichier, racine));
+                }
+            }
+            declarations.addAll(declarationsDansLeFichier(
+                    racine.resolve("interface-service/src/main/resources/application.yml"),
+                    racine));
+
+            assertThat(declarations)
+                    .withFailMessage("un fichier de configuration declare de nouveau "
+                            + "redis-key-prefix : %s%n%nC'est ainsi que le defaut est "
+                            + "survenu : le code portait le bon prefixe par defaut, et "
+                            + "la configuration le remplacait par « blacklist:ip: », "
+                            + "que le Gateway ne lit pas. La detection automatique "
+                            + "ecrivait alors dans une cle que personne ne lit.",
+                            declarations)
+                    .isEmpty();
+        }
+
+        /**
+         * Les déclarations de la propriété dans un fichier, chemin à l'appui.
+         *
+         * <p>On cherche une <b>déclaration</b>, et non une mention : la
+         * première version de ce test cherchait la chaîne dans tout le fichier
+         * et échouait aussitôt, parce que le commentaire expliquant le retrait
+         * nomme forcément la propriété retirée. Un garde-fou qui interdit de
+         * documenter ce qu'il garde finit par être supprimé.
+         *
+         * <p>Et on vérifie le <b>bloc parent</b>, pas seulement le nom de
+         * feuille. La deuxième version ne regardait que
+         * {@code redis-key-prefix:} et a signalé
+         * {@code security.rate-limit.redis-key-prefix}, qui est une autre
+         * propriété, parfaitement légitime. Un garde-fou qui crie sur
+         * l'innocent se fait désactiver, et emporte avec lui la protection
+         * qu'il portait.
+         */
+        private java.util.List<String> declarationsDansLeFichier(
+                java.nio.file.Path fichier, java.nio.file.Path racine) throws Exception {
+            if (!java.nio.file.Files.isRegularFile(fichier)) {
+                return java.util.List.of();
+            }
+            java.util.List<String> lignes = java.nio.file.Files.readAllLines(fichier);
+            java.util.List<String> trouvees = new java.util.ArrayList<>();
+            for (int i = 0; i < lignes.size(); i++) {
+                if (!estDeclarationDePrefixe(lignes.get(i))
+                        || !"ip-blacklist:".equals(blocParent(lignes, i))) {
+                    continue;
+                }
+                trouvees.add(racine.relativize(fichier) + ":" + (i + 1));
+            }
+            return trouvees;
+        }
+
+        private boolean estDeclarationDePrefixe(String ligne) {
+            String nue = ligne.trim();
+            return !nue.startsWith("#") && nue.startsWith("redis-key-prefix:");
+        }
+
+        /**
+         * Le bloc qui contient la ligne donnée, par indentation.
+         *
+         * <p>Remonte jusqu'à la première clé strictement moins indentée. YAML
+         * n'autorise pas la tabulation pour l'indentation, donc compter les
+         * espaces suffit.
+         */
+        private String blocParent(java.util.List<String> lignes, int indice) {
+            int indentation = indentationDe(lignes.get(indice));
+            for (int i = indice - 1; i >= 0; i--) {
+                String ligne = lignes.get(i);
+                String nue = ligne.trim();
+                if (nue.isEmpty() || nue.startsWith("#")) {
+                    continue;
+                }
+                if (indentationDe(ligne) < indentation) {
+                    return nue;
+                }
+            }
+            return "";
+        }
+
+        private int indentationDe(String ligne) {
+            int n = 0;
+            while (n < ligne.length() && ligne.charAt(n) == ' ') {
+                n++;
+            }
+            return n;
+        }
+
+        /**
+         * Remonte jusqu'à la racine du dépôt.
+         *
+         * <p>Surefire exécute avec le répertoire du module pour base, mais une
+         * exécution depuis la racine est possible : la recherche remonte donc
+         * les parents plutôt que de supposer l'un ou l'autre.
+         */
+        private java.nio.file.Path racineDuDepot() {
+            java.nio.file.Path courant =
+                    java.nio.file.Paths.get("").toAbsolutePath();
+            for (int i = 0; i < 5 && courant != null; i++) {
+                if (java.nio.file.Files.isDirectory(courant.resolve("config-repo"))) {
+                    return courant;
+                }
+                courant = courant.getParent();
+            }
+            return null;
         }
     }
 }

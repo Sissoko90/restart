@@ -158,10 +158,22 @@ rate-limit:
   window-seconds: 60
 
 # Configuration IP Blacklist
-ip-blacklist:
-  enabled: true
-  ttl-minutes: 60
-  max-violations: 10
+#
+# Ce bloc a ete RETIRE : il etait INERTE.
+#
+# Il declarait `ip-blacklist.enabled`, `ttl-minutes` et `max-violations` a la
+# racine, alors que IpBlacklistFilter lit `security.ip-blacklist.enabled`,
+# `cache-ttl`, `max-attempts` et `block-duration`. Aucune des trois valeurs
+# n'etait lue par quoi que ce soit dans le depot — ni ici, ni ailleurs.
+#
+# Le laisser etait pire que de ne rien ecrire : qui voulait desactiver la liste
+# noire, allonger la fenetre ou relever le seuil aurait modifie ces lignes et
+# constate que rien ne changeait, sans aucune erreur pour l'avertir. Le reglage
+# effectif vit dans config-repo/dev/application-dev.yml, sous `security:`.
+#
+# Meme famille de defaut que `spring.cache.redis.time-to-live` retire de
+# config-repo/dev/user-service-dev.yml, et que le `redis-key-prefix` retire de
+# la configuration commune.
 
 # Configuration métriques
 management:

@@ -1,5 +1,6 @@
 package com.abdatytch.interface_service.filter;
 
+import com.abdatytch.commons.security.ClesRedisSecurite;
 import com.abdatytch.commons.security.GatewayClientIp;
 import com.abdatytch.commons.security.PrivateNetworks;
 
@@ -48,13 +49,56 @@ public class IpBlacklistFilter implements WebFilter {
     private long blockDuration;
 
     /**
-     * Préfixe partagé avec le Gateway et la console d'administration. Les trois
-     * en utilisaient un différent : chacun voyait sa propre liste, et aucune
-     * décision de blocage n'était appliquée ailleurs qu'à l'endroit où elle
-     * avait été prise. Voir {@code docs/GATEWAY-SECURITY.md}.
+     * Préfixe partagé avec le Gateway et la console d'administration, pris dans
+     * {@link ClesRedisSecurite} et <b>non configurable</b>.
+     *
+     * <h3>Le défaut corrigé, et il était actif</h3>
+     *
+     * Ce préfixe était lu par
+     * {@code @Value("${security.ip-blacklist.redis-key-prefix:security:ip:blacklist:}")}.
+     * Le défaut écrit dans le code était le bon. La valeur <b>déployée</b> ne
+     * l'était pas : {@code config-repo/dev/application-dev.yml} posait
+     * {@code redis-key-prefix: "blacklist:ip:"} — l'ancien préfixe, celui que le
+     * Gateway ne lit pas.
+     *
+     * <p>Un défaut de {@code @Value} ne s'applique qu'en l'<b>absence</b> de la
+     * propriété. Elle était présente, donc elle gagnait. Ce filtre écrivait ses
+     * blocages automatiques dans {@code blacklist:ip:<ip>}, que personne ne lit,
+     * tandis que la console d'administration écrivait dans
+     * {@code security:ip:blacklist:<ip>}, que le Gateway lit. Deux préfixes dans
+     * le même module, et la détection automatique sans aucun effet.
+     *
+     * <p>C'est <b>exactement</b> le défaut que la javadoc précédente de ce champ
+     * déclarait corrigé. Il l'était dans le code, et réintroduit par la
+     * configuration.
+     *
+     * <h3>Pourquoi le test ne l'a pas vu</h3>
+     *
+     * {@code IpBlacklistFilterTest} posait ce préfixe par réflexion, à sa valeur
+     * attendue. Il vérifiait donc le défaut écrit dans le code, jamais la valeur
+     * servie par le serveur de configuration. Un test qui injecte lui-même la
+     * valeur qu'il va contrôler ne contrôle que lui-même.
+     *
+     * <h3>Pourquoi ce n'est plus une propriété</h3>
+     *
+     * Parce que c'est un <b>contrat entre services</b>, pas un réglage. Le
+     * rendre configurable donne à un fichier de configuration le pouvoir de
+     * rompre l'accord entre qui décide et qui applique — silencieusement, car
+     * lire une clé absente rend simplement « pas bloqué ». Une constante
+     * partagée rend la divergence impossible à écrire.
      */
-    @Value("${security.ip-blacklist.redis-key-prefix:security:ip:blacklist:}")
-    private String redisKeyPrefix;
+    private static final String PREFIXE_LISTE_NOIRE = ClesRedisSecurite.PREFIXE_IP_BLOQUEE;
+
+    /**
+     * Compteur de violations, dans son propre espace de noms.
+     *
+     * <p>La clé était {@code <prefixe de liste noire> + "attempts:" + ip}, donc
+     * {@code security:ip:blacklist:attempts:<ip>} : un compteur rangé <b>dans</b>
+     * l'espace des adresses bloquées. {@code ClesRedisSecurite} prévoit
+     * {@code security:ip:violations:} exactement pour cela, et le Gateway y tient
+     * déjà le même comptage.
+     */
+    private static final String PREFIXE_VIOLATIONS = ClesRedisSecurite.PREFIXE_VIOLATIONS_IP;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
@@ -69,8 +113,8 @@ public class IpBlacklistFilter implements WebFilter {
             return chain.filter(exchange);
         }
         
-        String blacklistKey = redisKeyPrefix + clientIp;
-        String attemptsKey = redisKeyPrefix + "attempts:" + clientIp;
+        String blacklistKey = PREFIXE_LISTE_NOIRE + clientIp;
+        String attemptsKey = PREFIXE_VIOLATIONS + clientIp;
 
         return isIpBlacklisted(blacklistKey)
             .flatMap(isBlacklisted -> {

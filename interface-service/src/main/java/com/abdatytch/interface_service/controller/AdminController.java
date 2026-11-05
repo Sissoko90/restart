@@ -1,5 +1,6 @@
 package com.abdatytch.interface_service.controller;
 
+import com.abdatytch.commons.security.ClesRedisSecurite;
 import com.abdatytch.commons.security.GatewayClientIp;
 import com.abdatytch.commons.security.SecretMasking;
 import com.abdatytch.interface_service.dto.request.AdminLoginRequest;
@@ -655,7 +656,14 @@ public class AdminController {
         // Ce préfixe était auparavant "ip:blacklist:", que le Gateway ne lisait
         // pas : il cherchait un ensemble nommé "ip_blacklist", dans une autre
         // base Redis. Le blocage était donc écrit et jamais appliqué.
-        String blacklistKey = "security:ip:blacklist:" + ipAddress;
+        //
+        // Le littéral a été remplacé par la constante partagée. Il était juste,
+        // et c'est précisément ce qui le rendait trompeur : le filtre du MÊME
+        // module lisait alors une propriété que la configuration fixait à
+        // "blacklist:ip:". Deux préfixes dans un seul module, dont un seul
+        // atteignait le Gateway — et le littéral correct ici masquait que la
+        // détection automatique, elle, écrivait dans le vide.
+        String blacklistKey = ClesRedisSecurite.PREFIXE_IP_BLOQUEE + ipAddress;
 
         return redisTemplate.opsForValue()
                 .set(blacklistKey, "blocked_by_admin", Duration.ofDays(120))

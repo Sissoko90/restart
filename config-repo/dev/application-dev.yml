@@ -404,12 +404,33 @@ security:
     max-nested-depth: ${ZIPBOMB_MAX_NESTED_DEPTH:3}
   
   # Configuration IP Blacklist
+  #
+  # `redis-key-prefix` a ete RETIRE d'ici, et il ne doit pas revenir.
+  #
+  # Il valait "blacklist:ip:". Le filtre d'interface-service lisait cette
+  # propriete avec "security:ip:blacklist:" pour defaut — le bon prefixe, celui
+  # que le Gateway consulte. Mais un defaut de @Value ne s'applique qu'en
+  # l'ABSENCE de la propriete : celle-ci etait presente, donc elle gagnait.
+  #
+  # Consequence : la detection automatique d'interface-service inscrivait ses
+  # blocages dans "blacklist:ip:<ip>", que personne ne lit, tandis que la console
+  # d'administration ecrivait dans "security:ip:blacklist:<ip>", que le Gateway
+  # lit. Deux prefixes dans le meme module, et la detection automatique sans
+  # aucun effet.
+  #
+  # Le prefixe est desormais une constante de ClesRedisSecurite, dans
+  # platform-commons. Ce n'est pas un reglage mais un CONTRAT entre qui decide
+  # et qui applique : le rendre configurable donne a ce fichier le pouvoir de
+  # rompre l'accord, silencieusement — lire une cle absente rend simplement
+  # « pas bloque ».
+  #
+  # Garde-fou : IpBlacklistFilterTest.PrefixeNonConfigurable, qui relit ce
+  # fichier et echoue si la propriete reapparait.
   ip-blacklist:
     enabled: ${IP_BLACKLIST_ENABLED:true}
     cache-ttl: ${IP_BLACKLIST_CACHE_TTL:1800}
     max-attempts: ${IP_BLACKLIST_MAX_ATTEMPTS:5}
     block-duration: ${IP_BLACKLIST_BLOCK_DURATION:3600}
-    redis-key-prefix: "blacklist:ip:"
   
   # Configuration Body & XSS Filtering
   body-filter:
