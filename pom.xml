@@ -102,6 +102,24 @@
 		<spring-data-bom.version>2025.1.6</spring-data-bom.version>
 		<!-- CVE-2026-42198, 54291 : pilote JDBC PostgreSQL -->
 		<postgresql.version>42.7.12</postgresql.version>
+		<!--
+		  CVE-2026-59270 (9.1), 40988 (7.5), 47841 (7.4), 41707 (7.4),
+		  40993 (7.2) : spring-security-core.
+
+		  Signalee par OWASP Dependency-Check et NON par Trivy. Le desaccord
+		  entre deux outils est un signal pour aller voir, pas pour monter en
+		  masse : OWASP identifie par correspondance CPE sur le nom de fichier
+		  et produit des faux positifs.
+
+		  Verifie en amont, et ce n'en est pas un : 7.0.8 est publiee, nous
+		  etions en 7.0.5, et la propriete existe — help:evaluate rend 7.0.5 et
+		  non « null object ». Des CVE contre 7.0.5 corrigees dans les
+		  correctifs suivants sont donc exactement ce a quoi il faut s'attendre.
+
+		  C'est la bibliotheque qui porte TOUTES les chaines d'autorisation de
+		  la plateforme : une faille y vaut pour les dix modules a la fois.
+		-->
+		<spring-security.version>7.0.8</spring-security.version>
 
 		<!--
 		  Les trois suivantes ferment des vulnerabilites TRANSITIVES, invisibles
@@ -242,6 +260,40 @@
 			  propriete inventee serait ignoree en silence, et la vulnerabilite
 			  resterait ouverte en paraissant corrigee.
 			-->
+			<!--
+			  Jackson 2.x : la BOM, et non des epinglages un par un.
+
+			  DEUX LIGNES DE JACKSON COEXISTENT dans cet arbre, et c'est normal :
+			  Spring Boot 4 est passe a Jackson 3 (`tools.jackson.core`, epingle
+			  juste en dessous), mais la ligne 2.x (`com.fasterxml.jackson.*`)
+			  reste tiree transitivement — par jjwt-jackson, par Kafka, par
+			  springdoc, par webauthn4j. Elle n'est gouvernee par AUCUNE propriete
+			  de Spring Boot 4 : `jackson-bom.version` vaut 3.1.2, c'est la BOM
+			  de Jackson 3.
+
+			  CVE-2026-54512 et 54513, toutes deux une EXECUTION DE CODE
+			  ARBITRAIRE par contournement du PolymorphicTypeValidator, sur
+			  jackson-databind 2.21.2. Signalees par les DEUX outils — Trivy en
+			  ELEVEE et OWASP Dependency-Check en CVSS >= 7 — donc reelles, et
+			  non un faux positif d'identification.
+
+			  Une BOM et non trois epinglages : l'arbre porte jackson-core en
+			  2.21.2 ET 2.20.1, annotations en 2.21, plus les dataformat yaml,
+			  cbor, xml et le datatype jsr310. Chez Jackson ces artefacts doivent
+			  suivre la MEME ligne ; en epingler trois sur neuf produit un
+			  melange de versions, dont le symptome est une erreur de chargement
+			  de classe a l'execution et non a la compilation.
+
+			  2.21.8 : dernier correctif de la ligne 2.21, celle que l'arbre
+			  resout deja.
+			-->
+			<dependency>
+				<groupId>com.fasterxml.jackson</groupId>
+				<artifactId>jackson-bom</artifactId>
+				<version>2.21.8</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
 			<dependency>
 				<groupId>tools.jackson.core</groupId>
 				<artifactId>jackson-core</artifactId>
