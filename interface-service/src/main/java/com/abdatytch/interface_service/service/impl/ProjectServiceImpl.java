@@ -11,12 +11,12 @@ import com.abdatytch.interface_service.event.ProjectCreatedEvent;
 import com.abdatytch.interface_service.event.ProjectDeletedEvent;
 import com.abdatytch.interface_service.exception.BusinessException;
 import com.abdatytch.interface_service.exception.ProjectLimitExceededException;
+import com.abdatytch.interface_service.exception.RessourceIntrouvableException;
 import com.abdatytch.interface_service.mapper.ProjectMapper;
 import com.abdatytch.interface_service.metrics.ProjectMetrics;
 import com.abdatytch.interface_service.repository.ProjectRepository;
 import com.abdatytch.interface_service.service.ProjectService;
 import com.abdatytch.interface_service.service.UserService;
-import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
@@ -26,7 +26,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import java.time.Duration;
 import java.util.UUID;
 
 /**
@@ -83,6 +82,12 @@ public class ProjectServiceImpl implements ProjectService {
                     
                     return projectRepository.save(project)
                             .doOnSuccess(savedProject -> {
+                                // Le compteur etait DECLARE et jamais incremente.
+                                // ProjectMetrics est injecte ici et dans
+                                // UserServiceImpl, et n'etait appele par aucun des
+                                // deux : neuf metriques definies, zero emission.
+                                metrics.incrementProjectCreated(savedProject.getUserId().toString());
+
                                 // Publier l'événement Kafka de manière asynchrone
                                 publishProjectCreatedEvent(savedProject, user)
                                         .subscribe(
@@ -92,8 +97,28 @@ public class ProjectServiceImpl implements ProjectService {
                             })
                             .map(projectMapper::toResponse);
                 })
-                .retryWhen(reactor.util.retry.Retry.backoff(3, Duration.ofSeconds(1))
-                        .filter(throwable -> !(throwable instanceof RuntimeException)))
+                // Le retryWhen a ete RETIRE d'ici, et il ne doit pas revenir tel
+                // quel. Il etait :
+                //
+                //   .retryWhen(Retry.backoff(3, Duration.ofSeconds(1))
+                //           .filter(t -> !(t instanceof RuntimeException)))
+                //
+                // Son filtre n'admettait que les throwables qui ne sont PAS des
+                // RuntimeException. Or tout ce que cette chaine peut emettre en
+                // est une : ProjectLimitExceededException et BusinessException
+                // en heritent, les erreurs R2DBC passent par
+                // DataAccessException, et celles de Kafka par KafkaException.
+                // Les Error fatales, elles, ne sont pas signalees mais levees
+                // (Exceptions.throwIfFatal). Le filtre ne laissait donc rien
+                // passer : trois tentatives configurees, zero effectuee.
+                //
+                // Et le faire fonctionner serait PIRE que de le retirer. La
+                // politique porte sur la chaine entiere, save() compris : si le
+                // projet etait enregistre puis qu'une etape ulterieure echouait,
+                // la tentative suivante rejouerait canCreateProject, le controle
+                // d'unicite et save() — donc creerait un SECOND projet. Un
+                // reessai n'est sur que sur une operation idempotente, ce que
+                // cette creation n'est pas.
                 .doOnError(error -> log.error("Erreur lors de la création du projet: {}", error.getMessage()));
     }
 
@@ -112,7 +137,29 @@ public class ProjectServiceImpl implements ProjectService {
         
         return projectRepository.findByIdAndUserId(projectId, userId)
                 .map(projectMapper::toResponse)
-                .switchIfEmpty(Mono.error(new RuntimeException("Projet non trouvé")));
+                .switchIfEmpty(Mono.error(projetIntrouvable(projectId)));
+    }
+
+    /**
+     * Le refus commun aux trois accès par identifiant.
+     *
+     * <h3>Le défaut corrigé</h3>
+     *
+     * Les trois levaient {@code new RuntimeException("Projet non trouvé")}.
+     * Aucun gestionnaire ne connaît {@code RuntimeException} : le conseil global
+     * les rendait donc en <b>500</b>. Un client ne pouvait pas distinguer « ce
+     * projet n'existe pas » d'une panne, et le trafic normal alimentait le taux
+     * d'erreurs 5xx sur lequel reposent les alertes.
+     *
+     * <h3>Le message ne nomme pas le propriétaire</h3>
+     *
+     * {@code findByIdAndUserId} ne rend rien dans deux cas qu'il ne distingue
+     * pas : le projet n'existe pas, ou il appartient à quelqu'un d'autre. Les
+     * deux donnent le même 404 — distinguer permettrait d'énumérer les projets
+     * des autres en lisant le seul code de statut.
+     */
+    private RessourceIntrouvableException projetIntrouvable(UUID projectId) {
+        return new RessourceIntrouvableException("Projet " + projectId + " introuvable");
     }
 
     @Override
@@ -120,7 +167,7 @@ public class ProjectServiceImpl implements ProjectService {
         log.info("Mise à jour du projet: {} pour l'utilisateur: {}", projectId, userId);
         
         return projectRepository.findByIdAndUserId(projectId, userId)
-                .switchIfEmpty(Mono.error(new RuntimeException("Projet non trouvé")))
+                .switchIfEmpty(Mono.error(projetIntrouvable(projectId)))
                 .flatMap(project -> {
                     project.setName(request.getProjectName());
                     project.setDescription(request.getDescription());
@@ -135,12 +182,14 @@ public class ProjectServiceImpl implements ProjectService {
         log.info("Suppression du projet: {} pour l'utilisateur: {}", projectId, userId);
         
         return projectRepository.findByIdAndUserId(projectId, userId)
-                .switchIfEmpty(Mono.error(new RuntimeException("Projet non trouvé")))
+                .switchIfEmpty(Mono.error(projetIntrouvable(projectId)))
                 .flatMap(project -> {
                     project.markAsDeleted();
                     return projectRepository.save(project);
                 })
                 .doOnSuccess(project -> {
+                    metrics.incrementProjectDeleted(project.getUserId().toString());
+
                     // Publier événement de suppression
                     publishProjectDeletedEvent(project)
                             .subscribe(
@@ -170,6 +219,51 @@ public class ProjectServiceImpl implements ProjectService {
     }
 
     /**
+     * Compte l'aboutissement d'un envoi Kafka.
+     *
+     * <h3>Le défaut corrigé</h3>
+     *
+     * {@code KafkaTemplate.send()} rend un {@code CompletableFuture} et ne lève
+     * rien si le courtier refuse ou si le délai d'attente des métadonnées
+     * expire. Le résultat était ignoré : l'échec survenait <b>après</b> le
+     * retour de la méthode, donc ni le {@code Mono} rendu ni le
+     * {@code log.debug} qui suivait l'appel ne le voyaient. Un
+     * {@code log.debug("événement envoyé")} s'écrivait alors même que rien ne
+     * partait.
+     *
+     * <p>{@code interface.kafka.event.failed.total} existait pour exactement
+     * cela, et n'était incrémenté nulle part.
+     *
+     * <h3>Ce que cela ne corrige pas</h3>
+     *
+     * La publication reste détachée de la requête : un échec n'est pas rejoué
+     * et l'appelant reçoit quand même un 201. C'est un choix assumé — faire
+     * échouer la création parce que Kafka est indisponible serait pire — mais
+     * cela signifie qu'une divergence avec quotas-service reste possible. Le
+     * compteur la rend seulement <b>visible</b>, ce qui est la condition pour
+     * qu'une réconciliation puisse un jour être décidée.
+     *
+     * @param typeDEvenement étiquette de cardinalité bornée : le nom de
+     *                       l'événement, jamais un identifiant
+     */
+    private void observerEnvoi(java.util.concurrent.CompletableFuture<?> envoi,
+                               String typeDEvenement) {
+        envoi.whenComplete((resultat, erreur) -> {
+            if (erreur == null) {
+                metrics.incrementKafkaEventSent(typeDEvenement);
+                return;
+            }
+            // Le nom simple de la classe, et non le message : un message porte
+            // des noms de courtier et des identifiants, donc une cardinalite
+            // non bornee qui ferait exploser le nombre de series Prometheus.
+            metrics.incrementKafkaEventFailed(typeDEvenement,
+                    erreur.getClass().getSimpleName());
+            log.error("Publication Kafka {} echouee : {}", typeDEvenement,
+                    erreur.getMessage());
+        });
+    }
+
+    /**
      * Publie l'événement de création de projet via Kafka
      */
     private Mono<Void> publishProjectCreatedEvent(Project project, UserResponse user) {
@@ -190,9 +284,20 @@ public class ProjectServiceImpl implements ProjectService {
                             user.getUsername(),
                             project.getCreatedAt());
 
-                    kafkaTemplate.send(ApplicationConstants.TOPIC_PROJECT_CREATED,
-                            project.getId().toString(), event);
-                    log.debug("Événement ProjectCreated envoyé: {}", event);
+                    // Le resultat de send() etait IGNORE.
+                    //
+                    // send() rend un CompletableFuture et ne leve rien si le
+                    // courtier refuse : l'echec arrivait apres le retour de la
+                    // methode, donc ni le Mono ni le log.debug ci-dessous ne le
+                    // voyaient. L'evenement etait porte disparu en silence, et
+                    // quotas-service ne decomptait jamais le projet.
+                    //
+                    // Observer le future ne change pas la semantique — la
+                    // publication reste detachee de la requete — mais l'echec
+                    // devient comptable, donc alertable.
+                    observerEnvoi(kafkaTemplate.send(ApplicationConstants.TOPIC_PROJECT_CREATED,
+                            project.getId().toString(), event), "ProjectCreated");
+                    log.debug("Événement ProjectCreated remis au producteur: {}", event);
                 })
                 .subscribeOn(Schedulers.boundedElastic())
                 .then();
@@ -210,9 +315,13 @@ public class ProjectServiceImpl implements ProjectService {
                     ProjectDeletedEvent event = ProjectDeletedEvent.create(
                             project.getId(), project.getUserId(), project.getName());
 
-                    kafkaTemplate.send(ApplicationConstants.TOPIC_PROJECT_DELETED,
-                            project.getId().toString(), event);
-                    log.debug("Événement ProjectDeleted envoyé pour le projet: {}", project.getId());
+                    // Meme raison qu'au-dessus, et l'enjeu est plus direct ici :
+                    // cet evenement porte le userId pour que quotas-service
+                    // restitue le quota libere. Perdu en silence, le quota reste
+                    // consomme par un projet supprime.
+                    observerEnvoi(kafkaTemplate.send(ApplicationConstants.TOPIC_PROJECT_DELETED,
+                            project.getId().toString(), event), "ProjectDeleted");
+                    log.debug("Événement ProjectDeleted remis au producteur: {}", project.getId());
                 })
                 .subscribeOn(Schedulers.boundedElastic())
                 .then();
