@@ -529,6 +529,44 @@
 		</pluginManagement>
 
 		<plugins>
+			<!--
+			  Failsafe, qui n'etait configure NULLE PART.
+
+			  Consequence : la convention Maven des tests d'integration — un
+			  fichier nomme `*IT.java`, execute en phase `verify` — ne
+			  fonctionnait pas. Un tel fichier n'aurait ete lance par personne :
+			  surefire ne ramasse que `*Test` / `Test*` / `*Tests`, et failsafe,
+			  seul a connaitre `*IT`, etait absent.
+
+			  Et `-DskipITs`, present dans toutes les commandes de ce depot et
+			  dans la CI, ne desactivait rien du tout : c'est un drapeau de
+			  failsafe. Il donnait l'impression qu'une categorie de tests etait
+			  mise de cote, alors qu'il n'y avait rien a mettre de cote.
+
+			  Aucun changement de comportement aujourd'hui : le depot ne contient
+			  aucun `*IT.java`. Le seul test d'integration existant,
+			  AuthPersistenceIntegrationTest, se nomme `...Test` et tourne donc
+			  sous surefire — correctement protege par
+			  `@Testcontainers(disabledWithoutDocker = true)`, donc ignore sur une
+			  machine sans Docker au lieu d'echouer.
+
+			  Ceci est donc une mise en place, pas une correction : pour que le
+			  jour ou un vrai test de bout en bout sera ecrit, le nommer `*IT`
+			  suffise a le faire tourner — et que `-DskipITs` veuille enfin dire
+			  quelque chose.
+			-->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<executions>
+					<execution>
+						<goals>
+							<goal>integration-test</goal>
+							<goal>verify</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
 			<!-- BlockHound instrumente des classes déjà chargées : sur JDK 13+, la JVM
 			     doit autoriser la redéfinition ajoutant des méthodes. Sans ce flag,
 			     BlockHound.install() échoue et les tests d'absence de blocage ne
