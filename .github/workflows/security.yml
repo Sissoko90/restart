@@ -241,20 +241,43 @@ jobs:
   owasp:
     name: OWASP Dependency-Check
     runs-on: ubuntu-latest
-    # 60 -> 120 minutes, et la mesure l'impose.
+    # 120 -> 350 minutes, ET le cache sauve independamment du resultat.
     #
-    # Premiere execution avec la cle NVD, cache froid : demarree a 15:26:19,
-    # tuee a 16:26:37 -- soit 60 min et 18 s. GitHub rapporte un job expire
-    # comme « cancelled », ce qui ne ressemble ni a un succes ni a un echec.
+    # MA PREMIERE CORRECTION ETAIT FAUSSE. J'avais diagnostique la boucle
+    # — « actions/cache n'ecrit qu'a la fin du job, donc un job expire
+    # n'amorce jamais le cache » — et j'y ai repondu en passant le delai de
+    # 60 a 120 minutes. Cela ne pouvait pas marcher : le probleme n'etait pas
+    # la duree, c'etait que la sauvegarde dependait du succes.
     #
-    # LE PIEGE QUE CELA CREAIT : `actions/cache` n'ecrit son cache qu'a la FIN
-    # du job. Expire, il n'ecrit rien -- donc l'execution suivante repart a
-    # froid et expire aussi. Une boucle ou le cache ne se remplit jamais, et ou
-    # le second avis ne tourne jamais.
+    # Mesure de l'execution 42005309752, cache froid, cle NVD presente et
+    # transmise :
     #
-    # La premiere execution doit donc pouvoir ABOUTIR. Les suivantes liront le
-    # cache et prendront quelques minutes.
-    timeout-minutes: 120
+    #   09:51:36   10 000 / 419 455    (2 %)
+    #   10:48:51  150 000 / 419 455   (36 %)
+    #   11:47:48  270 000 / 419 455   (64 %)
+    #   11:48:45  annule a 120 min 18 s
+    #
+    # Le rythme est REGULIER du debut a la fin, ~10 000 enregistrements toutes
+    # les 3 a 5 minutes : aucun decrochage, donc aucun plafonnement de debit.
+    # La cle API fonctionne. Le telechargement initial du NVD prend simplement
+    # entre 2 h 30 et 4 h.
+    #
+    # Deux changements, et c'est le second qui compte :
+    #
+    #  1. 350 minutes, sous le plafond de 360 minutes de GitHub, pour que la
+    #     premiere execution a froid puisse ABOUTIR.
+    #
+    #  2. `actions/cache` est remplace par le couple restore / save, et la
+    #     sauvegarde porte `if: always()`. Elle s'execute donc meme quand
+    #     l'amorcage echoue : ce qui a ete telecharge est conserve, et
+    #     l'execution suivante REPREND au lieu de recommencer. Sans cela, un
+    #     seul incident reseau remettait le compteur a zero pour toujours.
+    #
+    # L'amorcage n'est PAS `continue-on-error`. Une base partielle ferait une
+    # analyse incomplete qui se declarerait verte — exactement le faux succes
+    # que ce job existe pour ne pas produire. Il reste donc rouge tant qu'il ne
+    # fonctionne pas vraiment, mais il PROGRESSE a chaque execution.
+    timeout-minutes: 350
 
     steps:
       - uses: actions/checkout@v4
@@ -265,31 +288,37 @@ jobs:
           distribution: temurin
           cache: maven
 
-      # La base du NVD est volumineuse, et son téléchargement est le poste
-      # de coût de ce job. La mettre en cache évite de la retirer à chaque
-      # push, ce qui serait intenable maintenant que le job tourne à
-      # chaque fois.
-      - name: Cache de la base NVD
-        uses: actions/cache@v4
+      # La base du NVD est volumineuse, et son téléchargement est LE poste de
+      # coût de ce job : 419 455 enregistrements, 2 h 30 à 4 h à froid.
+      #
+      # `restore` seul, et non `actions/cache` : l'action combinée ne sauve
+      # qu'à la fin d'un job RÉUSSI. Comme l'amorçage peut dépasser le délai,
+      # elle ne sauvait jamais rien — et chaque exécution repartait de zéro.
+      # La sauvegarde est donc une étape à part, en fin de job, avec
+      # `if: always()`.
+      #
+      # La clé porte le numéro d'exécution et `restore-keys` le préfixe : on
+      # restaure donc l'entrée la plus récente, et on en écrit une nouvelle à
+      # chaque fois. C'est ce qui permet à une base partielle d'être reprise.
+      - name: Restaurer la base NVD
+        id: cache-nvd
+        uses: actions/cache/restore@v4
         with:
           path: ~/.m2/repository/org/owasp/dependency-check-data
           key: nvd-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             nvd-${{ runner.os }}-
 
-      - name: Analyser
-        # Sans NVD_API_KEY, le NVD limite très fortement le téléchargement :
-        # l'analyse dépasse l'heure et échoue. La clé est gratuite.
-        #
-        # ÉCHEC et non `exit 0`. Rendre vert sans avoir analysé est la forme
-        # la plus trompeuse de succès, et c'est exactement ce que ce job
-        # faisait.
-        #
-        # Le secret passe par `env:` et non par une interpolation `${{ }}`
-        # dans la commande. Deux raisons : la valeur n'est pas substituée
-        # dans le texte du script — donc rien à casser ni à injecter si elle
-        # contient un caractère shell — et elle n'apparaît pas dans la ligne
-        # de commande du processus, lisible par `ps`.
+      # L'amorçage est SÉPARÉ de l'analyse.
+      #
+      # `update-only` ne fait que mettre la base à jour, sans rien analyser.
+      # Le séparer a deux effets : la sauvegarde du cache qui suit s'exécute
+      # même si l'amorçage échoue, et l'analyse elle-même tourne ensuite avec
+      # `-DautoUpdate=false`, donc en quelques minutes.
+      #
+      # `-N` (non récursif) : la base est partagée dans ~/.m2, la mettre à
+      # jour onze fois — une par module — n'aurait servi à rien.
+      - name: Amorcer la base NVD
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
@@ -300,12 +329,59 @@ jobs:
             echo "Puis : Settings > Secrets and variables > Actions > New repository secret"
             exit 1
           fi
+          mvn -B -ntp -N org.owasp:dependency-check-maven:13.0.0:update-only \
+            -DnvdApiKey="$NVD_API_KEY"
+
+      # Sauvegarde INCONDITIONNELLE, et c'est le coeur de la correction.
+      #
+      # Elle s'execute meme si l'amorcage ci-dessus a echoue ou expire : ce qui
+      # a ete telecharge est conserve, et l'execution suivante reprend. Sans
+      # elle, le job etait dans une boucle ou le cache ne se remplissait jamais.
+      #
+      # COUT ASSUME : la cle portant le numero d'execution, le cache est
+      # reecrit a CHAQUE push. La base pese plusieurs centaines de Mo, et le
+      # quota de cache d'un depot est de 10 Go avec eviction LRU — les caches
+      # Maven peuvent donc etre evinces plus souvent.
+      #
+      # C'est delibere pour l'instant : la priorite est que la base s'amorce,
+      # et c'est la cle par execution qui permet de REPRENDRE un
+      # telechargement partiel. Une fois la base complete et stable, passer a
+      # une cle par jour (`date -u +%Y-%m-%d`) ramenerait l'ecriture a une par
+      # jour, au prix de ne plus pouvoir accumuler plusieurs reprises dans la
+      # meme journee.
+      - name: Sauvegarder la base NVD
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.m2/repository/org/owasp/dependency-check-data
+          key: nvd-${{ runner.os }}-${{ github.run_id }}
+
+      - name: Analyser
+        # `-DautoUpdate=false` : la base vient de l'étape d'amorçage et du
+        # cache. Sans cela, chaque module relancerait une vérification de
+        # fraîcheur, et surtout l'analyse et le téléchargement partageraient le
+        # même délai — ce qui est précisément ce qui faisait expirer ce job
+        # sans qu'il analyse jamais quoi que ce soit.
+        #
+        # Le secret passe par `env:` et non par une interpolation `${{ }}`
+        # dans la commande. Deux raisons : la valeur n'est pas substituée
+        # dans le texte du script — donc rien à casser ni à injecter si elle
+        # contient un caractère shell — et elle n'apparaît pas dans la ligne
+        # de commande du processus, lisible par `ps`.
+        #
+        # Sur une base absente ou vide, le plugin ÉCHOUE au lieu de rendre un
+        # rapport sans constat. C'est le comportement voulu : rendre vert sans
+        # avoir analysé est la forme la plus trompeuse de succès.
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
           # Version ÉPINGLÉE. Elle ne l'était pas :
           # `org.owasp:dependency-check-maven:check` sans version résout la
           # dernière publiée — un outil de sécurité qui change sous nos pieds
           # d'un push à l'autre, sans qu'aucun commit ne le dise.
           mvn -B -ntp org.owasp:dependency-check-maven:13.0.0:check \
             -DnvdApiKey="$NVD_API_KEY" \
+            -DautoUpdate=false \
             -DfailBuildOnCVSS=7 \
             -Dformats=HTML,SARIF
 
