@@ -88,6 +88,7 @@ class JwtWebFilterTest {
         // Par défaut aucun jeton n'est révoqué : chaque test qui s'intéresse à la
         // révocation surcharge ce comportement explicitement.
         when(revocationChecker.isRevoked(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any())).thenReturn(Mono.just(false));
 
         filter = new JwtWebFilter(jwksKeyProvider, revocationChecker, ISSUER, AUDIENCES);
@@ -308,25 +309,36 @@ class JwtWebFilterTest {
             // qu'il est encore en vigueur : sans ce contrôle, une déconnexion ne
             // fermait aucune porte jusqu'à l'expiration naturelle du jeton.
             when(revocationChecker.isRevoked(org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(),
                     org.mockito.ArgumentMatchers.any())).thenReturn(Mono.just(true));
 
             assertRejected(get("/api/v1/users/me", userToken()));
         }
 
         @Test
-        @DisplayName("la révocation est interrogée avec le jti ET le sujet du jeton")
+        @DisplayName("la révocation est interrogée avec le jti, le sujet ET la date d'émission")
         void revocationInterrogeeAvecLeBonJeton() {
             org.mockito.ArgumentCaptor<String> jti = org.mockito.ArgumentCaptor.forClass(String.class);
             org.mockito.ArgumentCaptor<String> subject = org.mockito.ArgumentCaptor.forClass(String.class);
+            org.mockito.ArgumentCaptor<java.time.Instant> emisLe =
+                    org.mockito.ArgumentCaptor.forClass(java.time.Instant.class);
 
             StepVerifier.create(filter.filter(get("/api/v1/users/me", userToken()), chain))
                     .verifyComplete();
 
             org.mockito.Mockito.verify(revocationChecker)
-                    .isRevoked(jti.capture(), subject.capture());
+                    .isRevoked(jti.capture(), subject.capture(), emisLe.capture());
 
             assertThat(jti.getValue()).isNotBlank();
             assertThat(subject.getValue()).isEqualTo("11111111-2222-3333-4444-555555555555");
+            // La DATE D'EMISSION doit etre transmise, sinon le verificateur ne
+            // peut pas distinguer un jeton anterieur a une revocation globale
+            // d'un jeton emis apres elle — et il rejetait les deux, verrouillant
+            // le porteur sept jours.
+            assertThat(emisLe.getValue())
+                    .as("sans la date d'emission, une revocation globale frappe "
+                            + "aussi les jetons emis APRES elle")
+                    .isNotNull();
         }
     }
 }

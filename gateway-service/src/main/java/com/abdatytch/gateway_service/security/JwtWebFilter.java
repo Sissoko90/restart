@@ -143,7 +143,15 @@ public class JwtWebFilter implements WebFilter {
                 .switchIfEmpty(Mono.error(new IllegalStateException(
                         "validation de jeton sans resultat")))
                 .flatMap(claims -> revocationChecker
-                        .isRevoked(claims.getId(), claims.getSubject())
+                        // La date d'EMISSION est transmise : une revocation
+                        // globale ne doit frapper que les jetons anterieurs a
+                        // elle. Sans ce troisieme argument, le verificateur
+                        // faisait un hasKey et rejetait aussi les jetons emis
+                        // APRES la revocation, pendant les sept jours de vie de
+                        // la cle.
+                        .isRevoked(claims.getId(), claims.getSubject(),
+                                claims.getIssuedAt() == null
+                                        ? null : claims.getIssuedAt().toInstant())
                         .flatMap(revoked -> {
                             if (Boolean.TRUE.equals(revoked)) {
                                 log.warn(" Jeton révoqué présenté par {} sur {}",

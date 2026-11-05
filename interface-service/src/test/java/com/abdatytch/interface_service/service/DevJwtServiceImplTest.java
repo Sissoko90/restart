@@ -72,7 +72,9 @@ class DevJwtServiceImplTest {
         when(keyRotationService.getPublicKeyById(CURRENT_KID)).thenReturn(keyPair.getPublic());
 
         when(tokenBlacklistService.isTokenRevoked(anyString())).thenReturn(Mono.just(false));
-        when(tokenBlacklistService.hasDeveloperRevokedTokens(anyString())).thenReturn(Mono.just(false));
+        when(tokenBlacklistService.revocationGlobalePosterieureA(
+                anyString(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Mono.just(false));
 
         jwtService = new DevJwtServiceImpl(keyRotationService, tokenBlacklistService);
         ReflectionTestUtils.setField(jwtService, "jwtExpirationMs", 3_600_000L);
@@ -233,7 +235,9 @@ class DevJwtServiceImplTest {
     @Test
     @DisplayName("un token d'un développeur globalement révoqué est refusé")
     void tokenOfGloballyRevokedDeveloperIsRejected() {
-        when(tokenBlacklistService.hasDeveloperRevokedTokens(anyString())).thenReturn(Mono.just(true));
+        when(tokenBlacklistService.revocationGlobalePosterieureA(
+                anyString(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Mono.just(true));
 
         StepVerifier.create(jwtService.validateTokenReactive(jwtService.generateToken(developer())))
                 .expectNext(false)

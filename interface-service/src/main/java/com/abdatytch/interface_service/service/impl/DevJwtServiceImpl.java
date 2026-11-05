@@ -241,8 +241,17 @@ public class DevJwtServiceImpl implements IDevJwtService {
                     ? tokenBlacklistService.isTokenRevoked(tokenId)
                     : Mono.just(false);
 
+            // La date d'EMISSION est passee, et c'est le correctif.
+            //
+            // L'appel precedent ne transmettait que l'identifiant, et la liste
+            // noire se contentait d'un hasKey : une revocation globale frappait
+            // donc aussi les jetons emis APRES elle, verrouillant le
+            // developpeur pendant les sept jours de vie de la cle — reconnexion
+            // comprise. L'horodatage etait ecrit pour l'eviter, et jamais relu.
             Mono<Boolean> developerRevokedCheck = developerId != null
-                    ? tokenBlacklistService.hasDeveloperRevokedTokens(developerId)
+                    ? tokenBlacklistService.revocationGlobalePosterieureA(
+                            developerId,
+                            claims.getIssuedAt() == null ? null : claims.getIssuedAt().toInstant())
                     : Mono.just(false);
 
             return Mono.zip(tokenRevokedCheck, developerRevokedCheck)

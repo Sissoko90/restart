@@ -74,9 +74,13 @@ public class TokenRevocationChecker {
 
      * @param tokenId l'identifiant {@code jti} du jeton
      * @param subject le porteur ({@code sub})
+     * @param emisLe  le claim {@code iat} du jeton. Décide si une révocation
+     *                globale le frappe : seuls les jetons émis AVANT elle le
+     *                sont. {@code null} signifie « inconnu », et le jeton est
+     *                alors refusé — on ne peut pas prouver qu'il la postdate
      * @return {@code true} si le jeton doit être refusé
      */
-    public Mono<Boolean> isRevoked(String tokenId, String subject) {
+    public Mono<Boolean> isRevoked(String tokenId, String subject, java.time.Instant emisLe) {
         if (!enabled) {
             return Mono.just(false);
         }
@@ -90,9 +94,31 @@ public class TokenRevocationChecker {
 
         Mono<Boolean> tokenRevoked = revocationRedis.hasKey(tokenPrefix + tokenId);
 
+        // LE DEFAUT CORRIGE : c'etait `hasKey(subjectPrefix + subject)`.
+        //
+        // La cle `dev:revoked:<sub>` porte l'INSTANT de la revocation, avec une
+        // duree de vie de sept jours. Un hasKey ignore cette valeur : une
+        // revocation globale frappait donc aussi les jetons emis APRES elle, et
+        // verrouillait le porteur sept jours — reconnexion comprise.
+        //
+        // Ce lecteur-ci est sur le chemin de CHAQUE requete de la plateforme,
+        // donc la panne aurait ete totale. Elle n'etait pas active :
+        // `revokeAllDeveloperTokens`, cote interface-service, n'a aucun
+        // appelant. Brancher cette fonction d'administration l'aurait declenchee.
+        //
+        // La regle vit dans RevocationGlobale, de platform-commons :
+        // interface-service lit la MEME cle et portait la MEME erreur. Deux
+        // lecteurs d'une cle qui n'appliquent pas la meme regle, c'est ce que ce
+        // module partage existe pour empecher.
         Mono<Boolean> subjectRevoked = (subject == null || subject.isBlank())
                 ? Mono.just(false)
-                : revocationRedis.hasKey(subjectPrefix + subject);
+                : revocationRedis.opsForValue().get(subjectPrefix + subject)
+                        .map(horodatage -> com.abdatytch.commons.security.RevocationGlobale
+                                .frappe(horodatage, emisLe))
+                        // Aucune cle : aucune revocation. `get` rend un Mono
+                        // VIDE, et sans ce repli le zip ci-dessous rendrait vide
+                        // — la requete serait perdue, ni acceptee ni refusee.
+                        .defaultIfEmpty(false);
 
         return Mono.zip(tokenRevoked, subjectRevoked)
                 .map(both -> Boolean.TRUE.equals(both.getT1()) || Boolean.TRUE.equals(both.getT2()))
