@@ -49,6 +49,33 @@ class RoutageCoherentTest {
             "src/main/java/com/abdatytch/gateway_service/config/GatewayRoutesConfig.java");
 
     /**
+     * Les routes YAML, LUES AUSSI depuis la correction de l'angle mort de ce
+     * test.
+     *
+     * <h2>Le defaut corrige</h2>
+     *
+     * Ce test ne lisait que {@code GatewayRoutesConfig.java}. Il s'annonce
+     * pourtant comme le garant de la coherence du routage, alors que ce service
+     * en porte <b>deux</b> mecanismes : le {@code RouterFunction} en Java et les
+     * routes Spring Cloud Gateway en YAML.
+     *
+     * <p>L'angle mort n'avait jamais mordu parce qu'aucun prefixe n'etait
+     * declare UNIQUEMENT en YAML : tous figuraient aussi dans le routeur Java.
+     * Le premier a l'etre — le flux WebSocket de notification-service, qui ne
+     * peut pas passer par le {@code RouterFunction} puisque {@code WebClient} ne
+     * sait pas monter en protocole — a ete signale comme un « prefixe
+     * fantome ».
+     *
+     * <p>Diagnostic a l'envers, donc : le prefixe etait bien route, c'est le
+     * test qui ne regardait qu'une moitie du routage. {@code ModuleLivrableTest}
+     * lit deja les deux, et son commentaire explique pourquoi — « n'en lire
+     * qu'un rendrait ce garde-fou faux dans les deux sens : il accuserait des
+     * services routes par l'autre, et finirait desactive ».
+     */
+    private static final Path ROUTES_YAML = Path.of(
+            "../config-repo/dev/gateway-service-dev.yml");
+
+    /**
      * Retire les commentaires <b>sans toucher aux chaines</b>.
      *
      * <h2>Pourquoi une regex ne suffit pas, et le defaut qu'elle a produit</h2>
@@ -163,6 +190,94 @@ class RoutageCoherentTest {
      * distincte — la corriger deplacerait la decouverte des cles de signature
      * de toute la plateforme.
      */
+    /**
+     * Les routes declarees en YAML : {@code Path=...} et {@code uri: lb://...}.
+     *
+     * <p>Lecture ligne a ligne et non par expression reguliere sur tout le
+     * fichier : les deux informations sont dans des cles distinctes d'un meme
+     * bloc, et un motif global apparierait le {@code Path} d'une route avec
+     * l'{@code uri} de la suivante.
+     *
+     * <p>Les lignes de commentaire sont ignorees : ce fichier explique
+     * longuement pourquoi certaines routes vivent ici et d'autres dans le
+     * {@code RouterFunction}, et ces explications citent forcement des chemins.
+     * Un garde-fou qui interdit de documenter ce qu'il garde finit par etre
+     * desactive — ce depot l'a appris trois fois.
+     */
+    private static Map<String, String> routesYaml() throws IOException {
+        Map<String, String> declare = new LinkedHashMap<>();
+        if (!Files.isRegularFile(ROUTES_YAML)) {
+            return declare;
+        }
+
+        java.util.Set<String> duReacteur = modulesDuReacteur();
+
+        String prefixes = null;
+        String service = null;
+        for (String ligne : Files.readAllLines(ROUTES_YAML)) {
+            String nue = ligne.trim();
+            if (nue.startsWith("#")) {
+                continue;
+            }
+            // Un nouveau bloc de route remet les deux a zero : sans cela, une
+            // route sans Path heriterait de celui de la precedente.
+            if (nue.startsWith("- id:")) {
+                prefixes = null;
+                service = null;
+            }
+            if (nue.startsWith("- Path=")) {
+                prefixes = nue.substring("- Path=".length()).trim();
+            }
+            if (nue.startsWith("uri: lb://")) {
+                service = nue.substring("uri: lb://".length()).trim();
+            }
+            if (prefixes != null && service != null) {
+                // SEULS les services du reacteur sont retenus.
+                //
+                // Le YAML declare aussi des routes vers tenant-service — dont
+                // AUCUN dossier n'existe dans ce depot — et vers geo-service et
+                // payment-service, qui sont encore des squelettes hors
+                // reacteur. Exiger que CheminCible les connaisse reviendrait a
+                // lui faire declarer des services qui ne peuvent pas repondre,
+                // et le mode maintenance couvrirait des chemins vides.
+                //
+                // Ces routes fantomes sont un defaut A PART : une requete vers
+                // /api/v1/tenants/** echoue a la resolution Consul, donc en 503
+                // ou en 500, et non en 404 propre.
+                if (duReacteur.contains(service)) {
+                    // Un predicat peut porter PLUSIEURS chemins separes par des
+                    // virgules : Path=/api/v1/developers,/api/v1/projects. Les
+                    // traiter comme une seule chaine produirait un prefixe qui
+                    // ne correspond a rien.
+                    for (String prefixe : prefixes.split(",")) {
+                        String propre = prefixe.replace("/**", "").trim();
+                        if (!propre.isEmpty()) {
+                            declare.put(propre, service);
+                        }
+                    }
+                }
+                prefixes = null;
+                service = null;
+            }
+        }
+        return declare;
+    }
+
+    /** Les modules reellement construits, lus dans le POM racine. */
+    private static java.util.Set<String> modulesDuReacteur() throws IOException {
+        Path racine = Path.of("../pom.xml");
+        if (!Files.isRegularFile(racine)) {
+            return java.util.Set.of();
+        }
+        java.util.Set<String> modules = new java.util.LinkedHashSet<>();
+        Matcher m = Pattern.compile("<module>([^<]+)</module>")
+                .matcher(Files.readString(racine));
+        while (m.find()) {
+            modules.add(m.group(1).trim());
+        }
+        return modules;
+    }
+
     private static Map<String, String> routesDirectes(String source) {
         Map<String, String> declare = new LinkedHashMap<>();
         Matcher m = Pattern.compile(
@@ -189,6 +304,7 @@ class RoutageCoherentTest {
         String source = sansCommentaires(Files.readString(CONFIG_DES_ROUTES));
 
         Map<String, String> declare = new LinkedHashMap<>(routesDirectes(source));
+        declare.putAll(routesYaml());
         String[] blocs = source.split("\\.nest\\(path\\(\"");
 
         for (int i = 1; i < blocs.length; i++) {

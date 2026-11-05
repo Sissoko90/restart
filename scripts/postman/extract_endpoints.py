@@ -15,6 +15,13 @@ SERVICES = {
     "quotas-service": ("quotas_service", 8089),
     "setting-service": ("setting_service", 8090),
     "security-service": ("security_service", 8091),
+    # notification-service : la boite de reception du porteur.
+    #
+    # Le flux temps reel (/notifications-flux) n'apparait PAS dans la
+    # collection : c'est une montee en protocole WebSocket, et Postman ne la
+    # construit pas depuis une annotation @GetMapping — il n'y en a pas, le
+    # point d'entree est un SimpleUrlHandlerMapping.
+    "notification-service": ("notification_service", 8086),
 }
 
 METHOD_ANNOTATIONS = {

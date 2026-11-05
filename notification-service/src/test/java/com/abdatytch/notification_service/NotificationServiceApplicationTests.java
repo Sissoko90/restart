@@ -1,9 +1,12 @@
 package com.abdatytch.notification_service;
 
+import com.abdatytch.notification_service.repositories.NotificationRepository;
+import com.abdatytch.notification_service.repositories.RemiseParCanalRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
  * Le contexte de notification-service se charge.
@@ -30,6 +33,25 @@ import org.springframework.test.context.ActiveProfiles;
 @ActiveProfiles("test")
 @DisplayName("notification-service - le contexte se charge")
 class NotificationServiceApplicationTests {
+
+	/**
+	 * Les depots sont SIMULES, comme dans setting-service.
+	 *
+	 * <p>{@code application-test} exclut
+	 * {@code R2dbcRepositoriesAutoConfiguration}, donc aucun bean de depot
+	 * n'existe — et l'orchestrateur en exige deux. Sans ces deux declarations,
+	 * le contexte echoue sur « No qualifying bean of type
+	 * NotificationRepository ».
+	 *
+	 * <p>C'est la contrepartie assumee d'un test de contexte sans base : il
+	 * prouve le cablage, pas le schema. Un vrai test des depots demande
+	 * Testcontainers.
+	 */
+	@MockitoBean
+	private NotificationRepository notificationRepository;
+
+	@MockitoBean
+	private RemiseParCanalRepository remiseParCanalRepository;
 
 	@Test
 	@DisplayName("le cablage Spring tient")

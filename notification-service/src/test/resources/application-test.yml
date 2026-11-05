@@ -43,6 +43,26 @@ spring:
     host: localhost
     port: 1025
 
+  # Le decodeur JWT doit EXISTER, meme si rien ne le joint.
+  #
+  # SecurityConfig declare un serveur de ressources OAuth2, donc Spring exige un
+  # ReactiveJwtDecoder au demarrage. Sans ces proprietes — qui vivent dans
+  # config-repo, non charge en test — le contexte echoue sur « No qualifying
+  # bean of type ReactiveJwtDecoder ».
+  #
+  # L'URL n'est PAS appelee au demarrage : NimbusReactiveJwtDecoder va chercher
+  # les cles a la premiere verification. Le contexte se charge donc sans serveur
+  # JWKS vivant, et aucun test de contexte ne depend du reseau.
+  #
+  # Le domaine est en .test, reserve aux exemples par la RFC 2606 : il ne resout
+  # jamais, donc une requete partie par erreur echoue vite au lieu d'atteindre
+  # un hote reel.
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost.test/dev/.well-known/jwks.json
+
 notification:
   email:
     from: notifications@example.test

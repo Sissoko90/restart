@@ -190,6 +190,48 @@ public final class CheminCible {
         // Prefixe public identique au chemin interne : aucune reecriture n'est
         // necessaire, car /security-admin ne collisionne avec rien.
         SERVICES_PAR_PREFIXE.put("/api/v1/security-admin", "security-service");
+        // notification-service : boite de reception et flux temps reel.
+        //
+        // DEUX entrees, et le tiret de la seconde n'est pas un detail.
+        //
+        // /api/v1/notifications/** est route par le RouterFunction (REST).
+        // /api/v1/notifications-flux est route en YAML, parce qu'une montee en
+        // protocole WebSocket ne passe pas par WebClient — et parce que le
+        // RouterFunctionMapping, plus prioritaire, capterait tout chemin place
+        // sous /notifications/.
+        //
+        // Les deux doivent figurer ICI pour que le mode maintenance les coupe :
+        // MaintenanceWebFilter appelle serviceCible(chemin), et un chemin
+        // inconnu de cette table traverserait une maintenance activee. C'est
+        // precisement ce que RoutageCoherentTest refuse — il a rejete le build
+        // tant que la premiere entree manquait.
+        //
+        // L'ordre compte : la table est un LinkedHashMap parcouru dans l'ordre
+        // d'insertion, et /api/v1/notifications serait un prefixe de
+        // /api/v1/notifications-flux. Le plus specifique d'abord.
+        //
+        // Prefixes publics identiques aux chemins internes apres retrait de
+        // /api/v1 : aucune reecriture, /notifications ne collisionne avec rien.
+        SERVICES_PAR_PREFIXE.put("/api/v1/notifications-flux", "notification-service");
+        SERVICES_PAR_PREFIXE.put("/api/v1/notifications", "notification-service");
+        // QUATRE prefixes d'interface-service qui manquaient, et le defaut
+        // etait reel : le mode maintenance ne les coupait pas.
+        //
+        // Ils sont routes en YAML (lb://interface-service) et non par le
+        // RouterFunction, et RoutageCoherentTest ne lisait que le second. Son
+        // angle mort n'avait jamais mordu parce qu'aucun prefixe n'etait
+        // declare UNIQUEMENT en YAML ; l'ajout du flux WebSocket l'a revele, et
+        // la correction du test a fait apparaitre ces quatre-ci.
+        //
+        // Consequence avant correction : activer une maintenance sur
+        // interface-service laissait passer /api/v1/projects,
+        // /api/v1/developers, /dev/auth et la publication du JWKS. Une
+        // maintenance qui laisse passer est exactement ce que
+        // MaintenanceWebFilter existe pour empecher.
+        SERVICES_PAR_PREFIXE.put("/api/v1/developers", "interface-service");
+        SERVICES_PAR_PREFIXE.put("/api/v1/projects", "interface-service");
+        SERVICES_PAR_PREFIXE.put("/dev/.well-known/jwks.json", "interface-service");
+        SERVICES_PAR_PREFIXE.put("/dev/auth", "interface-service");
         // Surfaces d'administration de quotas-service et setting-service.
         //
         // Elles n'etaient routees par aucun des deux mecanismes, et

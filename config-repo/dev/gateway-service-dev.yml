@@ -119,6 +119,30 @@ geolocation:
             - Path=/api/v1/admin/**
           filters:
             - StripPrefix=2
+
+        # Flux temps reel des notifications (WebSocket)
+        #
+        # DECLARE ICI ET NON DANS LE RouterFunction, et c'est obligatoire : ce
+        # dernier proxifie avec WebClient, qui ne sait pas effectuer une montee
+        # en protocole WebSocket. Spring Cloud Gateway, lui, la gere nativement.
+        #
+        # Le chemin porte un TIRET — /api/v1/notifications-flux — et non un
+        # segment sous /api/v1/notifications/. Raison : le RouterFunction route
+        # /api/v1/notifications/** vers ce meme service pour la boite de
+        # reception, et le RouterFunctionMapping de Spring a une priorite plus
+        # forte que le RoutePredicateHandlerMapping de Spring Cloud Gateway. Un
+        # chemin de flux sous /notifications/ serait donc capte par le
+        # RouterFunction et la poignee de main echouerait avec une erreur
+        # parlant de HTTP, jamais de WebSocket.
+        #
+        # StripPrefix=2 : le service recoit /notifications-flux, ce que
+        # CheminCible calcule aussi — donc la signature HMAC concorde.
+        - id: notification-flux
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications-flux
+          filters:
+            - StripPrefix=2
         
         # Les routes vers auth-service sont declarees dans le RouterFunction de
         # GatewayRoutesConfig, et PAS ici.
