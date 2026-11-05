@@ -74,7 +74,7 @@
 		<spring-cloud.version>2025.1.4</spring-cloud.version>
 
 		<!-- Bibliothèques transverses -->
-		<jjwt.version>0.12.5</jjwt.version>
+		<jjwt.version>0.13.0</jjwt.version>
 		<springdoc.version>2.7.0</springdoc.version>
 		<!--
 		  2.1.0 dans gateway et interface, 2.2.0 dans media et user, et cette
