@@ -309,7 +309,10 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus,circuitbreakers,ratelimiters
+        # `refresh` ajoute : cette liste SURCHARGE celle d'application-dev.yml,
+        # elle ne s'y ajoute pas. Sans lui, ce module aurait ete le seul des
+        # onze a ne pas pouvoir recharger sa configuration — et en silence.
+        include: health,info,metrics,prometheus,circuitbreakers,ratelimiters,refresh
   endpoint:
     health:
       show-details: always

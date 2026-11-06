@@ -2,6 +2,7 @@ package com.abdatytch.auth_service.security;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
@@ -13,6 +14,7 @@ import java.util.zip.ZipInputStream;
  * Protection contre les attaques Zip Bomb pour auth-service
  */
 @Component
+@RefreshScope
 @Slf4j
 public class ZipBombProtection {
 

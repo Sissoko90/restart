@@ -3,6 +3,7 @@ package com.abdatytch.media_service.service.impl;
 import com.abdatytch.media_service.service.ImageCompressionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -23,6 +24,7 @@ import java.util.Iterator;
  * Optimise le stockage en réduisant la taille des fichiers
  */
 @Service
+@RefreshScope
 @Slf4j
 public class ImageCompressionServiceImpl implements ImageCompressionService {
 

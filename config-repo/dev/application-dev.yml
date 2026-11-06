@@ -182,7 +182,31 @@ management:
         #
         # Un service qui en a besoin les redeclare dans son propre fichier,
         # avec la regle Spring Security correspondante.
-        include: health,info,metrics,prometheus,circuitbreakers
+        # `refresh` : recharge la configuration sans redemarrer, et il est
+        # declare ICI pour les ONZE modules a la fois.
+        #
+        # Il n'etait expose par AUCUN module. Les onze services lisaient donc le
+        # config-repo une seule fois, au demarrage : changer une valeur ici
+        # n'avait aucun effet, et rien ne le disait. Un exploitant qui coupait
+        # sms.enabled pendant un incident pouvait croire les SMS arretes alors
+        # qu'ils continuaient de partir, et de se payer.
+        #
+        # PROTEGE : les onze SecurityConfig exigent le role ADMIN sur
+        # /actuator/**, sondes exceptees — releve fait, aucun module ne laisse ce
+        # prefixe en permitAll. geo-service et payment-service n'ont aucune
+        # SecurityConfig, mais portent spring-boot-starter-security : le defaut
+        # de Spring Boot exige alors une authentification sur tout.
+        #
+        # EXPOSER NE SUFFIT PAS. Les beans qui lisent la configuration doivent
+        # porter @RefreshScope, sans quoi l'appel repond 200 avec la liste des
+        # cles modifiees et RIEN ne change — la panne qui ne se voit pas. Voir la
+        # classe RechargementAChaud de notification-service.
+        #
+        # ATTENTION AUX SURCHARGES : un module qui redeclare cette liste dans son
+        # propre fichier REMPLACE celle-ci, il ne s'y ajoute pas. Perdre
+        # `refresh` au passage serait silencieux, et c'est pourquoi un garde-fou
+        # verifie chaque surcharge.
+        include: health,info,metrics,prometheus,circuitbreakers,refresh
       base-path: /actuator
   endpoint:
     health:

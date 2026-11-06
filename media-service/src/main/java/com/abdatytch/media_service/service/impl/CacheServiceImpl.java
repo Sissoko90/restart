@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -15,6 +16,7 @@ import java.time.Duration;
  * Implémentation du service de cache Redis
  */
 @Service
+@RefreshScope
 @Slf4j
 @RequiredArgsConstructor
 public class CacheServiceImpl implements CacheService {

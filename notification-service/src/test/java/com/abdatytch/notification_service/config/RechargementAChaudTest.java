@@ -57,7 +57,7 @@ class RechargementAChaudTest {
      * <p>Ce sont les interrupteurs d'incident : couper un canal, relever un
      * plafond de depense trop bas. Ce qui n'y figure pas le fait expres — un
      * {@code @Scheduled} sur un bean rechargeable continue de tourner avec
-     * l'ancienne instance. Voir {@link RechargementAChaud}.
+     * l'ancienne instance. Voir {@link com.abdatytch.commons.config.RechargementAChaud}.
      */
     private static final Class<?>[] BEANS_RECHARGEABLES = {
             CanalSms.class,

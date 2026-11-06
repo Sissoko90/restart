@@ -8,6 +8,7 @@ import com.abdatytch.auth_service.service.IAccountLockoutService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -60,6 +61,7 @@ import java.time.LocalDateTime;
  * avec deux valeurs à maintenir d'accord pour une même règle.
  */
 @Service
+@RefreshScope
 @RequiredArgsConstructor
 @Slf4j
 public class AccountLockoutServiceImpl implements IAccountLockoutService {

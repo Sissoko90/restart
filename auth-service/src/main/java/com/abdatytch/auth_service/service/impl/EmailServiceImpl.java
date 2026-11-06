@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -27,6 +28,7 @@ import java.util.Map;
  * L'EventLoop Netty n'est jamais retenu.
  */
 @Service
+@RefreshScope
 @RequiredArgsConstructor
 @Slf4j
 public class EmailServiceImpl implements IEmailService {

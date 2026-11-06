@@ -7,6 +7,7 @@ import com.abdatytch.media_service.service.DocumentValidationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -18,6 +19,7 @@ import reactor.core.publisher.Mono;
  * depuis le catalogue en base, et aucune n'était appelée.
  */
 @Service
+@RefreshScope
 @Slf4j
 @RequiredArgsConstructor
 public class DocumentValidationServiceImpl implements DocumentValidationService {
