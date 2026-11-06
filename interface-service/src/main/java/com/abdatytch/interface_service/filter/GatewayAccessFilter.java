@@ -1,5 +1,6 @@
 package com.abdatytch.interface_service.filter;
 
+import com.abdatytch.commons.security.CheminInterne;
 import com.abdatytch.commons.security.GatewayClientIp;
 import com.abdatytch.commons.security.PrivateNetworks;
 import com.abdatytch.commons.security.SecretMasking;
@@ -44,8 +45,9 @@ public class GatewayAccessFilter implements WebFilter {
     @Value("${gateway.secret.key}")
     private String gatewaySecretKey;
 
-    /** Préfixe des appels de service à service. Voir {@code estCheminInterne}. */
-    private static final String CHEMIN_INTERNE = "/internal";
+    // Le prefixe des appels de service a service vit desormais dans
+    // CheminInterne, de platform-commons : la comparaison par segment entier
+    // etait ecrite trois fois, et user-service l'avait tout simplement oubliee.
 
     // Endpoints publics autorisés sans Gateway (ULTRA RESTREINTS)
     private static final List<String> PUBLIC_ENDPOINTS = List.of(
@@ -65,7 +67,7 @@ public class GatewayAccessFilter implements WebFilter {
         }
 
         // Appels de service a service, qui ne passent PAS par le Gateway.
-        if (estCheminInterne(path)) {
+        if (CheminInterne.correspond(path)) {
             String pair = adresseDuPair(exchange);
             if (!PrivateNetworks.contient(pair)) {
                 log.warn(" Appel interne refusé — pair non privé {} sur {}", pair, path);
@@ -172,14 +174,6 @@ public class GatewayAccessFilter implements WebFilter {
      * liste contourne tout, y compris le contrôle d'adresse, et par
      * {@code startsWith} nu.
      */
-    private boolean estCheminInterne(String path) {
-        // Segment ENTIER : `startsWith("/internal")` exempterait aussi
-        // `/internal-x` ou `/internalement`, c'est-a-dire des chemins que
-        // personne n'a declares. Ce depot a corrige trois fois cette famille de
-        // defaut dans les filtres du Gateway.
-        return path.equals(CHEMIN_INTERNE)
-                || path.startsWith(CHEMIN_INTERNE + "/");
-    }
 
     /**
      * Adresse du client, posee par le Gateway. Voir {@code GatewayClientIp} :

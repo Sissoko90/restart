@@ -1,6 +1,7 @@
 package com.abdatytch.notification_service.security;
 
 import com.abdatytch.commons.security.CheminDeDecision;
+import com.abdatytch.commons.security.CheminInterne;
 import com.abdatytch.commons.security.CheminsPublics;
 import com.abdatytch.commons.security.GatewayClientIp;
 import com.abdatytch.commons.security.HMACSignatureUtil;
@@ -86,13 +87,6 @@ public class GatewayAccessWebFilter implements WebFilter, Ordered {
             .documentationViaPasserelle()
             .construire();
 
-    /**
-     * Prefixe des appels inter-services, exempte de signature de passerelle.
-     *
-     * <p>Meme valeur que dans {@code GatewayAccessFilter} d'interface-service :
-     * deux services qui appliquent la meme regle doivent la nommer pareil.
-     */
-    private static final String CHEMIN_INTERNE = "/internal";
 
     private final HMACSignatureUtil hmac;
 
@@ -148,7 +142,7 @@ public class GatewayAccessWebFilter implements WebFilter, Ordered {
         // L'exemption est posee avant le controle de `gateway.secret.key` a
         // dessein : ce chemin ne se sert pas de ce secret, donc une passerelle
         // mal configuree ne doit pas couper les appels inter-services.
-        if (estCheminInterne(cheminDeDecision)) {
+        if (CheminInterne.correspond(cheminDeDecision)) {
             return chain.filter(exchange);
         }
 
@@ -193,19 +187,6 @@ public class GatewayAccessWebFilter implements WebFilter, Ordered {
         return chain.filter(exchange);
     }
 
-    /**
-     * Chemin d'appel inter-services.
-     *
-     * <p>Compare le <b>segment entier</b>. Un {@code startsWith("/internal")}
-     * nu exempterait aussi {@code /internal-x} ou {@code /internalement} —
-     * c'est-a-dire des chemins que personne n'a declares, et qu'un controleur
-     * ajoute plus tard pourrait occuper sans verifier aucun secret. Ce depot a
-     * corrige trois fois cette famille de defaut dans les filtres.
-     */
-    private boolean estCheminInterne(String chemin) {
-        return chemin.equals(CHEMIN_INTERNE)
-                || chemin.startsWith(CHEMIN_INTERNE + "/");
-    }
 
     private Mono<Void> refuser(ServerWebExchange exchange, String motif) {
         exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);

@@ -357,18 +357,40 @@ class ChaineReelleTest {
     class SurfaceInterne {
 
         /**
-         * {@code /internal/**} exige le secret, <b>et</b> la signature.
+         * {@code /internal/**} exige le secret, et <b>plus</b> la signature.
          *
-         * <p>La double exigence n'est pas voulue : un appel de service à service
-         * ne passe pas par la passerelle et n'a donc aucune signature à
-         * présenter. interface-service traite ce cas à part dans son propre
-         * filtre d'accès ; celui de user-service ne le fait pas.
+         * <h3>Le jour annonce est arrive</h3>
          *
-         * <p>Ce test fixe l'état constaté plutôt qu'un état souhaité. Aucun
-         * appelant n'emprunte aujourd'hui cette surface — vérifié : rien dans le
-         * dépôt ne pose {@code X-Internal-Secret} vers user-service — donc rien
-         * n'est cassé en production. Mais le jour où un service l'appellera,
-         * c'est ici que le refus se verra, avec sa raison écrite.
+         * La version precedente de cette javadoc disait ceci, mot pour mot :
+         *
+         * <blockquote>
+         * La double exigence n'est pas voulue : un appel de service a service ne
+         * passe pas par la passerelle et n'a donc aucune signature a presenter.
+         * (...) Ce test fixe l'etat CONSTATE plutot qu'un etat souhaite. Aucun
+         * appelant n'emprunte aujourd'hui cette surface (...) Mais le jour ou un
+         * service l'appellera, c'est ici que le refus se verra.
+         * </blockquote>
+         *
+         * <p>Ce jour est arrive : notification-service doit lire les coordonnees
+         * d'une personne par {@code GET /internal/users/auth/{sub}} pour savoir
+         * ou la joindre. Le refus s'est bien vu ici, exactement comme annonce.
+         *
+         * <p>L'exemption est donc posee dans le filtre d'acces, comme
+         * interface-service le faisait deja — et la comparaison du prefixe vit
+         * desormais dans {@code CheminInterne} de platform-commons, parce que
+         * quatre filtres l'ecrivaient ou l'oubliaient chacun a sa facon.
+         *
+         * <h3>Ce qui protege ce chemin</h3>
+         *
+         * Deux controles, et ils restent tous les deux :
+         *
+         * <ol>
+         *   <li>le <b>pair TCP</b> doit etre une adresse privee — verifie AVANT
+         *       l'exemption dans le filtre ;</li>
+         *   <li>{@code X-Internal-Secret}, compare a temps constant par
+         *       {@code AutorisationInterne} dans la chaine de securite. Les
+         *       tests qui suivent le verifient.</li>
+         * </ol>
          */
         @Test
         @DisplayName("Avec le secret ET la signature : joignable")
@@ -378,10 +400,10 @@ class ChaineReelleTest {
         }
 
         @Test
-        @DisplayName("Avec le secret mais SANS signature : refusee par le filtre d'acces")
+        @DisplayName("Avec le secret et SANS signature : joignable, car c'est un appel interne")
         void secretSansSignature() {
             appel(HttpMethod.GET, SURFACE_INTERNE, null, false, SECRET_INTERNE)
-                    .expectStatus().isForbidden();
+                    .expectStatus().isOk();
         }
 
         /**

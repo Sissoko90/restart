@@ -2,6 +2,7 @@ package com.abdatytch.user_service.filter;
 
 import com.abdatytch.commons.security.CheminDeDecision;
 import com.abdatytch.commons.security.CheminsPublics;
+import com.abdatytch.commons.security.CheminInterne;
 import com.abdatytch.commons.security.GatewayClientIp;
 
 import com.abdatytch.commons.security.HMACSignatureUtil;
@@ -104,7 +105,31 @@ public class GatewayAccessFilter implements WebFilter {
                 "Direct access not allowed. Requests must go through Gateway.");
         }
 
-        // 2. Vérifier la signature HMAC (OBLIGATOIRE)
+        // 2. Appel inter-services : la signature de passerelle est levee.
+        //
+        // APRES le controle d'adresse ci-dessus, et c'est l'ordre qui compte :
+        // un chemin /internal reste reserve au reseau prive.
+        //
+        // Cette exemption MANQUAIT, et InternalUserReactiveController etait donc
+        // injoignable — un controleur complet et teste, derriere une porte
+        // fermee. Rien ne le signalait : son unique appelant avait ete retire,
+        // il ne restait qu'un commentaire pour en parler, et la passerelle
+        // n'expose aucune route vers /internal/** donc aucun trafic externe ne
+        // venait buter dessus.
+        //
+        // interface-service avait deja paye ce defaut, en pire : son
+        // POST /internal/jwt/sign repondait 403, auth-service n'obtenait aucun
+        // jeton, et plus aucune connexion n'aboutissait.
+        //
+        // Ce qui protege ce chemin a la place : l'adresse privee verifiee
+        // ci-dessus, et X-Internal-Secret compare a temps constant par
+        // AutorisationInterne dans la chaine de securite — voir le
+        // `.access(autorisationInterne)` de SecurityConfig.
+        if (CheminInterne.correspond(cheminDeDecision)) {
+            return chain.filter(exchange);
+        }
+
+        // 3. Vérifier la signature HMAC (OBLIGATOIRE)
         String timestamp = request.getHeaders().getFirst("X-Gateway-Timestamp");
         String signature = request.getHeaders().getFirst("X-Gateway-Signature");
         String requestId = request.getHeaders().getFirst("X-Gateway-Request-Id");

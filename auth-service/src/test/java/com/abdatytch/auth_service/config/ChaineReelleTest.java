@@ -415,9 +415,7 @@ class ChaineReelleTest {
     class SignatureObligatoire {
 
         @ParameterizedTest(name = "{0}")
-        @ValueSource(strings = {
-                "/auth/login", "/admin/accounts/x", "/internal/auth/users/x"
-        })
+        @ValueSource(strings = {"/auth/login", "/admin/accounts/x"})
         @DisplayName("sans signature, l'appel direct est refusé en 403")
         void sansSignature(String chemin) {
             // L'invariant de toute l'architecture : liste noire, limitation de
@@ -427,6 +425,51 @@ class ChaineReelleTest {
 
             appel(HttpMethod.GET, chemin, "Bearer jeton", false)
                     .expectStatus().isForbidden();
+        }
+
+        /**
+         * {@code /internal/**} ne figure PLUS dans la liste ci-dessus, et c'est
+         * une correction, non un relachement.
+         *
+         * <h3>Ce que l'ancienne attente figeait</h3>
+         *
+         * Elle exigeait 403 sur {@code /internal/auth/users/x} sans signature —
+         * et c'etait exactement le defaut : la passerelle n'expose <b>aucune</b>
+         * route vers {@code /internal/**}, donc aucun appelant ne peut obtenir
+         * cette signature. L'exigence rendait le chemin injoignable pour tout le
+         * monde.
+         *
+         * <p>Le defaut etait VIVANT : {@code user-service/ClientIdentiteAuth}
+         * appelle {@code /internal/auth/users/{id}} et recevait 403 « Missing
+         * required security headers ». Son propre test passait, parce qu'il
+         * parle a un serveur simule — ce test-ci etait le seul endroit du depot
+         * ou le probleme etait visible, et il l'affirmait comme un invariant
+         * voulu.
+         *
+         * <h3>Ce qui protege ce chemin maintenant</h3>
+         *
+         * Deux controles, et ils restent tous les deux :
+         *
+         * <ol>
+         *   <li>le <b>pair TCP</b> doit etre une adresse privee — verifie dans
+         *       le filtre AVANT l'exemption, donc toujours actif ici ;</li>
+         *   <li>{@code X-Internal-Secret}, compare a temps constant par
+         *       {@code InternalAuthController} sur chacun de ses deux
+         *       endpoints.</li>
+         * </ol>
+         *
+         * <p>Ce test verifie la premiere moitie du changement : l'appel franchit
+         * desormais la chaine de securite. Le controleur n'est pas monte ici,
+         * donc la route attrape-tout rend 200 — ce qui signifie « la requete est
+         * parvenue au-dela de la securite », et rien de plus.
+         */
+        @Test
+        @DisplayName("un chemin /internal franchit la chaîne sans signature de passerelle")
+        void cheminInterneExempteDeSignature() {
+            claims("user", List.of("ROLE_ADMIN"));
+
+            appel(HttpMethod.GET, "/internal/auth/users/x", "Bearer jeton", false)
+                    .expectStatus().isOk();
         }
 
         @Test

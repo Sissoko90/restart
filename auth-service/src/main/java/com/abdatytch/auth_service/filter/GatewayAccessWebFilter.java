@@ -2,6 +2,7 @@ package com.abdatytch.auth_service.filter;
 
 import com.abdatytch.auth_service.constants.AppConstants;
 import com.abdatytch.commons.security.CheminDeDecision;
+import com.abdatytch.commons.security.CheminInterne;
 import com.abdatytch.commons.security.CheminsPublics;
 import com.abdatytch.commons.security.HMACSignatureUtil;
 import com.abdatytch.commons.security.PrivateNetworks;
@@ -173,7 +174,25 @@ public class GatewayAccessWebFilter implements WebFilter {
                 "Direct access not allowed. Requests must go through Gateway.");
         }
 
-        // 2. Vérifier la signature HMAC (OBLIGATOIRE)
+        // 2. Appel inter-services : la signature de passerelle est levee.
+        //
+        // APRES le controle d'adresse ci-dessus, et l'ordre compte : un chemin
+        // /internal reste reserve au reseau prive.
+        //
+        // Cette exemption MANQUAIT, et le defaut etait VIVANT :
+        // user-service/ClientIdentiteAuth appelle /internal/auth/users/{id} et
+        // recevait 403 « Missing required security headers ». Son test passe
+        // pourtant, parce qu'il parle a un serveur simule — la seule facon de
+        // voir le probleme etait de comparer les filtres entre eux.
+        //
+        // Ce qui protege ce chemin a la place : l'adresse privee verifiee
+        // ci-dessus, et X-Internal-Secret compare a temps constant DANS
+        // InternalAuthController.
+        if (CheminInterne.correspond(cheminDeDecision)) {
+            return chain.filter(exchange);
+        }
+
+        // 3. Vérifier la signature HMAC (OBLIGATOIRE)
         String timestamp = request.getHeaders().getFirst("X-Gateway-Timestamp");
         String signature = request.getHeaders().getFirst("X-Gateway-Signature");
         String requestId = request.getHeaders().getFirst("X-Gateway-Request-Id");
