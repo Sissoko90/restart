@@ -119,6 +119,27 @@ spring:
 # CANAUX DE NOTIFICATION
 # ==========================================
 notification:
+  reprise:
+    # Nombre total de tentatives par canal, premiere incluse.
+    tentatives-max: ${NOTIFICATION_REPRISE_TENTATIVES_MAX:3}
+
+    # Age minimal d'un echec avant de le rejouer.
+    #
+    # Pas zero : reprendre immediatement reessaierait pendant la panne meme qui
+    # a cause l'echec, epuiserait le plafond en quelques secondes, et n'aurait
+    # plus rien a jouer au moment ou le service revient.
+    delai-minutes: ${NOTIFICATION_REPRISE_DELAI_MINUTES:5}
+
+    # Taille du lot. Une file de dix mille echecs ne doit pas produire dix mille
+    # remises d'un coup, ce qui ferait tomber le serveur SMTP qu'on menage.
+    taille-du-lot: ${NOTIFICATION_REPRISE_TAILLE_LOT:50}
+
+    # fixedDelay : l'intervalle court apres la FIN de la passe precedente, pour
+    # que deux passes ne selectionnent jamais les memes lignes.
+    intervalle-secondes: ${NOTIFICATION_REPRISE_INTERVALLE:120}
+    # Laisse le temps au service de finir de demarrer avant la premiere passe.
+    delai-initial-secondes: ${NOTIFICATION_REPRISE_DELAI_INITIAL:60}
+
   email:
     # VIDE par defaut, et non une adresse inventee.
     #
@@ -191,6 +212,21 @@ management:
 # Toutes les autres valeurs portent un défaut : une variable absente ne doit pas
 # empêcher le service de démarrer, elle doit produire un avertissement explicite
 # au démarrage (voir SmsServiceImpl.verifierLaConfiguration).
+# ==========================================================
+# Reprise des remises qui ont echoue
+# ==========================================================
+#
+# `aReprendre` existait SANS AUCUN APPELANT : l'etat ECHOUE etait ecrit, le
+# schema comptait meme les tentatives, et personne ne lisait rien. Un courriel
+# perdu pendant une panne SMTP restait perdu.
+#
+# Le SMS est EXCLU de la reprise, en code et non par configuration : un SMS se
+# paie, et un rejeu dont on ne sait pas si le premier envoi est parti fait payer
+# deux fois. Voir RepriseDesRemises.
+#
+# REFUSE et SANS_DESTINATAIRE sont exclus par la requete : le premier est
+# definitif (aucune adresse connue, modele introuvable), le second decrit un
+# WebSocket sans session ouverte, c'est-a-dire le fonctionnement normal.
 # ==========================================================
 # user-service : ou joindre une personne
 # ==========================================================

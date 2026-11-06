@@ -5,8 +5,12 @@ import com.abdatytch.notification_service.repositories.RemiseParCanalRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
+import org.springframework.scheduling.config.TaskManagementConfigUtils;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Le contexte de notification-service se charge.
@@ -56,6 +60,49 @@ class NotificationServiceApplicationTests {
 	@Test
 	@DisplayName("le cablage Spring tient")
 	void contextLoads() {
+	}
+
+	/**
+	 * La planification est reellement active.
+	 *
+	 * <h2>Pourquoi ce test existe</h2>
+	 *
+	 * Ce module porte un {@code @Scheduled} — la surveillance du solde SMS, seul
+	 * moyen de voir venir un credit epuise — et ne declare <b>pas</b>
+	 * {@code @EnableScheduling}. Six des sept modules qui utilisent
+	 * {@code @Scheduled} le declarent ; celui-ci non, ce qui donne toutes les
+	 * apparences d'un oubli.
+	 *
+	 * <p>Ce n'en est pas un : {@code PlatformSecurityAutoConfiguration} de
+	 * platform-commons porte {@code @EnableScheduling}, et s'applique ici parce
+	 * que sa seule condition — {@code WebClient} au classpath — est remplie.
+	 *
+	 * <p>Mais cette chaine est <b>indirecte et fragile</b> : elle tient a une
+	 * annotation posee dans un autre module, pour une autre raison (le
+	 * rafraichissement du JWKS), sous une condition qui n'a rien a voir avec la
+	 * planification. Retirer {@code WebClient}, ou deplacer
+	 * {@code @EnableScheduling} de cette auto-configuration, rendrait la
+	 * surveillance du solde inerte — <b>sans aucune erreur</b> : Spring ignore
+	 * simplement l'annotation, et la tache ne se declenche jamais.
+	 *
+	 * <p>Ce test verifie donc le fait plutot que le raisonnement. Le bean
+	 * recherche est celui que {@code @EnableScheduling} enregistre, et c'est lui
+	 * qui traite les {@code @Scheduled}. Il est designe par la constante de
+	 * Spring et non par une chaine, pour qu'un renommage se voie a la
+	 * compilation.
+	 */
+	@Test
+	@DisplayName("les taches planifiees sont reellement traitees")
+	void planificationActive(ApplicationContext contexte) {
+		assertThat(contexte.containsBean(
+						TaskManagementConfigUtils.SCHEDULED_ANNOTATION_PROCESSOR_BEAN_NAME))
+				.withFailMessage("""
+						Aucun traitement des @Scheduled dans ce contexte.
+
+						La surveillance du solde SMS ne se declencherait jamais, en \
+						silence : Spring ignore un @Scheduled sans @EnableScheduling \
+						sans rien signaler. Declarer @EnableScheduling dans ce module.""")
+				.isTrue();
 	}
 
 }

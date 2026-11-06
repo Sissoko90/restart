@@ -1,8 +1,11 @@
 package com.abdatytch.notification_service.service;
 
+import com.abdatytch.commons.notification.CanalDeNotification;
 import com.abdatytch.commons.notification.CompteRenduDeRemise;
 import com.abdatytch.commons.notification.DemandeDeNotification;
 import reactor.core.publisher.Mono;
+
+import java.util.UUID;
 
 /**
  * Le point d'entree unique du service : une demande entre, un compte rendu sort.
@@ -25,4 +28,25 @@ public interface IServiceDeNotification {
      * @return toujours un compte rendu, meme quand aucun canal n'aboutit
      */
     Mono<CompteRenduDeRemise> traiter(DemandeDeNotification demande);
+
+    /**
+     * Rejoue UN canal d'une notification deja enregistree.
+     *
+     * <p>Appele par la reprise, et non par un emetteur : la notification existe
+     * en base, et son texte se reconstruit depuis son modele et ses variables —
+     * c'est precisement pourquoi la table conserve le gabarit plutot que le
+     * texte rendu.
+     *
+     * <p>Un seul canal, et non la notification entiere : les autres canaux ont
+     * peut-etre abouti du premier coup, et les rejouer enverrait un doublon.
+     * L'unite de reprise est la ligne de {@code remise_par_canal}, pas la
+     * notification.
+     *
+     * @param notificationId la notification a rejouer
+     * @param canal          le canal a reessayer
+     * @return l'etat obtenu, deja ecrit avec son compteur de tentatives
+     *         incremente. Termine <b>vide</b> si la notification a disparu entre
+     *         la selection et le rejeu — un effacement RGPD, par exemple
+     */
+    Mono<CompteRenduDeRemise.Etat> rejouer(UUID notificationId, CanalDeNotification canal);
 }

@@ -10,6 +10,7 @@ import com.abdatytch.notification_service.repositories.NotificationRepository;
 import com.abdatytch.notification_service.repositories.RemiseParCanalRepository;
 import com.abdatytch.notification_service.service.CanalDeRemise;
 import com.abdatytch.notification_service.service.IServiceDeNotification;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -163,6 +164,67 @@ public class ServiceDeNotificationImpl implements IServiceDeNotification {
                                     "persistance : " + panne.getClass().getSimpleName())),
                             false, Instant.now()));
                 });
+    }
+
+    @Override
+    public Mono<CompteRenduDeRemise.Etat> rejouer(java.util.UUID notificationId,
+                                                  CanalDeNotification canal) {
+        return notifications.findById(notificationId)
+                .flatMap(enregistree -> rejouerUnCanal(enregistree, canal));
+    }
+
+    private Mono<CompteRenduDeRemise.Etat> rejouerUnCanal(Notification enregistree,
+                                                          CanalDeNotification canal) {
+        DemandeDeNotification demande = demandeDepuis(enregistree);
+
+        // Les contacts sont RE-resolus, et non repris d'un cache : entre l'echec
+        // et le rejeu, l'adresse a pu etre corrigee — c'est souvent la raison
+        // meme de l'echec. Rejouer vers l'ancienne adresse reessaierait
+        // l'erreur.
+        return resolveur.contactsPour(demande)
+                .flatMap(coordonnees -> essayer(demande, enregistree, canal, coordonnees))
+                .map(RemiseParCanal::getEtat)
+                .doOnNext(etat -> metriques.remise(canal, etat));
+    }
+
+    /**
+     * Reconstruit la demande depuis la ligne enregistree.
+     *
+     * <p>Le modele et les variables sont conserves en base, pas le texte rendu :
+     * un rejeu produit donc le message a jour, dans la langue et la mise en page
+     * du jour du rejeu. C'est la raison de ce choix de schema, et c'est ici
+     * qu'elle se paie en retour.
+     *
+     * <p>{@code destinataireDeSecours} est {@code null} : il n'est pas persiste,
+     * et il n'a pas a l'etre. Une notification vers une coordonnee directe
+     * concerne quelqu'un sans compte — une confirmation d'inscription, une
+     * invitation — et ces messages n'ont pas de seconde chance utile : l'adresse
+     * venait de l'emetteur, qui la redemandera s'il le faut.
+     */
+    private DemandeDeNotification demandeDepuis(Notification enregistree) {
+        Map<String, String> variables;
+        try {
+            variables = json.readValue(enregistree.getVariables(),
+                    new TypeReference<Map<String, String>>() { });
+        } catch (Exception illisible) {
+            // Un JSON illisible ne doit pas empecher le rejeu : le modele peut
+            // n'avoir aucune variable, ou n'en utiliser aucune de celles-ci. Le
+            // moteur refusera de lui-meme si une variable manque.
+            log.warn("Variables illisibles pour la notification {} : rejeu sans variables",
+                    enregistree.getId());
+            variables = Map.of();
+        }
+
+        return new DemandeDeNotification(
+                enregistree.getDemandeId(),
+                enregistree.getDestinataireId(),
+                List.of(),
+                enregistree.getModele(),
+                variables,
+                DemandeDeNotification.Urgence.valueOf(enregistree.getUrgence()),
+                enregistree.getServiceEmetteur(),
+                null,
+                enregistree.getCreeeLe().toInstant(java.time.ZoneOffset.UTC));
     }
 
     private Mono<CompteRenduDeRemise> remettreParCanaux(DemandeDeNotification demande,
