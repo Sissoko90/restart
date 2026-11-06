@@ -35,12 +35,30 @@ public interface ISmsService {
      *                    chaud. Tant que les deux moteurs de modeles de la
      *                    plateforme ne sont pas reunis, le detenteur du texte
      *                    reste celui qui le possede deja
-     * @return termine quand le fournisseur a accepte. Termine <b>vide</b> quand
-     *         rien n'est parti — envoi desactive, ou service de notification
-     *         injoignable. Un appelant qui annonce « code envoye » sur une
-     *         terminaison vide ferait attendre un message qui ne viendra pas
+     * @return termine quand l'appel a notification-service s'est acheve.
+     *         <b>Ne dit PAS si le SMS est parti</b> — voir la note ci-dessous
      */
     Mono<Void> sendSms(String phoneNumber, String message);
+
+    /*
+     * CORRECTION d'une affirmation fausse de la version precedente.
+     *
+     * Elle disait : « termine = remis au fournisseur ; termine VIDE = rien
+     * n'est parti ». C'est impossible avec un Mono<Void> : une completion
+     * reussie EST vide, donc les deux cas sont indistinguables. L'appelant ne
+     * peut rien deduire de cette terminaison.
+     *
+     * notification-service, lui, rend bien la difference : POST /internal/sms
+     * repond un corps { "remis": true|false }, et son ISmsService local rend un
+     * Mono<Boolean>. Il connait les quatre raisons de ne rien envoyer — envoi
+     * coupe, numero hors liste autorisee, plafond journalier atteint,
+     * fournisseur mal configure.
+     *
+     * Ce client-ci jette ce corps (`toBodilessEntity`), et les trois appelants
+     * formulent leur reponse depuis `envoiActif()`, qui ne connait que la
+     * PREMIERE des quatre raisons. Lire `remis` corrigerait cela, et c'est la
+     * prochaine amelioration utile sur ce chemin.
+     */
 
     /**
      * L'envoi de SMS est-il actif sur la plateforme.

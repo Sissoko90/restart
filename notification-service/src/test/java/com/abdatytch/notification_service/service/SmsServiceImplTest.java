@@ -129,6 +129,7 @@ class SmsServiceImplTest {
         void afriksmsParDefaut() {
             StepVerifier.create(service(AfrikSmsProvider.NOM, true, false)
                             .sendSms(NUMERO, CONTENU))
+                    .expectNext(true)
                     .verifyComplete();
 
             assertThat(afriksms.envois).containsExactly(NUMERO + "|" + CONTENU);
@@ -140,6 +141,7 @@ class SmsServiceImplTest {
         void twilioActivable() {
             StepVerifier.create(service(TwilioSmsProvider.NOM, true, false)
                             .sendSms(NUMERO, CONTENU))
+                    .expectNext(true)
                     .verifyComplete();
 
             assertThat(twilio.envois).containsExactly(NUMERO + "|" + CONTENU);
@@ -151,6 +153,7 @@ class SmsServiceImplTest {
         @DisplayName("la casse et les espaces d'un .env sont tolérés")
         void casseEtEspaces(String valeurDeEnv) {
             StepVerifier.create(service(valeurDeEnv, true, false).sendSms(NUMERO, CONTENU))
+                    .expectNext(true)
                     .verifyComplete();
 
             assertThat(afriksms.envois).hasSize(1);
@@ -229,6 +232,7 @@ class SmsServiceImplTest {
         void envoiCoupe() {
             StepVerifier.create(service(AfrikSmsProvider.NOM, false, false)
                             .sendSms(NUMERO, CONTENU))
+                    .expectNext(false)
                     .verifyComplete();
 
             assertThat(afriksms.envois).isEmpty();
@@ -249,6 +253,7 @@ class SmsServiceImplTest {
         void coupeMaisSansAffichage() {
             StepVerifier.create(service(AfrikSmsProvider.NOM, false, false)
                             .sendSms(NUMERO, CONTENU))
+                    .expectNext(false)
                     .verifyComplete();
 
             assertThat(journauxEmis())
@@ -260,6 +265,7 @@ class SmsServiceImplTest {
         void developpementLocal() {
             StepVerifier.create(service(AfrikSmsProvider.NOM, false, true)
                             .sendSms(NUMERO, CONTENU))
+                    .expectNext(false)
                     .verifyComplete();
 
             assertThat(journauxEmis())
@@ -273,6 +279,7 @@ class SmsServiceImplTest {
             // fonctionne, on le recoit : il n'y a rien a afficher.
             StepVerifier.create(service(AfrikSmsProvider.NOM, true, true)
                             .sendSms(NUMERO, CONTENU))
+                    .expectNext(true)
                     .verifyComplete();
 
             assertThat(journauxEmis())
@@ -290,6 +297,13 @@ class SmsServiceImplTest {
         void leContenuNApparaitJamais(boolean actif) {
             StepVerifier.create(service(AfrikSmsProvider.NOM, actif, false)
                             .sendSms(NUMERO, CONTENU))
+                    // L'etat rendu EST le parametre : actif => remis.
+                    //
+                    // Ce test assertait `verifyComplete()` seul, ce qui etait
+                    // satisfait aussi bien par « envoye » que par « rien n'est
+                    // parti » — un Mono<Void> ne distinguait pas les deux. Le
+                    // booleen rend l'assertion capable de dire laquelle.
+                    .expectNext(actif)
                     .verifyComplete();
 
             assertThat(journauxEmis())

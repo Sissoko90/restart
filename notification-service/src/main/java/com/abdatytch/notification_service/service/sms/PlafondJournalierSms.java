@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -63,6 +64,7 @@ import java.time.LocalDate;
  * chemin de chaque code de verification, pour gagner « 503 au lieu de 505 ».
  */
 @Service
+@RefreshScope
 public class PlafondJournalierSms {
 
     private static final Logger log = LoggerFactory.getLogger(PlafondJournalierSms.class);

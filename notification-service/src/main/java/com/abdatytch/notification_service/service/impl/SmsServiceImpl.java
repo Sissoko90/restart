@@ -9,6 +9,7 @@ import com.abdatytch.notification_service.service.sms.PlafondJournalierSms;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -49,6 +50,7 @@ import java.util.Locale;
  * utilisateur signale ne pas recevoir son code.
  */
 @Service
+@RefreshScope
 @Slf4j
 public class SmsServiceImpl implements ISmsService {
 
@@ -150,17 +152,22 @@ public class SmsServiceImpl implements ISmsService {
     }
 
     @Override
-    public Mono<Void> sendSms(String phoneNumber, String message) {
+    public Mono<Boolean> sendSms(String phoneNumber, String message) {
         // Le gabarit annonçait « pour type: {} » et recevait le MESSAGE, donc le
         // code de verification. Le decalage entre ce que le gabarit annonce et
         // ce qu'il recoit explique que la fuite soit passee inaperçue : lire la
         // chaine de format seule ne revele rien.
         log.info(ServiceConstants.LOG_INFO_SENDING_VERIFICATION_SMS, phoneNumber);
 
+        // RIEN n'est parti : `false`, et non une completion vide.
+        //
+        // Un Mono<Void> vide etait indistinguable d'un envoi reussi, et
+        // CanalSms aurait annonce REMIS. Le booleen rend la difference lisible
+        // par l'appelant.
         if (!smsActif) {
             log.warn(ServiceConstants.LOG_WARN_SMS_DISABLED, phoneNumber);
             journaliserCodeEnDeveloppement(message);
-            return Mono.empty();
+            return Mono.just(false);
         }
 
         // Garde-fou de developpement, verifie AVANT le plafond : il ne consulte
@@ -169,19 +176,18 @@ public class SmsServiceImpl implements ISmsService {
         if (!numerosAutorises.autorise(phoneNumber)) {
             log.warn(ServiceConstants.LOG_WARN_SMS_HORS_LISTE, phoneNumber);
             journaliserCodeEnDeveloppement(message);
-            return Mono.empty();
+            return Mono.just(false);
         }
 
         return plafond.resteDuCredit()
                 .flatMap(reste -> {
                     if (!reste) {
                         log.error(ServiceConstants.LOG_ERROR_SMS_PLAFOND_ATTEINT, phoneNumber);
-                        // Termine VIDE, comme l'envoi desactive : rien n'est
-                        // parti, et c'est exactement ce que la terminaison vide
-                        // signifie dans le contrat de ISmsService. Lever une
-                        // erreur ferait passer une limite de depense voulue pour
-                        // une panne du service.
-                        return Mono.<Void>empty();
+                        // `false` et non une erreur : lever ferait passer une
+                        // limite de depense voulue pour une panne du service, et
+                        // la reprise reessaierait indefiniment un refus
+                        // deliberе.
+                        return Mono.just(false);
                     }
 
                     // UNE seule tentative, et c'est delibere.
@@ -198,7 +204,12 @@ public class SmsServiceImpl implements ISmsService {
                     // avant, une panne de reseau aurait fait baisser le plafond
                     // sans qu'aucun SMS ne parte.
                     return fournisseur.envoyer(phoneNumber, message)
-                            .then(plafond.compterUnEnvoi());
+                            .then(plafond.compterUnEnvoi())
+                            // `true` seulement apres que l'envoi s'est termine
+                            // SANS erreur : une erreur du fournisseur remonte
+                            // telle quelle, et c'est voulu — l'appelant doit
+                            // pouvoir distinguer « refuse » de « en panne ».
+                            .thenReturn(true);
                 });
     }
 

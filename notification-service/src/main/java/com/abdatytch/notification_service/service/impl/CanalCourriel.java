@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -34,6 +35,7 @@ import reactor.core.scheduler.Schedulers;
  * D'ou {@code REFUSE} et non {@code ECHOUE}.
  */
 @Component
+@RefreshScope
 public class CanalCourriel implements CanalDeRemise {
 
     private static final Logger log = LoggerFactory.getLogger(CanalCourriel.class);

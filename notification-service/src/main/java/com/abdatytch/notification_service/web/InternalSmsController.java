@@ -84,15 +84,36 @@ public class InternalSmsController {
     public record DemandeSms(@NotBlank String numero, @NotBlank String message) {
     }
 
+    /**
+     * Ce que l'appel apprend a l'appelant.
+     *
+     * <p>Un corps vide suffisait a renvoyer {@code 200}, et c'est ce que faisait
+     * la premiere version : l'appelant ne pouvait pas distinguer « remis au
+     * fournisseur » de « refuse par un garde-fou de depense ».
+     *
+     * <p>auth-service ne lit pas encore ce champ — il formule sa reponse depuis
+     * {@code envoiActif()}, qui ne connait ni le plafond journalier ni la liste
+     * de numeros autorises. Le rendre ici est ce qui permettra de corriger cela
+     * sans retoucher au contrat.
+     *
+     * @param remis {@code true} si le fournisseur a accepte le message
+     */
+    public record Remise(boolean remis) {
+    }
+
     @PostMapping
-    public Mono<Void> envoyer(@Valid @RequestBody DemandeSms demande) {
+    public Mono<Remise> envoyer(@Valid @RequestBody DemandeSms demande) {
         // Aucun journal de succes ici.
         //
-        // Le fournisseur est seul a savoir qu'un envoi a ete accepte, et
-        // `sendSms` se termine vide dans deux cas ou rien n'est parti :
-        // sms.enabled = false, et le disjoncteur ouvert. Un « SMS envoye » ecrit
-        // ici affirmerait le contraire de ce qui s'est passe, et precisement
-        // pendant un incident.
-        return smsService.sendSms(demande.numero(), demande.message());
+        // Le fournisseur est seul a savoir qu'un envoi a ete accepte. Un « SMS
+        // envoye » ecrit ici affirmerait le contraire de ce qui s'est passe
+        // chaque fois qu'un garde-fou refuse — et precisement pendant un
+        // incident, quand les journaux sont le plus lus.
+        //
+        // Un refus de garde-fou n'est PAS une erreur HTTP : le service a
+        // fonctionne, et une limite de depense voulue ne doit pas ressembler a
+        // une panne. L'appelant lit `remis` pour savoir ce qui s'est passe.
+        return smsService.sendSms(demande.numero(), demande.message())
+                .map(Remise::new);
     }
 }

@@ -157,8 +157,12 @@ notification:
   # Les deux canaux ci-dessous ne sont PAS implementes a ce stade, et la
   # configuration le dit au lieu de le laisser croire. `provider: mock` sans
   # implementation derriere ressemblait a un canal fonctionnel en mode simule.
-  sms:
-    enabled: false
+  # `notification.sms.enabled` a ete RETIRE : c'etait un SECOND interrupteur
+  # pour « le SMS est-il actif ». CanalSms le lisait, l'expediteur reel lit
+  # `sms.enabled` (declare dans application-dev.yml, car auth-service le lit
+  # aussi). Deux reglages pour une question, qui pouvaient se contredire.
+  #
+  # L'etat du canal est desormais celui de l'expediteur, par envoiActif().
   push:
     enabled: false
 
@@ -169,7 +173,20 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        # `refresh` : recharge la configuration sans redemarrer.
+        #
+        # L'endpoint existait deja — spring-cloud-context l'apporte avec
+        # spring-cloud-starter-config — et n'etait expose par AUCUN module du
+        # depot. Changer une valeur ici n'avait donc aucun effet avant le
+        # prochain redemarrage, et rien ne le disait.
+        #
+        # Reserve au role ADMIN par SecurityConfig, comme tout /actuator/**
+        # hors sondes : le relire divulguerait la configuration, et l'appeler
+        # est une action d'exploitation.
+        #
+        # Exposer l'endpoint ne suffit PAS : les beans doivent porter
+        # @RefreshScope. Voir la classe RechargementAChaud.
+        include: health,info,prometheus,refresh
   endpoint:
     health:
       show-details: when-authorized

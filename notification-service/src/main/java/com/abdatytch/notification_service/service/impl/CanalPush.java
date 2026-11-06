@@ -5,6 +5,7 @@ import com.abdatytch.notification_service.service.CanalDeRemise;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
@@ -36,6 +37,7 @@ import reactor.core.publisher.Mono;
  * journal, ni un message du bus.
  */
 @Component
+@RefreshScope
 public class CanalPush implements CanalDeRemise {
 
     private static final Logger log = LoggerFactory.getLogger(CanalPush.class);
