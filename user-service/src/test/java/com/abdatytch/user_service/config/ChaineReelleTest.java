@@ -3,7 +3,6 @@ package com.abdatytch.user_service.config;
 import com.abdatytch.commons.security.HMACSignatureUtil;
 import com.abdatytch.commons.security.JwksKeyProvider;
 import com.abdatytch.user_service.filter.GatewayAccessFilter;
-import com.abdatytch.user_service.security.AutorisationInterne;
 import com.abdatytch.user_service.security.JwtTokenValidator;
 import com.abdatytch.user_service.service.TokenBlacklistService;
 import io.jsonwebtoken.Jwts;
@@ -131,9 +130,12 @@ class ChaineReelleTest {
      * objet construit par {@code new} les aurait laissées nulles, et le test
      * aurait mesuré un refus au lieu d'une validation.
      */
+    // AutorisationInterne n'est plus listee ici : elle est passee dans
+    // platform-commons, ou elle n'est pas un @Component, et c'est desormais
+    // SecurityConfig qui la declare en @Bean. L'importer en plus creerait un
+    // second exemplaire, celui-la sans secret injecte.
     @EnableWebFlux
-    @Import({SecurityConfig.class, GatewayAccessFilter.class, JwtTokenValidator.class,
-            AutorisationInterne.class})
+    @Import({SecurityConfig.class, GatewayAccessFilter.class, JwtTokenValidator.class})
     @TestConfiguration
     static class ConfigurationDeTest {
 

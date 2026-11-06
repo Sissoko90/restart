@@ -86,6 +86,14 @@ public class GatewayAccessWebFilter implements WebFilter, Ordered {
             .documentationViaPasserelle()
             .construire();
 
+    /**
+     * Prefixe des appels inter-services, exempte de signature de passerelle.
+     *
+     * <p>Meme valeur que dans {@code GatewayAccessFilter} d'interface-service :
+     * deux services qui appliquent la meme regle doivent la nommer pareil.
+     */
+    private static final String CHEMIN_INTERNE = "/internal";
+
     private final HMACSignatureUtil hmac;
 
     @Value("${gateway.secret.key:}")
@@ -113,6 +121,37 @@ public class GatewayAccessWebFilter implements WebFilter, Ordered {
             return chain.filter(exchange);
         }
 
+        // L'ORDRE qui suit est delibere : adresse privee D'ABORD, exemption
+        // interne ENSUITE. Un chemin /internal reste soumis au controle
+        // d'adresse ; seule la signature de passerelle est levee.
+        String adresse = GatewayClientIp.pairTcp(exchange);
+        if (!("localhost".equals(adresse) || PrivateNetworks.contient(adresse))) {
+            log.warn("Acces direct bloque depuis {} sur {}", adresse, cheminSigne);
+            return refuser(exchange, "Requete hors Gateway");
+        }
+
+        // Appel inter-services : la passerelle n'expose AUCUNE route vers
+        // /internal/**, donc ce chemin est injoignable depuis l'exterieur et
+        // l'appelant est un service du reseau prive.
+        //
+        // Exiger ici la signature de passerelle serait un blocage net, et
+        // interface-service l'a deja paye : POST /internal/jwt/sign repondait
+        // 403 « Utilisez le Gateway », auth-service n'obtenait aucun jeton et
+        // plus aucune connexion n'aboutissait — le symptome visible etant un
+        // 500 qui ne designait pas la cause.
+        //
+        // Ce qui protege ce chemin a la place : l'adresse privee verifiee
+        // ci-dessus, et X-Internal-Secret compare a temps constant DANS le
+        // controleur. Le secret est le controle qui porte — en conteneurs,
+        // « reseau prive » englobe tous les voisins.
+        //
+        // L'exemption est posee avant le controle de `gateway.secret.key` a
+        // dessein : ce chemin ne se sert pas de ce secret, donc une passerelle
+        // mal configuree ne doit pas couper les appels inter-services.
+        if (estCheminInterne(cheminDeDecision)) {
+            return chain.filter(exchange);
+        }
+
         // Un secret vide REFUSE tout, au lieu de valider n'importe quoi.
         //
         // Avec un secret vide, la comparaison porterait sur une signature
@@ -126,12 +165,6 @@ public class GatewayAccessWebFilter implements WebFilter, Ordered {
         if (secretDePasserelle == null || secretDePasserelle.isBlank()) {
             log.error("Aucun secret de passerelle configure : requete refusee");
             return refuser(exchange, "Service mal configure");
-        }
-
-        String adresse = GatewayClientIp.pairTcp(exchange);
-        if (!("localhost".equals(adresse) || PrivateNetworks.contient(adresse))) {
-            log.warn("Acces direct bloque depuis {} sur {}", adresse, cheminSigne);
-            return refuser(exchange, "Requete hors Gateway");
         }
 
         String horodatage = requete.getHeaders().getFirst("X-Gateway-Timestamp");
@@ -158,6 +191,20 @@ public class GatewayAccessWebFilter implements WebFilter, Ordered {
         }
 
         return chain.filter(exchange);
+    }
+
+    /**
+     * Chemin d'appel inter-services.
+     *
+     * <p>Compare le <b>segment entier</b>. Un {@code startsWith("/internal")}
+     * nu exempterait aussi {@code /internal-x} ou {@code /internalement} —
+     * c'est-a-dire des chemins que personne n'a declares, et qu'un controleur
+     * ajoute plus tard pourrait occuper sans verifier aucun secret. Ce depot a
+     * corrige trois fois cette famille de defaut dans les filtres.
+     */
+    private boolean estCheminInterne(String chemin) {
+        return chemin.equals(CHEMIN_INTERNE)
+                || chemin.startsWith(CHEMIN_INTERNE + "/");
     }
 
     private Mono<Void> refuser(ServerWebExchange exchange, String motif) {

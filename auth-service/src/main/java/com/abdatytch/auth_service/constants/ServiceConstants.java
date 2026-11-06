@@ -45,6 +45,21 @@ public final class ServiceConstants {
     public static final String LOG_INFO_SENDING_VERIFICATION_EMAIL = "Envoi email de vérification à: {} pour type: {}";
     public static final String LOG_INFO_SENDING_WELCOME_EMAIL = "Envoi email de bienvenue à: {}";
     public static final String LOG_INFO_SENDING_EMAIL = "Envoi email - From: {}, To: {}, Subject: {}";
+
+    /**
+     * Code de verification affiche en clair, sur interrupteur explicite.
+     *
+     * <p>Remplace un emprunt a {@code LOG_INFO_SMS_DEV_MODE}, dont le texte
+     * disait « MODE DEV - Code SMS » alors que l'appelant est le service de
+     * COURRIEL. Un journal qui nomme le mauvais canal envoie chercher l'incident
+     * au mauvais endroit, et le defaut n'est apparu qu'au deplacement du
+     * sous-systeme SMS dans notification-service.
+     *
+     * <p>Le libelle ne nomme donc plus aucun canal : c'est le meme code, quel
+     * que soit le chemin qui le porte.
+     */
+    public static final String LOG_INFO_CODE_EN_DEVELOPPEMENT =
+            "MODE DEV - Code de vérification : {}";
     public static final String LOG_INFO_EMAIL_SENT_SUCCESS = " Email envoyé avec succès à: {}";
 
     // Log Messages - INFO level - SmsService
@@ -53,18 +68,9 @@ public final class ServiceConstants {
     // donc le code a usage unique. Le decalage entre ce qu'un gabarit annonce
     // et ce qu'on lui passe est la raison pour laquelle cette fuite a survecu a
     // une relecture : seul l'ARGUMENT la revele. Un seul emplacement, desormais.
-    public static final String LOG_INFO_SENDING_VERIFICATION_SMS = "Envoi SMS de vérification à: {}";
-    public static final String LOG_INFO_SMS_SENT_SUCCESS = " SMS envoyé avec succès à: {}";
-    public static final String LOG_INFO_SMS_DEV_MODE = "MODE DEV - Code SMS: {}";
-    public static final String LOG_INFO_SMS_FOURNISSEUR_PRET = "Fournisseur SMS actif: {}";
-    public static final String LOG_INFO_SMS_SOLDE = "Solde SMS {} : {}";
-    public static final String LOG_INFO_SMS_URL_RAPPEL_DECLAREE =
-            "URL de rappel SMS déclarée chez le fournisseur (typeNotification: {})";
     // Accuses de reception. Le champ `message` de l'accuse n'est JAMAIS
     // journalise : chaine libre venue d'un tiers, qui pourrait echo ce qu'on
     // lui a envoye, donc le code a usage unique.
-    public static final String LOG_INFO_SMS_ACCUSE =
-            "Accusé de réception SMS pour {} : {}";
 
     // Log Messages - INFO level - VerificationCodeService
     public static final String LOG_INFO_GENERATING_CODE = "Génération d'un code de vérification pour: {} de type: {}";
@@ -138,29 +144,6 @@ public final class ServiceConstants {
 
     // Log Messages - WARN level
     public static final String LOG_WARN_EMAIL_DISABLED = "Service Email désactivé. Email non envoyé à: {}";
-    public static final String LOG_WARN_SMS_DISABLED = "Service SMS désactivé. SMS non envoyé à: {}";
-    public static final String LOG_WARN_SMS_SOLDE_BAS =
-            "Solde SMS bas pour {} : {} (seuil d'alerte {})";
-    public static final String LOG_WARN_SMS_SOLDE_VIDE =
-            "Le fournisseur n'a rendu aucun solde : rien à surveiller";
-    public static final String LOG_WARN_SMS_NON_LIVRE =
-            "SMS non livré à {} : {}";
-    public static final String LOG_WARN_SMS_ACCUSE_CORPS_ILLISIBLE =
-            "Corps d'accusé de réception SMS illisible ({})";
-    public static final String LOG_WARN_SMS_ACCUSE_CORPS_INATTENDU =
-            "Corps d'accusé de réception SMS de forme inattendue (Content-Type: {})";
-    public static final String LOG_WARN_SMS_ACCUSE_REFUSE =
-            "Accusé de réception SMS refusé : clé absente ou invalide";
-    public static final String LOG_WARN_SMS_ACCUSE_SANS_IDENTIFIANT =
-            "Accusé de réception SMS sans resourceId exploitable (statut {})";
-    public static final String LOG_WARN_SMS_ACCUSE_INCONNU =
-            "Accusé de réception SMS pour un envoi inconnu du registre (statut {})";
-    public static final String LOG_WARN_SMS_REGISTRE_INDISPONIBLE =
-            "Registre des envois SMS indisponible, accusé non rattachable ({})";
-    public static final String LOG_WARN_SMS_GLOBALEMENT_DESACTIVE =
-            "sms.enabled = false : aucun SMS ne sera envoyé par ce service";
-    public static final String LOG_WARN_SMS_EXPEDITEUR_TRONQUE =
-            "Nom d'expéditeur SMS plus long que {} caractères, tronqué en: {}";
     public static final String LOG_WARN_EMAIL_SEND_ERROR = "Erreur lors de l'envoi de l'email de bienvenue";
     public static final String LOG_WARN_CODE_RESEND_TOO_SOON = "Tentative de renvoi trop rapide pour: {}";
 
@@ -175,28 +158,6 @@ public final class ServiceConstants {
     // message d'une exception WebClient contient cette URI. Les arguments
     // admis sont donc un STATUT, un CODE ou un NOM DE CLASSE, jamais l'objet
     // exception et jamais le corps de la reponse.
-    public static final String LOG_ERROR_SMS_FOURNISSEUR_NON_CONFIGURE =
-            "Fournisseur SMS '{}' sélectionné mais incomplètement configuré : aucun SMS ne partira";
-    public static final String LOG_ERROR_SMS_NUMERO_INEXPLOITABLE =
-            "Numéro de téléphone inexploitable pour le fournisseur SMS, envoi abandonné";
-    public static final String LOG_ERROR_SMS_TRANSPORT =
-            "Échec de transport vers le fournisseur SMS ({})";
-    public static final String LOG_ERROR_SMS_STATUT_HTTP =
-            "Le fournisseur SMS a répondu un statut HTTP {}";
-    public static final String LOG_ERROR_SMS_REPONSE_ILLISIBLE =
-            "Réponse du fournisseur SMS illisible : champ 'code' absent ou invalide";
-    public static final String LOG_ERROR_SMS_REFUS_FOURNISSEUR =
-            "Le fournisseur SMS a refusé l'envoi (code {})";
-    public static final String LOG_ERROR_SMS_SOLDE_EPUISE =
-            "Solde SMS ÉPUISÉ pour {} : {} — les SMS ne partent plus";
-    public static final String LOG_ERROR_SMS_SOLDE_ILLISIBLE =
-            "Relevé du solde SMS impossible ({})";
-    public static final String LOG_ERROR_SMS_URL_RAPPEL_ABSENTE =
-            "sms.afriksms.notify-url est vide : impossible de déclarer une URL de rappel";
-    public static final String LOG_ERROR_SMS_TYPE_NOTIFICATION =
-            "sms.afriksms.notify-type doit valoir 1 (POST) ou 2 (GET), reçu: {}";
-    public static final String LOG_ERROR_SMS_ACCUSE_REGISTRE =
-            "Lecture du registre des envois SMS impossible ({})";
     public static final String LOG_ERROR_SMS_REPLI =
             "Disjoncteur SMS ouvert, repli pour: {} ({})";
     public static final String LOG_ERROR_INVALID_JWT = "JWT invalide: {}";

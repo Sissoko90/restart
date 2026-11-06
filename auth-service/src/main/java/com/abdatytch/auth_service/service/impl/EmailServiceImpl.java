@@ -90,7 +90,7 @@ public class EmailServiceImpl implements IEmailService {
      */
     private void journaliserCodeEnDeveloppement(String code) {
         if (journaliserCodes) {
-            log.info(ServiceConstants.LOG_INFO_SMS_DEV_MODE, code);
+            log.info(ServiceConstants.LOG_INFO_CODE_EN_DEVELOPPEMENT, code);
         }
     }
 

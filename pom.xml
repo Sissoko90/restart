@@ -140,6 +140,13 @@
 		-->
 		<loki4j.version>2.1.0</loki4j.version>
 		<blockhound.version>1.0.18.RELEASE</blockhound.version>
+		<!--
+		  Twilio, un des deux fournisseurs SMS. N'etait gere nulle part :
+		  auth-service l'epinglait a 10.6.3 dans son propre POM. Le sous-systeme
+		  SMS ayant rejoint notification-service, la version se declare ici
+		  plutot que de suivre le code de module en module.
+		-->
+		<twilio.version>10.6.3</twilio.version>
 		<jacoco.version>0.8.12</jacoco.version>
 
 		<!--
@@ -430,6 +437,12 @@
 			  dependencyManagement reviendrait a tenir prete une version pour une
 			  dependance qu'aucun module ne doit reprendre.
 			-->
+			<!-- Fournisseur SMS Twilio. Seul consommateur : notification-service. -->
+			<dependency>
+				<groupId>com.twilio.sdk</groupId>
+				<artifactId>twilio</artifactId>
+				<version>${twilio.version}</version>
+			</dependency>
 			<dependency>
 				<groupId>io.github.resilience4j</groupId>
 				<artifactId>resilience4j-reactor</artifactId>

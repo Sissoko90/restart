@@ -54,6 +54,20 @@
 			<artifactId>spring-boot-autoconfigure</artifactId>
 		</dependency>
 
+		<!--
+			ChargeurDotenv lit le fichier .env.
+
+			Portee `provided` : les services Java tournent HORS conteneur — le
+			docker-compose du depot ne lance que l'infrastructure — et chacun de
+			ceux qui chargent un .env declare deja cette dependance. Un module
+			qui n'en a pas besoin ne doit pas la trainer.
+		-->
+		<dependency>
+			<groupId>io.github.cdimascio</groupId>
+			<artifactId>dotenv-java</artifactId>
+			<scope>provided</scope>
+		</dependency>
+
 		<!-- JWT : uniquement l'API (Locator/JwsHeader), pas l'implémentation -->
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
@@ -66,6 +80,16 @@
 		<dependency>
 			<groupId>org.springframework.security</groupId>
 			<artifactId>spring-security-core</artifactId>
+			<scope>provided</scope>
+		</dependency>
+
+		<!-- AutorisationInterne implemente ReactiveAuthorizationManager et lit
+		     AuthorizationContext, qui vivent dans spring-security-web. Meme
+		     portee `provided` et meme raison : les consommateurs apportent deja
+		     spring-security par leur starter. -->
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-web</artifactId>
 			<scope>provided</scope>
 		</dependency>
 

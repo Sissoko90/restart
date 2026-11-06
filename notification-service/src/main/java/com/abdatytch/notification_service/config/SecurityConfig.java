@@ -1,6 +1,8 @@
 package com.abdatytch.notification_service.config;
 
+import com.abdatytch.commons.security.AutorisationInterne;
 import com.abdatytch.commons.security.CheminsPublics;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -45,8 +47,28 @@ public class SecurityConfig {
             .documentationViaPasserelle()
             .construire();
 
+    /**
+     * La regle d'autorisation des appels inter-services.
+     *
+     * <p>Le mecanisme vit dans platform-commons, le {@code @Bean} ici : ce
+     * module ne scanne pas {@code com.abdatytch.commons}, et un
+     * {@code @Component} y serait inerte. Meme partage que pour
+     * {@code DisjoncteurSortant}.
+     *
+     * <p>Defaut vide, et non absence de defaut : la politique du projet interdit
+     * de refuser le demarrage faute d'une variable. Sans secret,
+     * {@link AutorisationInterne} refuse chaque appel et le journalise — ferme a
+     * la requete, pas au demarrage.
+     */
     @Bean
-    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+    public AutorisationInterne autorisationInterne(
+            @Value("${security.internal-secret:}") String secretInterne) {
+        return new AutorisationInterne(secretInterne);
+    }
+
+    @Bean
+    public SecurityWebFilterChain securityWebFilterChain(
+            ServerHttpSecurity http, AutorisationInterne autorisationInterne) {
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 // API sans etat : aucune session, l'identite vient du jeton a
@@ -67,11 +89,20 @@ public class SecurityConfig {
                         .pathMatchers("/actuator/**").hasRole("ADMIN")
                         // Les appels de SERVICE A SERVICE.
                         //
-                        // Ils arrivent signes par la passerelle mais sans jeton
-                        // d'utilisateur : un service qui demande une notification
-                        // n'agit pour personne en particulier. Le role SERVICE
-                        // est porte par les jetons de service.
-                        .pathMatchers("/internal/**").hasAnyRole("SERVICE", "ADMIN")
+                        // Ce matcher exigeait hasAnyRole("SERVICE", "ADMIN"), et
+                        // c'etait FAUX. Releve sur tout le depot :
+                        // JWT_CLAIM_SERVICE_ROLE, JWT_SERVICE_SUBJECT et
+                        // JWT_TYPE_SERVICE sont declares dans les constantes
+                        // d'auth-service et utilises NULLE PART. Aucun code
+                        // n'emet de jeton portant le role SERVICE, donc cette
+                        // regle exigeait un jeton que personne ne delivre et
+                        // aurait refuse tout appel inter-services.
+                        //
+                        // Un appel de service ne porte pas de jeton
+                        // d'utilisateur — il n'agit pour personne. Ce qui
+                        // l'authentifie est le secret partage, compare a temps
+                        // constant par AutorisationInterne.
+                        .pathMatchers("/internal/**").access(autorisationInterne)
                         // Tout le reste — la boite de reception et le flux temps
                         // reel — exige un porteur authentifie. Le filtrage par
                         // destinataire se fait ENSUITE, dans les requetes.

@@ -1,2 +1,2 @@
 org.springframework.boot.EnvironmentPostProcessor=\
-com.abdatytch.config_service.DotenvConfig
+com.abdatytch.commons.config.ChargeurDotenv

@@ -481,12 +481,14 @@
 		</dependency>
 
 
-		<!-- Twilio SDK for SMS -->
-		<dependency>
-			<groupId>com.twilio.sdk</groupId>
-			<artifactId>twilio</artifactId>
-			<version>10.6.3</version>
-		</dependency>
+		<!--
+		  Le SDK Twilio a ete RETIRE : le sous-systeme SMS est passe dans
+		  notification-service, et plus une ligne de Java de ce module ne cite
+		  com.twilio. Le garder aurait laisse un SDK d'envoi de SMS dans le
+		  classpath d'un service qui n'envoie plus de SMS — de quoi reecrire un
+		  envoi direct ici par megarde, et contourner le comptage des tentatives
+		  qui protege le credit SMS.
+		-->
 
 		<!-- UAParser for User Agent Analysis -->
 		<dependency>

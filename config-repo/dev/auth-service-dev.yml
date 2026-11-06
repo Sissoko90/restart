@@ -219,101 +219,30 @@ security:
   internal-secret: ${INTERNAL_SERVICE_SECRET}
 
 # ==========================================
-# SMS CONFIGURATION
+# SMS
 # ==========================================
-# Note: Les credentials SMS sont chargés depuis .env via DotenvConfig.
 #
-# Deux fournisseurs sont implémentés, et SMS_PROVIDER désigne celui qui sert,
-# sans recompilation :
-#   afriksms (défaut) -- réactif, par WebClient
-#   twilio            -- conservé, SDK bloquant isolé sur boundedElastic
+# Le bloc `sms:` a ete DEPLACE dans notification-service-dev.yml, avec le code
+# qu'il configure : ce service n'a plus ni fournisseur, ni registre d'envois, ni
+# accuses de reception.
 #
-# Deux réglages, et ils ne disent pas la même chose :
-#   sms.enabled   coupe TOUT envoi, quel que soit le fournisseur
-#   sms.provider  désigne le fournisseur qui sert ; l'autre ne sert pas
-#
-# C'est donc sms.provider qui désactive un fournisseur. Pas d'interrupteur par
-# fournisseur en plus : il ferait double emploi, et les deux pourraient se
-# contredire.
-#
-# Un SMS_PROVIDER inconnu empêche auth-service de démarrer, avec la liste des
-# valeurs acceptées : le fournisseur est sur le chemin de l'inscription, et une
-# faute de frappe ne doit pas se traduire par des SMS qui cessent de partir en
-# silence.
-#
-# Toutes les autres valeurs portent un défaut : une variable absente ne doit pas
-# empêcher le service de démarrer, elle doit produire un avertissement explicite
-# au démarrage (voir SmsServiceImpl.verifierLaConfiguration).
-sms:
-  enabled: ${SMS_ENABLED:false}
-  provider: ${SMS_PROVIDER:afriksms}
-
-  afriksms:
-    # Aucune URL n'est écrite dans le code : les trois appartiennent à la
-    # configuration. Les trois points d'entrée d'AfrikSMS sont déclarés
-    # séparément plutôt que dérivés d'une base, pour qu'aucun chemin d'API ne
-    # vive dans le code Java.
-    url: ${SMS_AFRIKSMS_URL:https://api.afriksms.com/api/web/web_v1/outbounds/send}
-    callback-url: ${SMS_AFRIKSMS_CALLBACK_URL:https://api.afriksms.com/api/web/web_v1/outbounds/callback_url}
-    balance-url: ${SMS_AFRIKSMS_BALANCE_URL:https://api.afriksms.com/api/web/web_v1/outbounds/solde}
-    client-id: ${SMS_AFRIKSMS_CLIENT_ID:}
-    api-key: ${SMS_AFRIKSMS_API_KEY:}
-    # 11 caractères au maximum, imposé par AfrikSMS. Au-delà, tronqué avec un
-    # avertissement au démarrage.
-    sender-id: ${SMS_AFRIKSMS_SENDER_ID:}
-    timeout-seconds: ${SMS_AFRIKSMS_TIMEOUT_SECONDS:10}
-
-    # --- Accusés de réception (delivery receipts) ---
-    #
-    # notify-url est l'URL que POST /admin/sms/url-de-rappel déclare chez
-    # AfrikSMS. Elle vient d'ICI et non du corps de la requête admin : accepter
-    # une URL arbitraire permettrait de rediriger nos accusés vers un serveur
-    # quelconque.
-    #
-    # Elle doit pointer sur le Gateway, pas sur auth-service : celui-ci n'accepte
-    # que des requêtes signées venant du Gateway.
-    #
-    # notify-secret est le seul moyen d'authentifier AfrikSMS, qui ne signe rien
-    # et n'envoie aucun en-tête de notre choix. Vide, TOUS les accusés sont
-    # refusés — c'est voulu : un défaut utilisable laisserait le point d'entrée
-    # ouvert là où personne n'a renseigné la variable.
-    #
-    # notify-type : 1 = POST, 2 = GET. Les deux formes sont acceptées à la
-    # réception, quelle que soit la valeur déclarée.
-    notify-url: ${SMS_AFRIKSMS_NOTIFY_URL:}
-    notify-secret: ${SMS_AFRIKSMS_NOTIFY_SECRET:}
-    notify-type: ${SMS_AFRIKSMS_NOTIFY_TYPE:1}
-
-  # Surveillance du solde chez le fournisseur.
+# Ce qu'il garde : l'adresse du service qui envoie, et `sms.enabled` — declare
+# dans application-dev.yml et lu ici uniquement pour FORMULER la reponse, jamais
+# pour decider d'un envoi.
+notification-service:
+  url: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
+  # PLUS LONG que le delai du fournisseur SMS, et c'est la raison de la valeur.
   #
-  # Un credit epuise ne produit AUCUNE erreur HTTP : l'envoi repond 200 avec un
-  # code de refus. Sans ce releve, la panne se manifeste seulement par des
-  # utilisateurs qui ne recoivent plus leur code.
+  # sms.afriksms.timeout-seconds vaut 10 s chez notification-service. A 5 s —
+  # la valeur des autres clients de ce fichier — ce client abandonnait la
+  # reponse alors que l'envoi etait toujours en cours : son contrat « termine =
+  # remis au fournisseur » devenait faux, et le resultat ne disait plus rien de
+  # ce qui s'etait passe.
   #
-  # Deux seuils : solde <= 0 est un incident (ERROR, les SMS ne partent plus),
-  # solde <= seuil-alerte est un avertissement (WARN, il reste du temps pour
-  # recharger).
-  #
-  # Propre a AfrikSMS : la tache ne fait rien si sms.provider designe Twilio, ni
-  # si sms.enabled est faux.
-  solde:
-    surveillance:
-      enabled: ${SMS_SOLDE_SURVEILLANCE_ENABLED:true}
-      # Une fois par jour. Repetee toutes les heures, l'alerte cesserait d'etre lue.
-      cron: ${SMS_SOLDE_SURVEILLANCE_CRON:0 0 8 * * *}
-      seuil-alerte: ${SMS_SOLDE_SEUIL_ALERTE:100}
-
-  # Durée de conservation de la correspondance resourceId -> numéro, qui rend
-  # les accusés de réception interprétables. Courte par nature : un accusé
-  # arrive en quelques minutes.
-  registre:
-    duree-de-vie-heures: ${SMS_REGISTRE_DUREE_HEURES:48}
-
-  twilio:
-    # Conservé et complet, mais inactif tant que sms.provider ne le désigne pas.
-    account-sid: ${SMS_ACCOUNT_SID:}
-    auth-token: ${SMS_AUTH_TOKEN:}
-    sender-id: ${SMS_SENDER_ID:}
+  # Le bouton pour repondre plus vite est donc le delai du FOURNISSEUR, pas
+  # celui-ci. En pratique AfrikSMS repond en moins d'une seconde ; ces 12 s ne
+  # sont atteintes que lorsque le fournisseur est fige.
+  timeout-seconds: ${NOTIFICATION_SERVICE_TIMEOUT_SECONDS:12}
 
 # ==========================================
 # EMAIL CONFIGURATION (SMTP)

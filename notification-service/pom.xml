@@ -116,6 +116,56 @@
 		</dependency>
 
 		<!--
+		  Redis reactif, pour le registre des envois SMS.
+
+		  Le registre n'est pas un cache : il relie l'identifiant rendu par le
+		  fournisseur au numero destinataire, et c'est la SEULE facon de
+		  rattacher un accuse de reception a un envoi. Sans lui, un accuse
+		  arrive sans savoir de quel SMS il parle.
+
+		  Variante `-reactive` et non `spring-boot-starter-data-redis` : c'est
+		  celle des autres modules reactifs du depot (security-service,
+		  user-service, media-service). La variante bloquante n'est utilisee que
+		  par gateway-service, et une lecture Redis bloquante sur le chemin
+		  d'envoi violerait la politique « zero blocage ».
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-redis-reactive</artifactId>
+		</dependency>
+
+		<!--
+		  Fournisseur SMS Twilio.
+
+		  La version est geree au POM racine, et PAS ici : auth-service la
+		  figeait a 10.6.3 dans son propre POM, ou elle echappait a la gestion
+		  centrale. Une version dans un module surcharge le dependencyManagement
+		  racine et rend la propriete decorative — le depot a deja paye cette
+		  erreur avec resilience4j.
+		-->
+		<dependency>
+			<groupId>com.twilio.sdk</groupId>
+			<artifactId>twilio</artifactId>
+		</dependency>
+
+		<!--
+		  Le registre des disjoncteurs.
+
+		  platform-commons apporte le MECANISME (DisjoncteurSortant) mais pas le
+		  bean CircuitBreakerRegistry : celui-la vient de l'auto-configuration
+		  que ce starter amene, exactement comme dans auth-service. Sans lui, le
+		  bean du disjoncteur ne pourrait pas etre construit.
+
+		  Noter que resilience4j-spring-boot3 arrive ici en 2.3.0 par ce starter,
+		  transitivement, donc sans le verificateur qui refuse Spring Boot 4.
+		  Voir le commentaire de `resilience4j.version` au POM racine.
+		-->
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+		</dependency>
+
+		<!--
 		  Le socle partage : CheminsPublics, GatewayClientIp, HMACSignatureUtil,
 		  PrivateNetworks, ClesRedisSecurite. Sans lui, ce module reecrirait les
 		  memes controles — et c'est precisement en les reecrivant que les autres

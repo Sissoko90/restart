@@ -574,3 +574,20 @@ data-retention:
 # données personnelles : un oubli marquerait les demandes terminées à tort.
 erasure:
   expected-services: user-service,media-service,quotas-service,setting-service,interface-service
+
+# L'envoi de SMS est-il actif. UNE seule declaration, pour DEUX lecteurs :
+#
+#   notification-service  l'APPLIQUE — il detient les fournisseurs, et c'est
+#                         lui qui coupe l'envoi
+#   auth-service          le LIT seulement, pour formuler sa reponse :
+#                         « code envoye par SMS » ou « code genere sans envoi »
+#
+# Elle est ici et non dans l'un des deux fichiers de service parce que les deux
+# doivent lire la MEME valeur. Declaree deux fois, elle finirait par diverger —
+# et le symptome serait une interface qui annonce un SMS que rien n'envoie, ou
+# l'inverse. Ce depot a deja paye cette forme de defaut plusieurs fois.
+#
+# Faux par defaut : en developpement aucun credit ne doit partir sans qu'on
+# l'ait demande.
+sms:
+  enabled: ${SMS_ENABLED:false}

@@ -1,7 +1,8 @@
 package com.abdatytch.user_service.config;
 
 import com.abdatytch.commons.security.CheminsPublics;
-import com.abdatytch.user_service.security.AutorisationInterne;
+import com.abdatytch.commons.security.AutorisationInterne;
+import org.springframework.beans.factory.annotation.Value;
 import com.abdatytch.user_service.security.JwtTokenValidator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,14 +26,30 @@ public class SecurityConfig {
     
     private final CorsConfigurationSource corsConfigurationSource;
     private final JwtTokenValidator jwtTokenValidator;
-    private final AutorisationInterne autorisationInterne;
-    
+
     public SecurityConfig(CorsConfigurationSource corsConfigurationSource,
-                         JwtTokenValidator jwtTokenValidator,
-                         AutorisationInterne autorisationInterne) {
+                         JwtTokenValidator jwtTokenValidator) {
         this.corsConfigurationSource = corsConfigurationSource;
         this.jwtTokenValidator = jwtTokenValidator;
-        this.autorisationInterne = autorisationInterne;
+    }
+
+    /**
+     * La regle d'autorisation des appels inter-services.
+     *
+     * <p>Elle vivait dans ce module, annotee {@code @Component}. Elle est passee
+     * dans platform-commons le jour ou notification-service en a eu besoin : le
+     * depot portait alors trois reponses differentes a « qui peut appeler
+     * {@code /internal/**} », dont une qui exigeait un role que personne
+     * n'emet. Voir {@link AutorisationInterne}.
+     *
+     * <p>Declaree ici et non annotee la-bas : platform-commons ne contient
+     * aucun composant Spring, et aucun service ne scanne son package — un
+     * {@code @Component} y serait inerte.
+     */
+    @Bean
+    public AutorisationInterne autorisationInterne(
+            @Value("${security.internal-secret:}") String secretInterne) {
+        return new AutorisationInterne(secretInterne);
     }
     
     /**
@@ -46,7 +63,8 @@ public class SecurityConfig {
             .construire();
 
     @Bean
-    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http,
+                                                         AutorisationInterne autorisationInterne) {
         http
             .csrf(ServerHttpSecurity.CsrfSpec::disable)
             .cors(cors -> cors.configurationSource(corsConfigurationSource))
