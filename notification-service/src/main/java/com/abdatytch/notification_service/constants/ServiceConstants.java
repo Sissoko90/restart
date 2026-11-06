@@ -61,6 +61,30 @@ public final class ServiceConstants {
     public static final String LOG_WARN_SMS_EXPEDITEUR_TRONQUE = "Nom d'expéditeur SMS plus long que {} caractères, tronqué en: {}";
     public static final String LOG_WARN_SMS_GLOBALEMENT_DESACTIVE = "sms.enabled = false : aucun SMS ne sera envoyé par ce service";
     public static final String LOG_WARN_SMS_NON_LIVRE = "SMS non livré à {} : {}";
+
+    /**
+     * Numero absent de {@code sms.numeros-autorises}.
+     *
+     * <p>Le numero EST journalise, contrairement a la regle habituelle, et c'est
+     * le but : ce garde-fou n'existe que pour le developpement, et savoir quel
+     * numero a ete ecarte est la seule information utile quand un essai ne
+     * recoit rien. En production la liste est vide, donc ce message n'apparait
+     * jamais.
+     */
+    public static final String LOG_WARN_SMS_HORS_LISTE =
+            "Numéro {} absent de sms.numeros-autorises : aucun SMS envoyé";
+
+    /**
+     * Plafond journalier de depense atteint.
+     *
+     * <p>En {@code ERROR} et non en {@code WARN} : des utilisateurs ne
+     * recoivent plus leur code, et la cause n'est pas une panne mais une limite
+     * voulue. Sans ce message, le symptome serait indistinguable d'un
+     * fournisseur en panne.
+     */
+    public static final String LOG_ERROR_SMS_PLAFOND_ATTEINT =
+            "Plafond journalier de SMS atteint : envoi refusé vers {}";
+
     public static final String LOG_WARN_SMS_REGISTRE_INDISPONIBLE = "Registre des envois SMS indisponible, accusé non rattachable ({})";
     public static final String LOG_WARN_SMS_SOLDE_BAS = "Solde SMS bas pour {} : {} (seuil d'alerte {})";
     public static final String LOG_WARN_SMS_SOLDE_VIDE = "Le fournisseur n'a rendu aucun solde : rien à surveiller";

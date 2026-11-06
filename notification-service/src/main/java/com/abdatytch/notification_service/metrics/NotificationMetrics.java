@@ -46,6 +46,13 @@ public class NotificationMetrics {
     private static final String CRITIQUES_PERDUES = "notification.critiques.perdues.total";
 
     /** Duree de traitement complet d'une demande, tous canaux. */
+    /**
+     * Nom volontairement prefixe {@code sms.} et non {@code notification.} :
+     * c'est une depense chez un tiers, pas une remise. Expose par Micrometer
+     * sous {@code sms_plafond_atteint_total}.
+     */
+    private static final String PLAFOND_SMS_ATTEINT = "sms.plafond.atteint.total";
+
     private static final String DUREE = "notification.traitement.duree";
 
     /** Sessions WebSocket ouvertes a cet instant. */
@@ -121,6 +128,33 @@ public class NotificationMetrics {
         Counter.builder(CRITIQUES_PERDUES)
                 .tag("emetteur", serviceEmetteur == null ? "inconnu" : serviceEmetteur)
                 .description("Notifications critiques dont aucun canal n'a abouti")
+                .register(registre)
+                .increment();
+    }
+
+    /**
+     * Un envoi de SMS refuse par le plafond journalier de depense.
+     *
+     * <h2>Pourquoi un compteur, et pas seulement un journal en ERROR</h2>
+     *
+     * Les alertes de cette plateforme sont evaluees par Prometheus, sur des
+     * series. Un evenement qui n'existe que sous forme de ligne de journal ne
+     * declenche rien : il faut que quelqu'un lise Loki au bon moment.
+     *
+     * <p>Or l'evenement « plafond atteint » est exactement celui qu'on veut
+     * apprendre sans le chercher : des utilisateurs ne recoivent plus leur code,
+     * et la cause n'est pas une panne mais une limite voulue — donc rien
+     * d'autre ne va se mettre en alerte.
+     *
+     * <h2>Compteur distinct de {@code notification.remises.total}</h2>
+     *
+     * Un refus de plafond n'est pas une remise ratee parmi d'autres. Noye dans
+     * les remises, il serait indistinguable d'un WebSocket sans session ou d'un
+     * canal desactive, et aucune alerte utilisable ne pourrait s'ecrire dessus.
+     */
+    public void plafondSmsAtteint() {
+        Counter.builder(PLAFOND_SMS_ATTEINT)
+                .description("Envois de SMS refuses par le plafond journalier de depense")
                 .register(registre)
                 .increment();
     }

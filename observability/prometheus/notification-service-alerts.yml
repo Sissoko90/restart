@@ -1,0 +1,106 @@
+# ============================================================================
+# notification-service — regles d'alerte
+# ============================================================================
+# Ce service n'etait PAS collecte par Prometheus : ses six metriques etaient
+# emises par du code qui tourne, et lues par personne. Le job de scrape a ete
+# ajoute en meme temps que ce fichier — une alerte sur un service non scrape ne
+# se declenche jamais, et rien ne le signale : l'expression PromQL rend un
+# ensemble vide, ce qui n'est pas une erreur.
+#
+# Les noms de series employes ici sont ceux que Micrometer EXPOSE, et non les
+# noms declares en Java. Micrometer renomme : les points deviennent des
+# soulignes. `MetriquesDesAlertesTest` verifie que chaque serie interrogee ici
+# est bien emise par du code du depot.
+#
+# ----------------------------------------------------------------------------
+# CE QUI N'A PAS DE REGLE, ET POURQUOI
+# ----------------------------------------------------------------------------
+# notification_remises_total — une remise qui echoue est du trafic NORMAL : un
+#   WebSocket sans session ouverte, un canal SMS desactive en developpement.
+#   Une alerte dessus se declencherait en permanence, et serait donc ignoree.
+#   Ce qui merite une alerte est la notification critique ENTIEREMENT perdue,
+#   ci-dessous.
+#
+# notification_websocket_sessions — une jauge de sessions ouvertes n'a pas de
+#   seuil utile : zero est normal la nuit, et un pic n'est pas un incident.
+#   Elle sert aux panneaux, pas aux alertes.
+#
+# notification_traitement_duree — a garder pour plus tard. Un seuil pose
+#   maintenant serait devine : ce service n'a pas encore de trafic reel, et une
+#   alerte calibree au hasard apprend seulement a ne plus la lire.
+
+groups:
+  - name: notification-service-depense
+    rules:
+      # ------------------------------------------------------------------
+      # Plafond de depense SMS atteint
+      # ------------------------------------------------------------------
+      # L'evenement que personne d'autre ne signalera. Des utilisateurs ne
+      # recoivent plus leur code, et la cause n'est pas une panne mais une
+      # limite voulue : aucune autre alerte ne se declenchera, et le service
+      # repondra 200 a chaque demande.
+      #
+      # Severite `critical` : un code de verification qui ne part pas est une
+      # impossibilite de se connecter.
+      #
+      # `> 0` et non un seuil : le premier refus est deja l'information. Soit le
+      # plafond est trop bas et il faut le relever, soit quelque chose consomme
+      # anormalement — dans les deux cas il faut regarder tout de suite.
+      - alert: PlafondDepenseSmsAtteint
+        expr: increase(sms_plafond_atteint_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          service: notification-service
+        annotations:
+          summary: "Plafond journalier de SMS atteint"
+          description: >-
+            {{ $value | printf "%.0f" }} envois de SMS ont ete refuses par le
+            plafond journalier sur les 15 dernieres minutes. Les codes de
+            verification ne partent plus. Verifier sms.plafond-journalier et le
+            solde chez le fournisseur avant de relever le plafond : un plafond
+            atteint peut aussi signaler une boucle qui consomme.
+
+  - name: notification-service-remises
+    rules:
+      # ------------------------------------------------------------------
+      # Une notification CRITIQUE entierement perdue
+      # ------------------------------------------------------------------
+      # Compteur distinct des remises, precisement pour que cette alerte soit
+      # ecrivable. Une CRITIQUE dont AUCUN canal n'a abouti est un code de
+      # verification ou une alerte de securite que personne n'a recu.
+      - alert: NotificationCritiquePerdue
+        expr: increase(notification_critiques_perdues_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          service: notification-service
+        annotations:
+          summary: "Notification critique perdue sur tous les canaux"
+          description: >-
+            {{ $value | printf "%.0f" }} notification(s) critique(s) du service
+            {{ $labels.emetteur }} n'ont abouti sur AUCUN canal en 10 minutes.
+            Code de verification ou alerte de securite non delivre.
+
+      # ------------------------------------------------------------------
+      # Rafale de demandes rejetees
+      # ------------------------------------------------------------------
+      # Un rejet isole est une demande mal formee d'un service appelant, et ne
+      # merite pas de reveiller quelqu'un. Une rafale signale un emetteur qui
+      # vient de regresser, ou un contrat d'evenement qui a change d'un cote
+      # seulement.
+      #
+      # Severite `warning` : rien n'est perdu pour l'utilisateur final tant que
+      # l'emetteur n'est pas sur un chemin critique.
+      - alert: DemandesDeNotificationRejetees
+        expr: sum(rate(notification_rejets_total[5m])) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          service: notification-service
+        annotations:
+          summary: "Demandes de notification rejetees en rafale"
+          description: >-
+            Plus de 0,2 rejet par seconde depuis 10 minutes. Un service emetteur
+            publie des demandes que notification-service refuse avant
+            traitement — verifier le motif porte par l'etiquette `motif`.

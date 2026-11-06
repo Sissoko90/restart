@@ -4,7 +4,10 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.abdatytch.notification_service.service.impl.SmsServiceImpl;
+import com.abdatytch.notification_service.metrics.NotificationMetrics;
 import com.abdatytch.notification_service.service.sms.AfrikSmsProvider;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import com.abdatytch.notification_service.service.sms.PlafondJournalierSms;
 import com.abdatytch.notification_service.service.sms.ISmsProvider;
 import com.abdatytch.notification_service.service.sms.TwilioSmsProvider;
 import org.junit.jupiter.api.AfterEach;
@@ -87,9 +90,30 @@ class SmsServiceImplTest {
         journaux.stop();
     }
 
+    /** Liste de numeros autorises vide : aucun filtrage, comme en production. */
+    private static final String AUCUNE_LISTE = "";
+
     private SmsServiceImpl service(String nomDemande, boolean actif, boolean journaliserCodes) {
-        return new SmsServiceImpl(List.of(afriksms, twilio), nomDemande, actif,
-                journaliserCodes);
+        return new SmsServiceImpl(List.of(afriksms, twilio), plafondInactif(), nomDemande,
+                actif, journaliserCodes, AUCUNE_LISTE);
+    }
+
+    /**
+     * Un plafond journalier desactive, sans Redis.
+     *
+     * <p>{@code plafond = 0} court-circuite <b>avant</b> toute commande Redis —
+     * c'est la premiere ligne de {@code resteDuCredit()} comme de
+     * {@code compterUnEnvoi()}. Le {@code null} passe donc en toute surete, et
+     * ces tests portent sur la selection du fournisseur et la discipline des
+     * journaux, pas sur le plafond.
+     *
+     * <p>Un bouchon aurait cache ce fait : il aurait repondu « il reste du
+     * credit » meme si le code avait appele Redis, et le jour ou le
+     * court-circuit disparaitrait, rien ici ne le signalerait.
+     */
+    private static PlafondJournalierSms plafondInactif() {
+        return new PlafondJournalierSms(null,
+                new NotificationMetrics(new SimpleMeterRegistry()), 0);
     }
 
     private List<String> journauxEmis() {
@@ -166,8 +190,8 @@ class SmsServiceImplTest {
         @DisplayName("un fournisseur retenu mais non configuré est signalé, pas découvert au premier envoi")
         void fournisseurNonConfigure() {
             var sansConfiguration = new FournisseurEspion(AfrikSmsProvider.NOM, false);
-            var service = new SmsServiceImpl(List.of(sansConfiguration),
-                    AfrikSmsProvider.NOM, true, false);
+            var service = new SmsServiceImpl(List.of(sansConfiguration), plafondInactif(),
+                    AfrikSmsProvider.NOM, true, false, AUCUNE_LISTE);
 
             service.verifierLaConfiguration();
 
@@ -296,8 +320,8 @@ class SmsServiceImplTest {
             // Avaler l'erreur ferait croire a l'appelant que le SMS est parti,
             // et VerificationCodeServiceImpl enregistrerait un code que
             // l'utilisateur ne recevra jamais.
-            StepVerifier.create(new SmsServiceImpl(List.of(enPanne), AfrikSmsProvider.NOM,
-                            true, false).sendSms(NUMERO, CONTENU))
+            StepVerifier.create(new SmsServiceImpl(List.of(enPanne), plafondInactif(), AfrikSmsProvider.NOM,
+                            true, false, AUCUNE_LISTE).sendSms(NUMERO, CONTENU))
                     .verifyError(IllegalStateException.class);
         }
     }

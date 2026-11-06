@@ -4,6 +4,8 @@ import com.abdatytch.notification_service.constants.ServiceConstants;
 import com.abdatytch.notification_service.service.ISmsService;
 import com.abdatytch.notification_service.service.sms.AfrikSmsProvider;
 import com.abdatytch.notification_service.service.sms.ISmsProvider;
+import com.abdatytch.notification_service.service.sms.NumerosAutorisesSms;
+import com.abdatytch.notification_service.service.sms.PlafondJournalierSms;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -62,14 +64,38 @@ public class SmsServiceImpl implements ISmsService {
 
     private final ISmsProvider fournisseur;
 
+    /**
+     * Les deux garde-fous de depense, et ce qui les distingue.
+     *
+     * <p>{@link NumerosAutorisesSms} protege le <b>developpement</b> : il rend
+     * impossible d'envoyer ailleurs que vers les numeros nommes. Inactif par
+     * defaut.
+     *
+     * <p>{@link PlafondJournalierSms} protege la <b>production</b> : il borne ce
+     * qu'une boucle fautive peut depenser avant que quiconque s'en apercoive.
+     * Actif par defaut.
+     *
+     * <p>Les deux sont consultes ici, et nulle part ailleurs : c'est le seul
+     * point par lequel passe tout envoi, pour les deux fournisseurs. Les placer
+     * dans un fournisseur aurait demande de les ecrire deux fois, et AfrikSMS
+     * comme Twilio auraient pu diverger.
+     */
+    private final NumerosAutorisesSms numerosAutorises;
+
+    private final PlafondJournalierSms plafond;
+
     public SmsServiceImpl(
             List<ISmsProvider> fournisseursDisponibles,
+            PlafondJournalierSms plafond,
             @Value("${sms.provider:" + AfrikSmsProvider.NOM + "}") String nomDuFournisseur,
             @Value("${sms.enabled:false}") boolean smsActif,
-            @Value("${auth.dev.log-verification-codes:false}") boolean journaliserCodes) {
+            @Value("${auth.dev.log-verification-codes:false}") boolean journaliserCodes,
+            @Value("${sms.numeros-autorises:}") String listeDeNumeros) {
         this.smsActif = smsActif;
         this.journaliserCodes = journaliserCodes;
         this.fournisseur = selectionner(fournisseursDisponibles, nomDuFournisseur);
+        this.plafond = plafond;
+        this.numerosAutorises = new NumerosAutorisesSms(listeDeNumeros);
     }
 
     /**
@@ -137,7 +163,43 @@ public class SmsServiceImpl implements ISmsService {
             return Mono.empty();
         }
 
-        return fournisseur.envoyer(phoneNumber, message);
+        // Garde-fou de developpement, verifie AVANT le plafond : il ne consulte
+        // rien et n'ecrit rien, donc un numero hors liste ne doit meme pas
+        // couter une lecture Redis.
+        if (!numerosAutorises.autorise(phoneNumber)) {
+            log.warn(ServiceConstants.LOG_WARN_SMS_HORS_LISTE, phoneNumber);
+            journaliserCodeEnDeveloppement(message);
+            return Mono.empty();
+        }
+
+        return plafond.resteDuCredit()
+                .flatMap(reste -> {
+                    if (!reste) {
+                        log.error(ServiceConstants.LOG_ERROR_SMS_PLAFOND_ATTEINT, phoneNumber);
+                        // Termine VIDE, comme l'envoi desactive : rien n'est
+                        // parti, et c'est exactement ce que la terminaison vide
+                        // signifie dans le contrat de ISmsService. Lever une
+                        // erreur ferait passer une limite de depense voulue pour
+                        // une panne du service.
+                        return Mono.<Void>empty();
+                    }
+
+                    // UNE seule tentative, et c'est delibere.
+                    //
+                    // Un SMS remis au fournisseur se paie. Un reessai dont on ne
+                    // sait pas si le premier envoi est parti fait payer deux
+                    // fois le meme message, et le destinataire le recoit en
+                    // double. Un echec n'est pas perdu pour autant :
+                    // l'utilisateur redemande un code, ce qui est un reessai
+                    // decide par une personne et non par une boucle qui depense.
+                    //
+                    // Le comptage suit l'envoi et ne le precede pas : ce qui
+                    // coute est un message que le fournisseur a ACCEPTE. Compte
+                    // avant, une panne de reseau aurait fait baisser le plafond
+                    // sans qu'aucun SMS ne parte.
+                    return fournisseur.envoyer(phoneNumber, message)
+                            .then(plafond.compterUnEnvoi());
+                });
     }
 
     /**

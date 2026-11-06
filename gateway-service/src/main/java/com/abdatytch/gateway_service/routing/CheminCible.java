@@ -163,7 +163,9 @@ public final class CheminCible {
         SERVICES_PAR_PREFIXE.put("/api/v1/docs/settings", "setting-service");
         SERVICES_PAR_PREFIXE.put("/api/v1/docs/security", "security-service");
 
-        SERVICES_PAR_PREFIXE.put("/api/v1/sms/accuses", "auth-service");
+        // Suit le sous-systeme SMS, passe dans notification-service. La surface
+        // d'administration est declaree plus bas, avec les autres /admin/*.
+        SERVICES_PAR_PREFIXE.put("/api/v1/sms/accuses", "notification-service");
         SERVICES_PAR_PREFIXE.put("/api/v1/auth-admin", "auth-service");
         SERVICES_PAR_PREFIXE.put("/api/v1/auth-sdk", "auth-service");
         SERVICES_PAR_PREFIXE.put("/api/v1/auth-users", "auth-service");
@@ -255,6 +257,16 @@ public final class CheminCible {
         SERVICES_PAR_PREFIXE.put("/api/v1/admin/document-types", "media-service");
         SERVICES_PAR_PREFIXE.put("/api/v1/admin/role-requirements", "media-service");
         SERVICES_PAR_PREFIXE.put("/api/v1/admin/documents", "media-service");
+        // Administration du SMS : solde chez le fournisseur, et declaration de
+        // l'URL de rappel des accuses.
+        //
+        // N'etait routee NULLE PART du temps ou elle vivait dans auth-service :
+        // AdminSmsController repond sur /admin/sms, et /api/v1/admin part vers
+        // interface-service, qui ne porte pas ce chemin. Les deux endpoints
+        // rendaient 404 — dont le releve du solde, seul moyen de voir venir un
+        // credit epuise. Un credit epuise ne produit aucune erreur HTTP :
+        // l'envoi repond 200 avec un code de refus.
+        SERVICES_PAR_PREFIXE.put("/api/v1/admin/sms", "notification-service");
         // EN DERNIER : capturerait les trois precedents sinon.
         SERVICES_PAR_PREFIXE.put("/api/v1/admin", "interface-service");
     }

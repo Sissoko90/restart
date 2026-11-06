@@ -194,6 +194,47 @@ management:
 sms:
   provider: ${SMS_PROVIDER:afriksms}
 
+  # AUCUN reessai d'envoi, et c'est un choix.
+  #
+  # Un SMS remis au fournisseur se paie. Un reessai dont on ne sait pas si le
+  # premier envoi est parti fait payer deux fois et peut livrer le message en
+  # double. Une tentative, un credit, un message.
+  #
+  # Un echec n'est pas perdu pour autant : l'utilisateur peut redemander un
+  # code, ce qui est un reessai decide par une personne plutot que par une
+  # boucle.
+
+  # --- Deux garde-fous de depense ---
+
+  # PRODUCTION : nombre maximal d'envois ACCEPTES par jour.
+  #
+  # Le trou que ce plafond ferme : la surveillance du solde ci-dessous tourne
+  # UNE FOIS PAR JOUR. Entre deux releves, rien ne surveille la depense — et un
+  # credit epuise ne produit aucune erreur HTTP, l'envoi repond 200 avec un code
+  # de refus. Une boucle fautive peut donc vider le solde en quelques minutes,
+  # et le premier signe visible serait des utilisateurs sans code.
+  #
+  # Ce plafond transforme « le solde a disparu » en « N SMS depenses, puis des
+  # refus, avec une trace en ERROR ».
+  #
+  # 0 desactive le plafond, avec un avertissement au demarrage.
+  plafond-journalier: ${SMS_PLAFOND_JOURNALIER:500}
+
+  # DEVELOPPEMENT : les seuls numeros qui recoivent reellement.
+  #
+  # VIDE par defaut = aucun filtrage, et c'est voulu : si une liste vide coupait
+  # les envois, ajouter ce garde-fou aurait suffi a casser tous les codes de
+  # verification sans que personne ne change de configuration.
+  #
+  # Renseignee, elle rend impossible d'envoyer ailleurs : un numero absent est
+  # journalise et jete, sans appel au fournisseur, donc sans credit. C'est ce
+  # qu'il faut pour essayer un envoi reel sans risquer d'ecrire a des personnes
+  # reelles — ce que `sms.enabled` ne permet pas, etant tout ou rien.
+  #
+  # Plusieurs numeros separes par des virgules. La comparaison porte sur le
+  # numero NORMALISE : +223 70 00 00 00 et 22370000000 sont le meme.
+  numeros-autorises: ${SMS_NUMEROS_AUTORISES:}
+
   afriksms:
     # Aucune URL n'est écrite dans le code : les trois appartiennent à la
     # configuration. Les trois points d'entrée d'AfrikSMS sont déclarés

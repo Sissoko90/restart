@@ -124,6 +124,24 @@ scrape_configs:
           service: 'security'
           tier: 'backend'
 
+  # notification-service — n'etait PAS collecte.
+  #
+  # Ses six metriques etaient emises par du code qui tourne, et lues par
+  # personne : ni panneau, ni alerte, ni meme la possibilite d'en tracer une
+  # courbe. Rien ne le signalait — un service absent de `scrape_configs` ne
+  # produit aucune erreur, il est simplement invisible.
+  #
+  # C'est ce service qui porte les codes de verification et les alertes de
+  # securite : son silence est le plus couteux de la plateforme.
+  - job_name: 'notification-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8086']
+        labels:
+          application: 'notification-service'
+          service: 'notification'
+          tier: 'backend'
+
   # Config Service — sa chute empeche tout demarrage de service
   - job_name: 'config-service'
     metrics_path: '/actuator/prometheus'

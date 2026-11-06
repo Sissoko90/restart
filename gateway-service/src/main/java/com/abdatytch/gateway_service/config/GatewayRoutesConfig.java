@@ -191,7 +191,17 @@ public class GatewayRoutesConfig {
             .GET("/api/v1/docs/settings", request -> proxyRequestWithCircuitBreaker(request, webClient, "setting-service", defaultCircuitBreaker))
             .GET("/api/v1/docs/security", request -> proxyRequestWithCircuitBreaker(request, webClient, "security-service", defaultCircuitBreaker))
 
-            // Route: /api/v1/sms/accuses/** auth-service (accuses de reception SMS)
+            // Route: /api/v1/sms/accuses/** notification-service (accuses SMS)
+            //
+            // Pointait vers auth-service, qui ne porte plus ce controleur : le
+            // sous-systeme SMS est passe dans notification-service. Laisser
+            // cette route aurait rendu 404 sur CHAQUE accuse de reception, et
+            // le symptome aurait ete silencieux — AfrikSMS n'alerte personne
+            // quand son rappel echoue, les accuses auraient simplement cesse
+            // d'arriver et les envois seraient restes « sans statut connu ».
+            //
+            // L'URL declaree chez AfrikSMS ne change PAS : le chemin public est
+            // identique, seule la cible interne differe.
             //
             // Declaree dans le RouterFunction et non en YAML : le
             // RouterFunctionMapping de Spring a une priorite plus forte que le
@@ -203,8 +213,8 @@ public class GatewayRoutesConfig {
             // GET et POST : typeNotification vaut 1 (POST) ou 2 (GET) chez
             // AfrikSMS, et ce reglage vit de leur cote.
             .nest(path("/api/v1/sms/accuses/**"), builder -> builder
-                .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "auth-service", authServiceCircuitBreaker))
-                .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "auth-service", authServiceCircuitBreaker))
+                .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
+                .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
             )
 
             // ---------------------------------------------------------------
@@ -333,6 +343,23 @@ public class GatewayRoutesConfig {
                 .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "setting-service", defaultCircuitBreaker))
                 .PUT("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "setting-service", defaultCircuitBreaker))
                 .DELETE("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "setting-service", defaultCircuitBreaker))
+            )
+            // Administration du SMS : solde chez le fournisseur, et declaration
+            // de l'URL de rappel des accuses.
+            //
+            // Cette surface n'etait routee NULLE PART quand elle vivait dans
+            // auth-service : AdminSmsController repondait sur /admin/sms, et
+            // /api/v1/admin/** part vers interface-service, qui ne porte pas ce
+            // chemin. Les deux endpoints rendaient donc 404 — dont celui qui
+            // releve le solde, c'est-a-dire le seul moyen de voir venir un
+            // credit epuise. Un credit epuise ne produit aucune erreur HTTP :
+            // l'envoi repond 200 avec un code de refus.
+            //
+            // AVANT la route generale /api/v1/admin/**, comme quotas et
+            // settings juste au-dessus : la premiere route qui correspond gagne.
+            .nest(path("/api/v1/admin/sms/**"), builder -> builder
+                .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
+                .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
             )
             // Route: /api/v1/files/** user-service (photos de profil)
             //
