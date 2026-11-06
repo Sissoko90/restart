@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.mail.SimpleMailMessage;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -25,12 +26,38 @@ public class EmailServiceImpl implements EmailService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailServiceImpl.class);
 
+    /**
+     * Les TROIS expediteurs sont desormais nommes explicitement.
+     *
+     * <h2>Le defaut que les qualificateurs ferment</h2>
+     *
+     * Aucune des trois injections n'en portait, et {@code adminMailSender}
+     * etait {@code @Primary}. Mesure faite dans
+     * {@code QuelExpediteurDeCourrielTest} : {@code @Primary} l'emporte sur la
+     * correspondance par nom de parametre, donc le champ {@code mailSender}
+     * recevait l'expediteur d'ADMINISTRATION.
+     *
+     * <p>Tous les courriels ordinaires — codes de verification, reinitialisation
+     * de mot de passe — partaient par ce compte, avec un {@code From} qui ne lui
+     * correspond pas. Un serveur SMTP refuse ou reecrit un expediteur qui n'est
+     * pas le compte authentifie.
+     *
+     * <p>Deux des trois cablages etaient pourtant corrects — l'injection par
+     * CHAMP se resout par le nom du champ — ce qui rendait le defaut d'autant
+     * plus difficile a voir.
+     *
+     * <p>Les qualificateurs sont explicites partout, y compris la ou le nom
+     * suffisait : une resolution qui depend du nom d'un champ est une
+     * resolution qu'un renommage casse en silence.
+     */
     private final JavaMailSender mailSender;
 
     @Autowired(required = false)
+    @Qualifier("adminMailSender")
     private JavaMailSender adminMailSender;
 
     @Autowired(required = false)
+    @Qualifier("criticalMailSender")
     private JavaMailSender criticalMailSender;
 
     @Value("${admin.mail.from}")
@@ -39,7 +66,7 @@ public class EmailServiceImpl implements EmailService {
     @Value("${admin.critical.mail.from}")
     private String criticalFrom;
 
-    public EmailServiceImpl(JavaMailSender mailSender) {
+    public EmailServiceImpl(@Qualifier("mailSender") JavaMailSender mailSender) {
         this.mailSender = mailSender;
     }
 
