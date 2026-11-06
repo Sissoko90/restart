@@ -215,8 +215,9 @@ resilience:
     # essai de reprise.
     attente-ouvert-secondes: ${RESILIENCE_SORTANT_ATTENTE_OUVERT:30}
 
-security:
-  internal-secret: ${INTERNAL_SERVICE_SECRET}
+# security.internal-secret est declare dans application-dev.yml, pour les cinq
+# services qui le lisent. Un secret partage est le MEME partout : declare par
+# service, il finirait par differer, et n'autoriserait plus rien.
 
 # ==========================================
 # SMS

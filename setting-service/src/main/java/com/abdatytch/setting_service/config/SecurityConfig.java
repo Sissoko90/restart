@@ -1,6 +1,8 @@
 package com.abdatytch.setting_service.config;
 
+import com.abdatytch.commons.security.AutorisationInterne;
 import com.abdatytch.commons.security.CheminsPublics;
+import org.springframework.beans.factory.annotation.Value;
 import com.abdatytch.setting_service.security.JwtAuthenticationWebFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -33,8 +35,27 @@ public class SecurityConfig {
             .documentationViaPasserelle()
             .construire();
 
+    /**
+     * La regle d'autorisation des appels inter-services.
+     *
+     * <p>Le mecanisme vit dans platform-commons, le {@code @Bean} ici : ce
+     * module ne scanne pas {@code com.abdatytch.commons}, et un
+     * {@code @Component} y serait inerte.
+     *
+     * <p>Posee dans la chaine de securite et non dans le controleur : un
+     * endpoint ajoute plus tard sous {@code /internal/} ne peut alors pas
+     * oublier le controle. auth-service et interface-service le recrivent dans
+     * chaque controleur, et c'est precisement la faiblesse de cette approche.
+     */
     @Bean
-    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+    public AutorisationInterne autorisationInterne(
+            @Value("${security.internal-secret:}") String secretInterne) {
+        return new AutorisationInterne(secretInterne);
+    }
+
+    @Bean
+    public SecurityWebFilterChain securityWebFilterChain(
+            ServerHttpSecurity http, AutorisationInterne autorisationInterne) {
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 // API sans état : aucune session, l'identité vient du JWT à chaque requête
@@ -65,6 +86,10 @@ public class SecurityConfig {
                         .pathMatchers(CHEMINS_PUBLICS.motifsPermitAll()).permitAll()
                         .pathMatchers("/actuator/**").hasRole("ADMIN")
                         .pathMatchers("/admin/**").hasRole("ADMIN")
+                        // Appels de service a service : le secret partage fait
+                        // foi, pas un jeton d'utilisateur — un service qui lit
+                        // un consentement n'agit pour personne en particulier.
+                        .pathMatchers("/internal/**").access(autorisationInterne)
                         .anyExchange().authenticated()
                 )
                 .addFilterAt(jwtAuthenticationWebFilter, SecurityWebFiltersOrder.AUTHENTICATION)

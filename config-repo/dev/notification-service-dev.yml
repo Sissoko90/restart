@@ -119,6 +119,40 @@ spring:
 # CANAUX DE NOTIFICATION
 # ==========================================
 notification:
+  # ==========================================================
+  # Consentement par canal : ce qui s'applique quand la personne n'a RIEN dit
+  # ==========================================================
+  #
+  # Le consentement lui-meme vit dans setting-service, magasin par utilisateur,
+  # sous les cles `notifications.canal.<canal>`. Lu par
+  # GET /internal/settings/users/{sub}, en un seul appel pour tous les canaux.
+  #
+  # Ces valeurs-ci ne sont QUE le defaut, pour la quasi-totalite des comptes qui
+  # n'a jamais regle ses preferences. Elles different par canal parce que ces
+  # canaux ne se valent pas :
+  #
+  #   COURRIEL accorde : c'est par lui qu'on confirme une inscription et qu'on
+  #     previent d'un changement de mot de passe. Le refuser par defaut rendrait
+  #     la plateforme inutilisable — et personne ne pourrait l'accepter, puisque
+  #     l'invitation a le faire passerait par lui.
+  #
+  #   SMS et PUSH refuses : un SMS se paie et arrive sur le telephone de la
+  #     personne, un push s'affiche sur son ecran. Ce sont des canaux qu'on
+  #     demande, pas qu'on impose. Et dans le doute, ne pas envoyer est
+  #     reparable ; envoyer ne l'est pas.
+  #
+  # IN_APP et WEBSOCKET ne figurent pas ici : ils remettent dans la propre boite
+  # de reception de la personne, sur sa propre session. Demander la permission
+  # de lui montrer ses messages dans son interface n'aurait pas de sens.
+  #
+  # Modifiable A CHAUD : une campagne qui justifierait d'ouvrir le SMS par
+  # defaut ne demande pas un redeploiement.
+  consentement:
+    defaut:
+      courriel: ${NOTIFICATION_CONSENTEMENT_COURRIEL:true}
+      sms: ${NOTIFICATION_CONSENTEMENT_SMS:false}
+      push: ${NOTIFICATION_CONSENTEMENT_PUSH:false}
+
   reprise:
     # Nombre total de tentatives par canal, premiere incluse.
     tentatives-max: ${NOTIFICATION_REPRISE_TENTATIVES_MAX:3}
@@ -260,6 +294,18 @@ management:
 # Vide, les canaux COURRIEL, SMS et PUSH refusent toute remise et le demarrage
 # le signale en ERROR. IN_APP et WEBSOCKET continuent de fonctionner : ils
 # routent sur l'identifiant du porteur.
+# setting-service : le consentement par personne.
+#
+# Vide, aucun consentement n'est lu et la politique de defaut ci-dessus
+# s'applique a tout le monde — ce qui est un repli acceptable, et non une
+# ouverture : le defaut du SMS et du push est le REFUS.
+setting-service:
+  url: ${SETTING_SERVICE_URL:http://localhost:8087}
+  # Court : cet appel est sur le chemin de chaque notification a coordonnee, et
+  # il est fait en PARALLELE de la lecture des coordonnees — le pire cas reste
+  # donc trois secondes, pas six.
+  timeout-seconds: ${SETTING_SERVICE_TIMEOUT_SECONDS:3}
+
 user-service:
   url: ${USER_SERVICE_URL:http://localhost:8083}
   # Court : cet appel est sur le chemin de CHAQUE notification a coordonnee, et

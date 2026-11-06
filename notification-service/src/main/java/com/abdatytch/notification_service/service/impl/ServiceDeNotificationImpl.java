@@ -330,6 +330,23 @@ public class ServiceDeNotificationImpl implements IServiceDeNotification {
                     CompteRenduDeRemise.Etat.ECHOUE, "coordonnees indisponibles");
         }
 
+        // Le consentement est verifie AVANT de rendre le modele, et bien avant
+        // d'appeler le canal.
+        //
+        // REFUSE et non ECHOUE : un refus de la personne est definitif. Un
+        // ECHOUE le ferait rejouer par la reprise, c'est-a-dire renvoyer un
+        // message a quelqu'un qui vient de dire non — et toutes les trois
+        // minutes.
+        //
+        // La verification est ici et non dans les canaux : elle serait sinon
+        // ecrite trois fois, et un canal ajoute plus tard pourrait l'oublier
+        // sans que rien ne le signale. C'est la meme raison qui a fait monter
+        // AutorisationInterne dans la chaine de securite.
+        if (!resolveur.consent(canal, coordonnees)) {
+            return enregistrer(enregistree.getId(), canal,
+                    CompteRenduDeRemise.Etat.REFUSE, "canal refuse par la personne");
+        }
+
         var contenu = moteur.rendre(demande.modele(), canal, demande.variables());
         if (contenu.isEmpty()) {
             return enregistrer(enregistree.getId(), canal,

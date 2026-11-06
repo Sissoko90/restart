@@ -2,11 +2,16 @@ package com.abdatytch.notification_service.service.impl;
 
 import com.abdatytch.commons.notification.CanalDeNotification;
 import com.abdatytch.commons.notification.DemandeDeNotification;
+import com.abdatytch.commons.notification.ConsentementDeNotification;
 import com.abdatytch.notification_service.client.ClientContactsUtilisateur;
+import com.abdatytch.notification_service.client.ClientPreferencesUtilisateur;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * Ou joindre une personne, pour un canal donne.
@@ -76,15 +81,18 @@ public class ResolveurDeCoordonnees {
      * @param indisponible {@code true} quand user-service n'a pas repondu
      */
     public record Coordonnees(ClientContactsUtilisateur.Contacts contacts,
-                              boolean indisponible) {
+                              boolean indisponible,
+                              Map<String, String> preferences) {
 
         /** user-service n'a pas repondu : on ne sait pas, donc on reessaiera. */
         static Coordonnees indisponibles() {
-            return new Coordonnees(null, true);
+            return new Coordonnees(null, true, Map.of());
         }
 
-        static Coordonnees de(ClientContactsUtilisateur.Contacts contacts) {
-            return new Coordonnees(contacts, false);
+        static Coordonnees de(ClientContactsUtilisateur.Contacts contacts,
+                              Map<String, String> preferences) {
+            return new Coordonnees(contacts, false,
+                    preferences == null ? Map.of() : preferences);
         }
     }
 
@@ -99,9 +107,67 @@ public class ResolveurDeCoordonnees {
             List.of(CanalDeNotification.IN_APP, CanalDeNotification.WEBSOCKET);
 
     private final ClientContactsUtilisateur contacts;
+    private final ClientPreferencesUtilisateur preferences;
+    private final Map<CanalDeNotification, Boolean> consentementParDefaut;
 
-    public ResolveurDeCoordonnees(ClientContactsUtilisateur contacts) {
+    public ResolveurDeCoordonnees(
+            ClientContactsUtilisateur contacts,
+            ClientPreferencesUtilisateur preferences,
+            @Value("${notification.consentement.defaut.courriel:true}") boolean courrielParDefaut,
+            @Value("${notification.consentement.defaut.sms:false}") boolean smsParDefaut,
+            @Value("${notification.consentement.defaut.push:false}") boolean pushParDefaut) {
+
         this.contacts = contacts;
+        this.preferences = preferences;
+        this.consentementParDefaut = Map.of(
+                CanalDeNotification.COURRIEL, courrielParDefaut,
+                CanalDeNotification.SMS, smsParDefaut,
+                CanalDeNotification.PUSH, pushParDefaut);
+    }
+
+    /**
+     * Cette personne accepte-t-elle ce canal.
+     *
+     * <h2>Le silence n'est pas un oui, et ce n'est pas un non</h2>
+     *
+     * Trois reponses, et la troisieme est le cas courant : la quasi-totalite des
+     * comptes n'a rien exprime. C'est alors la politique de DEFAUT qui tranche,
+     * et elle differe par canal pour une raison simple — ces canaux ne se
+     * valent pas.
+     *
+     * <p>Le courriel est accorde par defaut : il est le canal par lequel on
+     * confirme une inscription et on previent d'un changement de mot de passe.
+     * Le refuser par defaut rendrait la plateforme inutilisable, et personne ne
+     * pourrait l'accepter puisque l'invitation a le faire passerait par lui.
+     *
+     * <p>Le SMS et le push sont REFUSES par defaut. Un SMS se paie et arrive sur
+     * le telephone de la personne ; un push s'affiche sur son ecran. Ce sont des
+     * canaux qu'on demande, pas qu'on impose — et dans le doute, ne pas envoyer
+     * est reparable, envoyer ne l'est pas.
+     *
+     * <p>Ces defauts sont dans le config-repo, donc modifiables a chaud : une
+     * campagne qui justifierait d'ouvrir le SMS par defaut ne demande pas un
+     * redeploiement.
+     *
+     * <h2>Ce qui n'est PAS soumis au consentement</h2>
+     *
+     * IN_APP et WEBSOCKET. Ils remettent dans la propre boite de reception de
+     * la personne, sur sa propre session : lui demander la permission de lui
+     * montrer ses messages dans son interface n'aurait pas de sens, et refuser
+     * ce canal reviendrait a les lui cacher. Voir
+     * {@code ConsentementDeNotification}.
+     */
+    public boolean consent(CanalDeNotification canal, Coordonnees coordonnees) {
+        if (!ConsentementDeNotification.demandeUnConsentement(canal)) {
+            return true;
+        }
+
+        Boolean exprime = ConsentementDeNotification.lire(
+                coordonnees == null ? Map.of() : coordonnees.preferences(), canal);
+
+        // `exprime` null = la personne n'a rien dit. Le defaut tranche, et il
+        // n'est jamais null : la carte couvre les trois canaux a consentement.
+        return exprime != null ? exprime : consentementParDefaut.get(canal);
     }
 
     /**
@@ -124,25 +190,44 @@ public class ResolveurDeCoordonnees {
      * autre service, ni lui couter une requete.
      */
     public Mono<Coordonnees> contactsPour(DemandeDeNotification demande) {
-        String secours = demande.destinataireDeSecours();
-        if (secours != null && !secours.isBlank()) {
-            // La coordonnee est fournie : aucun appel. `pour` la rendra pour
-            // n'importe quel canal a coordonnee, comme avant.
-            return Mono.just(Coordonnees.de(null));
-        }
-
         boolean coordonneeNecessaire = demande.canaux().stream()
                 .anyMatch(canal -> !SANS_COORDONNEE.contains(canal));
         if (!coordonneeNecessaire) {
-            return Mono.just(Coordonnees.de(ClientContactsUtilisateur.AUCUN));
+            // Boite de reception seule : ni coordonnee ni consentement a lire.
+            // Aucun appel sortant, donc aucune dependance a un autre service.
+            return Mono.just(Coordonnees.de(ClientContactsUtilisateur.AUCUN, Map.of()));
         }
 
-        return contacts.pour(demande.destinataireId())
-                .map(Coordonnees::de)
-                // L'erreur est traduite en etat, et non propagee : propagee,
-                // elle ferait echouer la notification ENTIERE, y compris ses
-                // canaux IN_APP et WEBSOCKET qui n'avaient besoin de rien.
-                .onErrorReturn(Coordonnees.indisponibles());
+        String secours = demande.destinataireDeSecours();
+        if (secours != null && !secours.isBlank()) {
+            // Coordonnee directe : la personne n'a pas de compte, donc ni
+            // profil chez user-service ni preferences chez setting-service.
+            //
+            // Aucun consentement a demander, et ce n'est pas une faille : ce
+            // chemin sert les confirmations d'inscription et les invitations,
+            // ou l'adresse vient de la personne elle-meme, a l'instant.
+            return Mono.just(Coordonnees.de(null, Map.of()));
+        }
+
+        // Les deux lectures en PARALLELE, et non l'une apres l'autre.
+        //
+        // Elles sont independantes, et les enchainer additionnerait leurs
+        // delais sur le chemin de chaque notification — jusqu'a six secondes
+        // pour deux services lents, alors que le pire cas doit rester trois.
+        return Mono.zip(
+                        contacts.pour(demande.destinataireId())
+                                // Traduite en etat ici, et non propagee : une
+                                // erreur ferait echouer la notification
+                                // ENTIERE, y compris ses canaux IN_APP et
+                                // WEBSOCKET qui n'avaient besoin de rien.
+                                .map(Optional::of)
+                                .onErrorReturn(Optional.empty()),
+                        // Ce client ne signale jamais d'erreur : il rend une
+                        // carte vide, et la politique de defaut s'applique.
+                        preferences.pour(demande.destinataireId()))
+                .map(deux -> deux.getT1()
+                        .map(trouves -> Coordonnees.de(trouves, deux.getT2()))
+                        .orElseGet(Coordonnees::indisponibles));
     }
 
     /**

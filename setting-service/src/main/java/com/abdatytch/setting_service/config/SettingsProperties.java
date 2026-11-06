@@ -27,7 +27,6 @@ import java.util.Map;
 public class SettingsProperties {
 
     private System system = new System();
-    private Notifications notifications = new Notifications();
     private Cache cache = new Cache();
 
     /**
@@ -44,13 +43,6 @@ public class SettingsProperties {
     @Data
     public static class System {
         private boolean registrationEnabled = true;
-    }
-
-    @Data
-    public static class Notifications {
-        private boolean emailEnabled = true;
-        private boolean smsEnabled = true;
-        private boolean pushEnabled = false;
     }
 
     @Data
@@ -117,9 +109,22 @@ public class SettingsProperties {
         // fait lever requireDefinition, donc sa ligne devient invisible et non
         // supprimable par l'API, tout en restant en base.
 
-        put(catalog, "notifications.email-enabled", notifications.isEmailEnabled(), SettingCategory.NOTIFICATIONS);
-        put(catalog, "notifications.sms-enabled", notifications.isSmsEnabled(), SettingCategory.NOTIFICATIONS);
-        put(catalog, "notifications.push-enabled", notifications.isPushEnabled(), SettingCategory.NOTIFICATIONS);
+        // Les trois interrupteurs de notification ont ete RETIRES.
+        //
+        // Ils etaient ecrits ici, exposes par l'API d'administration,
+        // modifiables — et lus par PERSONNE. Un administrateur qui desactivait
+        // les SMS depuis l'interface ne changeait rien : ils continuaient de
+        // partir, et de se payer.
+        //
+        // L'interrupteur vit desormais la ou il est applique, dans
+        // notification-service et son config-repo — devenu modifiable a chaud.
+        // Voir V3__retrait_interrupteurs_notifications.sql pour l'archive des
+        // decisions d'administrateur.
+        //
+        // Ce qui RESTE dans ce service : le consentement PAR PERSONNE, cles
+        // `notifications.canal.<canal>` du magasin par utilisateur. « La
+        // plateforme autorise ce canal » et « ma personne accepte ce canal »
+        // sont deux questions differentes.
 
         return catalog;
     }

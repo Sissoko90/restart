@@ -66,7 +66,7 @@ class SettingServiceImplTest {
      * restant n'a plus d'entier : la vérification de type porte donc sur un
      * booléen, ce qui exerce la même règle.
      */
-    private static final String TYPE_REFUSE = "notifications.email-enabled";
+    private static final String TYPE_REFUSE = "system.registration-enabled";
     private static final String USER_ID = "user-1";
     private static final String ADMIN = "admin-1";
 
@@ -234,13 +234,18 @@ class SettingServiceImplTest {
                 .expectNextCount(new SettingsProperties().catalog().size())
                 .verifyComplete();
 
-        // SettingCategory.SECURITY a été RETIRÉE : la politique de sécurité est
-        // portée par security-service. Le filtrage par catégorie est vérifié sur
-        // NOTIFICATIONS, qui reste — c'est le mécanisme qui est testé, pas la
-        // catégorie.
-        StepVerifier.create(service.getSystemSettingsByCategory(SettingCategory.NOTIFICATIONS))
+        // SECURITY puis NOTIFICATIONS ont ete RETIREES : la politique de
+        // securite est portee par security-service, et les interrupteurs de
+        // notification par le service qui les applique. Il ne reste qu'une
+        // categorie, SYSTEM — c'est le MECANISME de filtrage qui est teste, pas
+        // la categorie, donc la derniere suffit.
+        //
+        // Le jour ou il n'en resterait aucune, ce test deviendrait vert sans
+        // rien verifier : l'assertion de comptage ci-dessus le rattrape, car un
+        // catalogue vide ferait echouer getAllSystemSettings.
+        StepVerifier.create(service.getSystemSettingsByCategory(SettingCategory.SYSTEM))
                 .thenConsumeWhile(setting -> {
-                    assertThat(setting.getCategory()).isEqualTo(SettingCategory.NOTIFICATIONS);
+                    assertThat(setting.getCategory()).isEqualTo(SettingCategory.SYSTEM);
                     return true;
                 })
                 .verifyComplete();

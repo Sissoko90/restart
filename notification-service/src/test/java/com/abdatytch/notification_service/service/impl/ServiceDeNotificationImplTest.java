@@ -4,6 +4,7 @@ import com.abdatytch.commons.notification.CanalDeNotification;
 import com.abdatytch.commons.notification.CompteRenduDeRemise;
 import com.abdatytch.commons.notification.DemandeDeNotification;
 import com.abdatytch.notification_service.client.ClientContactsUtilisateur;
+import com.abdatytch.notification_service.client.ClientPreferencesUtilisateur;
 import com.abdatytch.notification_service.entities.Notification;
 import com.abdatytch.notification_service.entities.RemiseParCanal;
 import com.abdatytch.notification_service.metrics.NotificationMetrics;
@@ -55,6 +56,7 @@ class ServiceDeNotificationImplTest {
     private NotificationRepository notifications;
     private RemiseParCanalRepository remises;
     private ClientContactsUtilisateur client;
+    private ClientPreferencesUtilisateur prefs;
     private List<RemiseParCanal> ecrites;
 
     /**
@@ -96,6 +98,8 @@ class ServiceDeNotificationImplTest {
         notifications = mock(NotificationRepository.class);
         remises = mock(RemiseParCanalRepository.class);
         client = mock(ClientContactsUtilisateur.class);
+        prefs = mock(ClientPreferencesUtilisateur.class);
+        when(prefs.pour(anyString())).thenReturn(Mono.just(java.util.Map.of()));
         ecrites = new ArrayList<>();
 
         when(notifications.parDemandeId(any())).thenReturn(Mono.empty());
@@ -117,7 +121,7 @@ class ServiceDeNotificationImplTest {
                 notifications,
                 remises,
                 new MoteurDeModeles(new ClassPathResource("modeles-notification.properties")),
-                new ResolveurDeCoordonnees(client),
+                new ResolveurDeCoordonnees(client, prefs, true, false, false),
                 new NotificationMetrics(new SimpleMeterRegistry()),
                 new ObjectMapper(),
                 List.of(canaux));
@@ -286,6 +290,111 @@ class ServiceDeNotificationImplTest {
             assertThat(etatDe(CanalDeNotification.IN_APP))
                     .isEqualTo(CompteRenduDeRemise.Etat.REMIS);
             verify(client, never()).pour(anyString());
+        }
+    }
+
+    @Nested
+    @DisplayName("Quand la personne a refusé le canal")
+    class CanalRefuseParLaPersonne {
+
+        /**
+         * Le consentement est-il REELLEMENT applique.
+         *
+         * <p>Ce test existe parce que le contraire etait vrai : la garde de
+         * consentement pouvait etre retiree de l'orchestrateur sans qu'aucun
+         * test n'echoue. Le consentement etait lu, et personne ne verifiait
+         * qu'il decidait de quoi que ce soit — exactement la forme de defaut
+         * que ce depot passe son temps a deterrer.
+         *
+         * <p>Deux assertions, et la seconde porte autant que la premiere :
+         * l'etat ecrit doit etre REFUSE, et le canal ne doit <b>pas avoir ete
+         * appele</b>. Sans la seconde, un canal qui enverrait puis rendrait un
+         * refus passerait le test — et le SMS serait parti.
+         */
+        @Test
+        @DisplayName("le canal est REFUSÉ, et n'est même pas appelé")
+        void canalRefuseEtJamaisAppele() {
+            when(client.pour(anyString())).thenReturn(Mono.just(
+                    new ClientContactsUtilisateur.Contacts("personne@exemple.test", null)));
+            when(prefs.pour(anyString())).thenReturn(Mono.just(java.util.Map.of(
+                    com.abdatytch.commons.notification.ConsentementDeNotification
+                            .cle(CanalDeNotification.COURRIEL), "false")));
+
+            var courriel = new CanalEspion(CanalDeNotification.COURRIEL,
+                    CanalDeRemise.Resultat.remis());
+
+            service(courriel)
+                    .traiter(demande(List.of(CanalDeNotification.COURRIEL)))
+                    .block();
+
+            assertThat(etatDe(CanalDeNotification.COURRIEL))
+                    .isEqualTo(CompteRenduDeRemise.Etat.REFUSE);
+            assertThat(courriel.recu)
+                    .withFailMessage("Le canal a ete appele malgre le refus de la "
+                            + "personne : le message est parti")
+                    .isNull();
+        }
+
+        /**
+         * REFUSE et non ECHOUE, et la difference se chiffre en messages.
+         *
+         * <p>{@code aReprendre} exclut REFUSE et reprend ECHOUE. Un refus de la
+         * personne marque ECHOUE serait donc rejoue toutes les deux minutes :
+         * on renverrait un message a quelqu'un qui vient de dire non, en
+         * boucle, jusqu'a epuisement du plafond de tentatives.
+         */
+        @Test
+        @DisplayName("l'état est REFUSÉ, donc la reprise ne le rejouera jamais")
+        void refusNonReessayable() {
+            when(client.pour(anyString())).thenReturn(Mono.just(
+                    new ClientContactsUtilisateur.Contacts(null, "+22370000000")));
+            when(prefs.pour(anyString())).thenReturn(Mono.just(java.util.Map.of(
+                    com.abdatytch.commons.notification.ConsentementDeNotification
+                            .cle(CanalDeNotification.SMS), "false")));
+
+            var sms = new CanalEspion(CanalDeNotification.SMS,
+                    CanalDeRemise.Resultat.remis());
+
+            service(sms).traiter(demande(List.of(CanalDeNotification.SMS))).block();
+
+            assertThat(etatDe(CanalDeNotification.SMS))
+                    .isNotEqualTo(CompteRenduDeRemise.Etat.ECHOUE);
+            assertThat(etatDe(CanalDeNotification.SMS))
+                    .isEqualTo(CompteRenduDeRemise.Etat.REFUSE);
+        }
+
+        /**
+         * Un canal refuse n'empeche pas les autres.
+         *
+         * <p>Une alerte de securite vise plusieurs canaux. Si la personne a
+         * refuse le SMS, elle doit quand meme la voir dans sa boite de
+         * reception — refuser un canal n'est pas refuser d'etre prevenu.
+         */
+        @Test
+        @DisplayName("refuser un canal n'empêche pas la boîte de réception")
+        void refusNEmpechePasLesAutres() {
+            when(client.pour(anyString())).thenReturn(Mono.just(
+                    new ClientContactsUtilisateur.Contacts(null, "+22370000000")));
+            when(prefs.pour(anyString())).thenReturn(Mono.just(java.util.Map.of(
+                    com.abdatytch.commons.notification.ConsentementDeNotification
+                            .cle(CanalDeNotification.SMS), "false")));
+
+            var sms = new CanalEspion(CanalDeNotification.SMS,
+                    CanalDeRemise.Resultat.remis());
+            var inApp = new CanalEspion(CanalDeNotification.IN_APP,
+                    CanalDeRemise.Resultat.remis());
+
+            var compteRendu = service(sms, inApp)
+                    .traiter(demande(List.of(CanalDeNotification.SMS,
+                            CanalDeNotification.IN_APP)))
+                    .block();
+
+            assertThat(etatDe(CanalDeNotification.SMS))
+                    .isEqualTo(CompteRenduDeRemise.Etat.REFUSE);
+            assertThat(etatDe(CanalDeNotification.IN_APP))
+                    .isEqualTo(CompteRenduDeRemise.Etat.REMIS);
+            assertThat(compteRendu).isNotNull();
+            assertThat(compteRendu.rendu()).isTrue();
         }
     }
 }

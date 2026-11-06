@@ -1,6 +1,7 @@
 package com.abdatytch.setting_service.security;
 
 import com.abdatytch.commons.security.CheminDeDecision;
+import com.abdatytch.commons.security.CheminInterne;
 import com.abdatytch.commons.security.CheminsPublics;
 import com.abdatytch.commons.security.GatewayClientIp;
 import com.abdatytch.commons.security.HMACSignatureUtil;
@@ -128,6 +129,23 @@ public class GatewayAccessWebFilter implements WebFilter, Ordered {
         if (!("localhost".equals(adresse) || PrivateNetworks.contient(adresse))) {
             log.warn(" Acces direct bloque depuis {} sur {}", adresse, path);
             return forbidden(exchange, "Requete hors Gateway");
+        }
+
+        // Appel inter-services : la signature de passerelle est levee.
+        //
+        // APRES le controle d'adresse ci-dessus, et l'ordre compte : un chemin
+        // /internal reste reserve au reseau prive. La passerelle n'expose
+        // aucune route vers /internal/**, donc il est injoignable du dehors.
+        //
+        // Ce qui protege ce chemin a la place : l'adresse privee verifiee
+        // ci-dessus, et X-Internal-Secret compare a temps constant par
+        // AutorisationInterne dans la chaine de securite.
+        //
+        // Trois des quatre autres modules avaient oublie cette exemption, et
+        // leurs surfaces internes repondaient 403 — dont une appelee pour de
+        // vrai. Voir CheminInterne.
+        if (CheminInterne.correspond(path)) {
+            return chain.filter(exchange);
         }
 
         String timestamp = request.getHeaders().getFirst("X-Gateway-Timestamp");

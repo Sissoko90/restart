@@ -6,8 +6,9 @@
 # Exige par auth-service sur /internal/auth/** (X-Internal-Secret), et par
 # interface-service sur /internal/jwt/**. Distinct de gateway.secret.key, qui
 # authentifie le Gateway aupres des services et non un service aupres d'un autre.
-security:
-  internal-secret: ${INTERNAL_SERVICE_SECRET}
+# security.internal-secret est declare dans application-dev.yml, pour les cinq
+# services qui le lisent. Un secret partage est le MEME partout : declare par
+# service, il finirait par differer, et n'autoriserait plus rien.
 
 # ==========================================
 # APPELS DE SERVICE A SERVICE

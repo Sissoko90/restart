@@ -419,6 +419,24 @@ jwt:
 # ==========================================
 # Protection complète : ZIP bombs, IP blacklist, XSS, CSP, CORS, Rate limiting
 security:
+
+  # Secret des appels inter-services. UNE declaration, CINQ lecteurs.
+  #
+  # Il est lu par auth-service, interface-service, user-service,
+  # notification-service et platform-commons (AutorisationInterne). Il etait
+  # declare par DEUX fichiers seulement — auth-service et user-service — plus le
+  # application.yml local d'interface-service.
+  #
+  # notification-service le lisait SANS declaration : ses lecteurs utilisent la
+  # forme a defaut vide, donc aucune erreur au demarrage, mais AutorisationInterne
+  # refusait chaque appel interne et ses deux clients envoyaient un secret vide.
+  # POST /internal/sms et la lecture des coordonnees etaient donc inoperants, en
+  # silence.
+  #
+  # Un seul endroit : c'est par definition le MEME secret pour tous les services —
+  # un secret partage qui differerait d'un service a l'autre n'autoriserait plus
+  # rien.
+  internal-secret: ${INTERNAL_SERVICE_SECRET}
   # Protection contre les fichiers compressés malveillants
   zipbomb:
     enabled: ${ZIPBOMB_ENABLED:true}
