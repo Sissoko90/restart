@@ -167,12 +167,27 @@ public class ServiceDeNotificationImpl implements IServiceDeNotification {
 
     private Mono<CompteRenduDeRemise> remettreParCanaux(DemandeDeNotification demande,
                                                         Notification enregistree) {
+        // Les contacts sont resolus UNE fois, avant la boucle.
+        //
+        // Les resoudre dans `essayer` aurait produit un appel a user-service par
+        // canal — quatre pour une notification critique. Sur le chemin d'une
+        // alerte de securite, c'est quatre fois plus d'occasions qu'une panne de
+        // user-service fasse perdre le message.
+        return resolveur.contactsPour(demande)
+                .flatMap(coordonnees -> remettreParCanaux(demande, enregistree, coordonnees));
+    }
+
+    private Mono<CompteRenduDeRemise> remettreParCanaux(
+            DemandeDeNotification demande,
+            Notification enregistree,
+            ResolveurDeCoordonnees.Coordonnees coordonnees) {
+
         List<CompteRenduDeRemise.RemiseParCanal> journal = new ArrayList<>();
         boolean toutEssayer = demande.urgence() == DemandeDeNotification.Urgence.CRITIQUE;
         boolean unSeulCanal = demande.urgence() == DemandeDeNotification.Urgence.INFORMATION;
 
         return Flux.fromIterable(demande.canaux())
-                .concatMap(canal -> essayer(demande, enregistree, canal)
+                .concatMap(canal -> essayer(demande, enregistree, canal, coordonnees)
                         .doOnNext(remise -> {
                             journal.add(remise.versCompteRendu());
                             metriques.remise(remise.getCanal(), remise.getEtat());
@@ -216,7 +231,8 @@ public class ServiceDeNotificationImpl implements IServiceDeNotification {
 
     private Mono<RemiseParCanal> essayer(DemandeDeNotification demande,
                                          Notification enregistree,
-                                         CanalDeNotification canal) {
+                                         CanalDeNotification canal,
+                                         ResolveurDeCoordonnees.Coordonnees coordonnees) {
         CanalDeRemise implementation = canaux.get(canal);
         if (implementation == null) {
             // Un canal demande qu'aucune implementation ne couvre. Le declarer
@@ -230,6 +246,28 @@ public class ServiceDeNotificationImpl implements IServiceDeNotification {
                     CompteRenduDeRemise.Etat.REFUSE, "canal inactif");
         }
 
+        // ECHOUE et non REFUSE, et c'est toute la difference.
+        //
+        // user-service n'a pas repondu : rien ne dit que cette personne n'a pas
+        // d'adresse. La marquer REFUSE la rendrait non reessayable, et chaque
+        // incident de user-service perdrait silencieusement des notifications —
+        // y compris des alertes de securite.
+        //
+        // Le controle est ici et non dans les canaux : savoir si un autre
+        // service etait joignable n'est pas l'affaire d'un canal de remise, et
+        // le poser une fois evite que les trois canaux a coordonnee en portent
+        // chacun leur version.
+        // La garde porte sur les canaux A COORDONNEE seulement. IN_APP et
+        // WEBSOCKET routent sur l'identifiant du porteur : une panne de
+        // user-service ne doit pas empecher une notification d'arriver dans la
+        // boite de reception, sans quoi un incident chez un voisin coucherait
+        // le chemin qui ne depend de personne.
+        if (coordonnees != null && coordonnees.indisponible()
+                && resolveur.aBesoinDUneCoordonnee(canal)) {
+            return enregistrer(enregistree.getId(), canal,
+                    CompteRenduDeRemise.Etat.ECHOUE, "coordonnees indisponibles");
+        }
+
         var contenu = moteur.rendre(demande.modele(), canal, demande.variables());
         if (contenu.isEmpty()) {
             return enregistrer(enregistree.getId(), canal,
@@ -238,7 +276,7 @@ public class ServiceDeNotificationImpl implements IServiceDeNotification {
 
         var message = new CanalDeRemise.MessageARemettre(
                 demande.destinataireId(),
-                resolveur.pour(demande, canal),
+                resolveur.pour(demande, canal, coordonnees),
                 contenu.get().sujet(),
                 contenu.get().corps(),
                 demande.urgence(),

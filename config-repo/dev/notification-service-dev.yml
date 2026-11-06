@@ -191,6 +191,29 @@ management:
 # Toutes les autres valeurs portent un défaut : une variable absente ne doit pas
 # empêcher le service de démarrer, elle doit produire un avertissement explicite
 # au démarrage (voir SmsServiceImpl.verifierLaConfiguration).
+# ==========================================================
+# user-service : ou joindre une personne
+# ==========================================================
+#
+# Ce service ne detient AUCUN contact, et c'est voulu : une adresse recopiee ici
+# serait une seconde verite, et un message partirait a l'ancienne apres un
+# changement. Les coordonnees sont demandees a user-service, par
+# GET /internal/users/auth/{sub} — un chemin que la passerelle ne route pas.
+#
+# Aucun cache local non plus : user-service sert cet appel depuis son propre
+# cache Redis, invalide a chaque modification de profil. Un cache ici n'aurait
+# aucun moyen d'etre invalide.
+#
+# Vide, les canaux COURRIEL, SMS et PUSH refusent toute remise et le demarrage
+# le signale en ERROR. IN_APP et WEBSOCKET continuent de fonctionner : ils
+# routent sur l'identifiant du porteur.
+user-service:
+  url: ${USER_SERVICE_URL:http://localhost:8083}
+  # Court : cet appel est sur le chemin de CHAQUE notification a coordonnee, et
+  # user-service repond depuis son cache. Au-dela, la notification est marquee
+  # ECHOUE — donc reprise plus tard, et non perdue.
+  timeout-seconds: ${USER_SERVICE_TIMEOUT_SECONDS:3}
+
 sms:
   provider: ${SMS_PROVIDER:afriksms}
 
