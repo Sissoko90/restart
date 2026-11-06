@@ -7,6 +7,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
+import com.abdatytch.commons.notification.DemandeDeNotification;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Component;
@@ -55,8 +57,53 @@ public class CanalCourriel implements CanalDeRemise {
     @Value("${notification.email.reply-to:}")
     private String adresseReponse;
 
-    public CanalCourriel(JavaMailSender expediteur) {
+    /**
+     * Le compte des notifications CRITIQUES.
+     *
+     * <p>Alertes de securite, codes de verification. Un compte dedie garde leur
+     * reputation d'expedition separee de celle du trafic ordinaire : un courriel
+     * marque indesirable parce qu'une campagne a sature le compte commun est un
+     * code que personne ne recoit.
+     *
+     * <p>Il retombe sur les reglages du compte ordinaire s'il n'est pas
+     * configure — un second compte ameliore la remise, il n'en est pas la
+     * condition.
+     */
+    private final JavaMailSender expediteurCritique;
+
+    /**
+     * Les deux injections portent un {@code @Qualifier}, et ce n'est pas du
+     * zele.
+     *
+     * <p>interface-service avait trois {@code JavaMailSender} sans aucun
+     * qualificateur, dont un {@code @Primary} : mesure faite, le parametre
+     * nomme {@code mailSender} recevait le compte d'ADMINISTRATION, et tous les
+     * courriels ordinaires partaient par lui. Deux des trois cablages etaient
+     * pourtant corrects, ce qui rendait le defaut tres difficile a voir.
+     */
+    public CanalCourriel(
+            @Qualifier("expediteurOrdinaire") JavaMailSender expediteur,
+            @Qualifier("expediteurCritique") JavaMailSender expediteurCritique) {
         this.expediteur = expediteur;
+        this.expediteurCritique = expediteurCritique;
+    }
+
+    /**
+     * Le compte a employer pour ce message.
+     *
+     * <p>L'urgence vient de l'emetteur, par {@code DemandeDeNotification}, et
+     * c'est la seule information dont ce canal dispose pour trancher. Elle
+     * suffit : ce qui justifie un compte separe est l'enjeu du message, pas son
+     * contenu.
+     *
+     * <p>{@code null} n'est pas un cas particulier a part : une urgence absente
+     * vaut « ordinaire », ce qui est le repli sans surprise — on ne promeut pas
+     * un message au compte critique faute de savoir.
+     */
+    private JavaMailSender expediteurPour(MessageARemettre message) {
+        return message.urgence() == DemandeDeNotification.Urgence.CRITIQUE
+                ? expediteurCritique
+                : expediteur;
     }
 
     @jakarta.annotation.PostConstruct
@@ -97,7 +144,7 @@ public class CanalCourriel implements CanalDeRemise {
                     courriel.setTo(message.coordonnee());
                     courriel.setSubject(message.sujet());
                     courriel.setText(message.corps());
-                    expediteur.send(courriel);
+                    expediteurPour(message).send(courriel);
                     return Resultat.remis();
                 })
                 .subscribeOn(Schedulers.boundedElastic())

@@ -175,6 +175,37 @@ notification:
     delai-initial-secondes: ${NOTIFICATION_REPRISE_DELAI_INITIAL:60}
 
   email:
+    # --- Second compte SMTP, pour les notifications CRITIQUES ---
+    #
+    # Alertes de securite et codes de verification. Un compte dedie garde leur
+    # reputation d'expedition separee de celle du trafic ordinaire : un courriel
+    # marque indesirable parce qu'une campagne a sature le compte commun est un
+    # code que personne ne recoit.
+    #
+    # Chaque valeur RETOMBE sur celle du compte ordinaire (spring.mail.*) quand
+    # elle n'est pas renseignee. Un second compte ameliore la remise, il n'en
+    # est pas la condition — sans ce repli, ne pas le configurer aurait coupe
+    # les alertes de securite, c'est-a-dire exactement celles qui doivent
+    # arriver.
+    #
+    # Les deux comptes sont declares EXPLICITEMENT en Java, et c'est
+    # obligatoire : MailSenderAutoConfiguration recule des qu'un JavaMailSender
+    # existe. interface-service l'a paye — un de ses trois comptes etait
+    # configure et jamais utilise.
+    # Le repli est ECRIT ICI, et non en defaut de @Value cote Java.
+    #
+    # La raison est une regle de Spring qu'on oublie : un defaut de @Value ne
+    # s'applique que si la propriete est ABSENTE. Declarer
+    # `port: ${NOTIFICATION_EMAIL_CRITIQUE_PORT:}` rend une chaine VIDE, donc la
+    # propriete existe, donc le defaut imbrique cote Java n'est jamais consulte
+    # — et `@Value("${...port:587}")` sur un int leve NumberFormatException au
+    # demarrage. Ce depot a deja paye cette regle sur un prefixe de cle Redis.
+    critique:
+      host: ${NOTIFICATION_EMAIL_CRITIQUE_HOST:${SMTP_HOST:localhost}}
+      port: ${NOTIFICATION_EMAIL_CRITIQUE_PORT:${SMTP_PORT:1025}}
+      username: ${NOTIFICATION_EMAIL_CRITIQUE_USERNAME:${SMTP_USERNAME:}}
+      password: ${NOTIFICATION_EMAIL_CRITIQUE_PASSWORD:${SMTP_PASSWORD:}}
+
     # VIDE par defaut, et non une adresse inventee.
     #
     # Le fichier precedent posait noreply@dev.microservices.com — un domaine
