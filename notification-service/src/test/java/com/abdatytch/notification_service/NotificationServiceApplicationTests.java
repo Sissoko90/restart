@@ -2,6 +2,7 @@ package com.abdatytch.notification_service;
 
 import com.abdatytch.notification_service.repositories.NotificationRepository;
 import com.abdatytch.notification_service.repositories.RemiseParCanalRepository;
+import com.abdatytch.notification_service.repositories.SurchargeDeModeleRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -56,6 +57,21 @@ class NotificationServiceApplicationTests {
 
 	@MockitoBean
 	private RemiseParCanalRepository remiseParCanalRepository;
+
+	/**
+	 * Le depot des surcharges de modeles, exige par {@code MoteurDeModeles}.
+	 *
+	 * <p>Il n'est pas stubbe, et ce n'est pas un oubli. {@code findAll()} rend
+	 * donc {@code null}, ce que {@code Flux.defer} transforme en signal d'erreur
+	 * — pris par l'{@code onErrorResume} du moteur, qui conserve son instantane
+	 * precedent, c'est-a-dire vide. Le contexte se charge, le fichier sert seul.
+	 *
+	 * <p>C'est exactement la degradation voulue au demarrage, et ce test la
+	 * traverse gratuitement : le service rend des notifications sans attendre sa
+	 * base.
+	 */
+	@MockitoBean
+	private SurchargeDeModeleRepository surchargeDeModeleRepository;
 
 	@Test
 	@DisplayName("le cablage Spring tient")

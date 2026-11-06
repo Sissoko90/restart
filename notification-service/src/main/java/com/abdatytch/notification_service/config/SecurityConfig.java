@@ -103,6 +103,31 @@ public class SecurityConfig {
                         // l'authentifie est le secret partage, compare a temps
                         // constant par AutorisationInterne.
                         .pathMatchers("/internal/**").access(autorisationInterne)
+                        // L'ADMINISTRATION, et cette regle MANQUAIT.
+                        //
+                        // media-service, quotas-service, setting-service,
+                        // user-service et auth-service la portent tous. Ce
+                        // module, non — alors que le javadoc d'AdminSmsController
+                        // affirmait en etre protege et qualifiait ses
+                        // @PreAuthorize de simple doublon « qui ne la remplace
+                        // pas ».
+                        //
+                        // Sans elle, /admin/sms/** tombait dans
+                        // anyExchange().authenticated() : la chaine laissait
+                        // passer TOUT porteur authentifie, et seule l'annotation
+                        // refusait. Elle fonctionne — @EnableReactiveMethodSecurity
+                        // est bien actif sur cette classe — donc il n'y avait pas
+                        // de trou ouvert ; mais la defense en profondeur decrite
+                        // n'existait pas, et ce depot a deja trouve
+                        // trente-trois @PreAuthorize rendues inertes par l'absence
+                        // de cette annotation. Reposer sur elle seule, c'est
+                        // reposer sur la couche qui a deja disparu une fois.
+                        //
+                        // AVANT anyExchange, et c'est obligatoire : les matchers
+                        // sont evalues dans l'ordre, donc place apres, ce controle
+                        // ne serait jamais atteint. CouvertureDesCheminsAdminTest
+                        // garde la presence ET la position.
+                        .pathMatchers("/admin/**").hasRole("ADMIN")
                         // Tout le reste — la boite de reception et le flux temps
                         // reel — exige un porteur authentifie. Le filtrage par
                         // destinataire se fait ENSUITE, dans les requetes.

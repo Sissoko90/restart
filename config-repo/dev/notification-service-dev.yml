@@ -174,6 +174,31 @@ notification:
     # Laisse le temps au service de finir de demarrer avant la premiere passe.
     delai-initial-secondes: ${NOTIFICATION_REPRISE_DELAI_INITIAL:60}
 
+  modeles:
+    # Intervalle de relecture de la table surcharge_de_modele.
+    #
+    # LE SEUL mecanisme de convergence des textes. Les modeles vivent dans
+    # modeles-notification.properties, livre avec le code ; la table ne porte
+    # que les corrections posees a chaud par /api/v1/admin/modeles, et le
+    # moteur en tient un instantane en memoire.
+    #
+    # POURQUOI UN INSTANTANE ET NON UNE LECTURE PAR RENDU : le rendu est appele
+    # une fois par canal dans le chemin de remise, et une fois par notification
+    # dans la boite de reception. Une lecture en base a chaque rendu ferait donc
+    # une requete par notification affichee — le defaut N+1, sur l'ecran le plus
+    # consulte du service.
+    #
+    # Une ecriture par l'API recharge immediatement l'instance qui l'a recue, de
+    # sorte que l'exploitant constate son changement tout de suite. Cet
+    # intervalle est ce qui amene les AUTRES instances a la meme valeur, sans
+    # qu'il faille agir sur chacune.
+    #
+    # Pas modifiable a chaud, et c'est une consequence assumee : une tache
+    # @Scheduled est enregistree une seule fois au demarrage, donc la classe qui
+    # la porte ne peut pas etre @RefreshScope — elle cesserait de s'executer.
+    # Le CONTENU des modeles, lui, est bien modifiable a chaud : c'est le besoin.
+    rechargement-ms: ${NOTIFICATION_MODELES_RECHARGEMENT_MS:60000}
+
   email:
     # --- Second compte SMTP, pour les notifications CRITIQUES ---
     #

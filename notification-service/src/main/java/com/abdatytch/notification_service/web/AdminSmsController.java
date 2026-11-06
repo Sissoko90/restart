@@ -22,6 +22,17 @@ import reactor.core.publisher.Mono;
  * {@code @PreAuthorize} la doublent et ne la remplacent pas : ce dépôt a déjà
  * trouvé 33 {@code @PreAuthorize} inertes faute de
  * {@code @EnableReactiveMethodSecurity}, qui est depuis en place.
+ *
+ * <p><b>Ce paragraphe a été faux.</b> La règle {@code /admin/**} n'existait pas
+ * dans ce module — cinq autres la portaient, pas celui-ci — donc ces chemins
+ * tombaient dans {@code anyExchange().authenticated()} et seule l'annotation
+ * refusait. Elle fonctionnait, il n'y avait donc pas de trou ouvert ; mais la
+ * couche décrite comme « celle qui fait foi » était absente, et la seule
+ * protection réelle était celle présentée comme un simple doublon.
+ *
+ * <p>La règle est désormais posée, et {@code CouvertureDesCheminsAdminTest}
+ * garde sa présence et sa position : une affirmation de ce genre doit être
+ * vérifiée par un test, pas crue sur parole dans un commentaire.
  */
 @RestController
 @RequestMapping("/admin/sms")

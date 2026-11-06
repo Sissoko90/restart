@@ -267,6 +267,15 @@ public final class CheminCible {
         // credit epuise. Un credit epuise ne produit aucune erreur HTTP :
         // l'envoi repond 200 avec un code de refus.
         SERVICES_PAR_PREFIXE.put("/api/v1/admin/sms", "notification-service");
+        // L'administration des TEXTES de notification.
+        //
+        // Declaree ici parce que RoutageCoherentTest l'a exigee, et il avait
+        // raison pour une raison que l'ajout de la route seule ne faisait pas
+        // voir : sans cette ligne, une maintenance de notification-service
+        // laisserait passer les corrections de modeles — ou, pire, une
+        // maintenance d'interface-service les couperait, puisque le prefixe
+        // serait retombe sur /api/v1/admin declare un peu plus bas.
+        SERVICES_PAR_PREFIXE.put("/api/v1/admin/modeles", "notification-service");
         // EN DERNIER : capturerait les trois precedents sinon.
         SERVICES_PAR_PREFIXE.put("/api/v1/admin", "interface-service");
     }

@@ -1,18 +1,26 @@
 package com.abdatytch.notification_service.service.impl;
 
 import com.abdatytch.commons.notification.CanalDeNotification;
+import com.abdatytch.notification_service.entities.SurchargeDeModele;
+import com.abdatytch.notification_service.repositories.SurchargeDeModeleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 /**
  * Rend le contenu d'une notification, par canal.
@@ -44,24 +52,97 @@ import java.util.Properties;
  *
  * <p>Le jour ou le HTML devient necessaire, il faudra un moteur — avec
  * echappement par defaut, et des variables jamais traitees comme du gabarit.
+ *
+ * <h2>DEUX COUCHES : le fichier, puis la base</h2>
+ *
+ * Le fichier est le <b>socle</b>, charge une fois au demarrage depuis le chemin
+ * de classe. La table {@code surcharge_de_modele} ne porte que les corrections
+ * posees a chaud, et prend le pas sur lui.
+ *
+ * <p>Trois raisons de garder le fichier au-dessous plutot que de tout mettre en
+ * base :
+ *
+ * <ul>
+ *   <li>une table vide se comporte exactement comme avant son existence, donc
+ *       aucune migration n'a a recopier correctement les modeles sous peine de
+ *       notifications sans texte ;</li>
+ *   <li>les modeles sont sur le chemin des codes de verification : les faire
+ *       dependre de la base rendrait une panne de base equivalente a « plus
+ *       aucun code ne part » ;</li>
+ *   <li>le fichier est dans git, donc relu et versionne ; la table est la voie
+ *       de correction d'urgence.</li>
+ * </ul>
+ *
+ * <h2>Le rendu reste SYNCHRONE, et c'est la contrainte qui decide de tout</h2>
+ *
+ * {@code rendre} est appele a deux endroits, tous deux synchrones : dans le
+ * chemin de remise ({@code ServiceDeNotificationImpl}) et dans le rendu de la
+ * <b>boite de reception</b> ({@code NotificationController}).
+ *
+ * <p>Ce second appelant tranche la question. La boite de reception rend une
+ * PAGE de notifications, une par une, dans un mapper. Une lecture en base a
+ * chaque rendu y ferait une requete par notification affichee — le defaut N+1,
+ * sur l'ecran le plus consulte du service. Et dans le chemin de remise, une
+ * notification {@code CRITIQUE} viserait quatre canaux, donc quatre lectures du
+ * meme modele.
+ *
+ * <p>Les surcharges sont donc tenues en memoire, dans un instantane remplace
+ * d'un bloc. Un {@link AtomicReference} vers une carte immuable, et non une
+ * carte mutable : un rendu en cours ne peut pas observer un instantane a moitie
+ * remplace.
+ *
+ * <h2>Un seul mecanisme de rechargement</h2>
+ *
+ * Le rechargement est <b>periodique</b>, et c'est la l'unique mecanisme de
+ * convergence : chaque instance finit par voir une correction sans qu'un
+ * exploitant ait a agir sur chacune. Une ecriture par l'API d'administration
+ * recharge en plus immediatement l'instance qui l'a recue — ce n'est pas un
+ * second mecanisme, c'est le meme, declenche tot, pour que l'exploitant
+ * constate son changement tout de suite.
+ *
+ * <p>Pas de {@code @RefreshScope} sur cette classe, et c'est <b>obligatoire</b>
+ * : une tache {@code @Scheduled} est enregistree une seule fois, au demarrage,
+ * et n'est jamais reenregistree sur le mandataire recree par un rafraichissement
+ * — la tache cesserait donc de s'executer. La regle est gardee par
+ * {@code RefreshScopeSansPlanificationTest} dans platform-commons. Le delai est
+ * par consequent lu au demarrage et ne se modifie pas a chaud ; en revanche le
+ * CONTENU des modeles, lui, est bien modifiable a chaud — c'est le besoin.
  */
 @Component
 public class MoteurDeModeles {
 
     private static final Logger log = LoggerFactory.getLogger(MoteurDeModeles.class);
 
-    private final Properties modeles = new Properties();
+    /** Le socle : le fichier du chemin de classe. Jamais modifie apres le demarrage. */
+    private final Properties socle = new Properties();
 
-    public MoteurDeModeles(@Value("classpath:modeles-notification.properties") Resource fichier) {
+    private final SurchargeDeModeleRepository surcharges;
+
+    /**
+     * L'instantane des surcharges.
+     *
+     * <p>Vide jusqu'au premier rechargement, qui a lieu des le demarrage. Entre
+     * les deux, le socle sert seul : c'est la degradation voulue, et non une
+     * fenetre a refermer. L'inverse — attendre la base avant d'accepter de
+     * rendre — ferait dependre le demarrage du service d'une dependance, ce que
+     * la politique de ce depot refuse.
+     */
+    private final AtomicReference<Map<String, String>> instantane =
+            new AtomicReference<>(Map.of());
+
+    public MoteurDeModeles(@Value("classpath:modeles-notification.properties") Resource fichier,
+                           SurchargeDeModeleRepository surcharges) {
+        this.surcharges = surcharges;
         try (var lecteur = new InputStreamReader(fichier.getInputStream(), StandardCharsets.UTF_8)) {
-            modeles.load(lecteur);
-            log.info("{} cles de modeles chargees", modeles.size());
+            socle.load(lecteur);
+            log.info("{} cles de modeles chargees depuis le fichier", socle.size());
         } catch (IOException absent) {
             // Le demarrage n'est PAS bloque — politique du projet. Mais chaque
             // rendu echouera, et c'est dit une fois, fort, au lieu d'etre
             // decouvert notification par notification.
             log.error("modeles-notification.properties illisible : AUCUNE "
-                    + "notification ne pourra etre rendue ({})", absent.getMessage());
+                    + "notification ne pourra etre rendue, sauf celles dont la "
+                    + "cle est surchargee en base ({})", absent.getMessage());
         }
     }
 
@@ -79,11 +160,132 @@ public class MoteurDeModeles {
                 substituer(corps, variables)));
     }
 
-    /** La valeur la plus specifique disponible : canal d'abord, modele ensuite. */
+    /**
+     * La valeur la plus specifique disponible.
+     *
+     * <h3>L'ordre : la SPECIFICITE d'abord, la couche ensuite</h3>
+     *
+     * Pour chaque cle candidate — d'abord celle du canal, puis celle du repli —
+     * la surcharge est consultee avant le socle. Et non l'inverse : toutes les
+     * surcharges, puis tout le socle.
+     *
+     * <p>Cette difference n'est pas theorique. Le fichier porte
+     * {@code securite.code-de-verification.sms.corps}, une variante COURTE
+     * ecrite pour tenir en 160 caracteres. Si un exploitant corrige seulement le
+     * texte generique {@code securite.code-de-verification.corps} — ecrit pour
+     * le courriel, donc long :
+     *
+     * <ul>
+     *   <li>dans l'ordre retenu, le SMS continue d'utiliser sa variante courte.
+     *       La correction ne touche que ce qu'elle visait ;</li>
+     *   <li>dans l'ordre inverse, la surcharge generique passerait DEVANT la
+     *       variante SMS du fichier. Le SMS partirait tronque, ou compterait
+     *       pour plusieurs credits — sans que rien ne le signale.</li>
+     * </ul>
+     *
+     * <p>Autrement dit : une variante de canal est plus specifique qu'une
+     * couche. Pour changer aussi le SMS, il faut surcharger la cle du SMS — et
+     * {@code GET /admin/modeles} liste justement les cles effectives, variantes
+     * de canal comprises, pour que cela se voie au lieu de se deviner.
+     */
     private String valeur(String modele, CanalDeNotification canal, String partie) {
-        String parCanal = modeles.getProperty(
-                modele + "." + canal.name().toLowerCase(java.util.Locale.ROOT) + "." + partie);
-        return parCanal != null ? parCanal : modeles.getProperty(modele + "." + partie);
+        String avecCanal = modele + "." + canal.name().toLowerCase(Locale.ROOT) + "." + partie;
+        String resolue = effective(avecCanal);
+        return resolue != null ? resolue : effective(modele + "." + partie);
+    }
+
+    /** Une cle exacte : la surcharge si elle existe, le socle sinon. */
+    private String effective(String cle) {
+        String surchargee = instantane.get().get(cle);
+        return surchargee != null ? surchargee : socle.getProperty(cle);
+    }
+
+    /**
+     * Relit les surcharges et remplace l'instantane.
+     *
+     * <h3>Une panne de base NE VIDE PAS les surcharges</h3>
+     *
+     * L'instantane precedent est conserve en cas d'erreur. Le remplacer par du
+     * vide ferait revenir en silence aux textes du fichier — donc annulerait
+     * une correction d'urgence au moment ou la base hoquette, et la
+     * retablirait au rechargement suivant. Un texte qui oscille est pire qu'un
+     * texte perime.
+     *
+     * <h3>{@code Flux.defer} et non l'appel direct</h3>
+     *
+     * Un appel direct a {@code findAll()} qui leverait de facon SYNCHRONE —
+     * acquisition de connexion impossible, pool epuise — ferait echapper
+     * l'exception de la chaine, donc passerait a cote de l'{@code onErrorResume}
+     * ci-dessous. La promesse « une panne conserve l'instantane precedent » ne
+     * tiendrait alors que pour les erreurs asynchrones, c'est-a-dire pas pour la
+     * panne la plus probable.
+     *
+     * <p>Cela compte d'autant plus que la tache planifiee part a
+     * {@code initialDelay = 0}, donc pendant l'initialisation du contexte : le
+     * moment ou une dependance a le plus de chances de ne pas etre prete.
+     *
+     * @return le nombre de surcharges en vigueur apres l'operation
+     */
+    public Mono<Integer> rechargerMaintenant() {
+        return reactor.core.publisher.Flux.defer(surcharges::findAll)
+                .collect(Collectors.toUnmodifiableMap(
+                        SurchargeDeModele::getCle, SurchargeDeModele::getValeur))
+                .doOnNext(lues -> {
+                    instantane.set(lues);
+                    log.debug("{} surcharges de modeles en vigueur", lues.size());
+                })
+                .map(Map::size)
+                .onErrorResume(panne -> {
+                    log.error("Lecture des surcharges de modeles impossible, "
+                            + "les {} surcharges precedentes restent en vigueur : {}",
+                            instantane.get().size(), panne.getMessage());
+                    return Mono.just(instantane.get().size());
+                });
+    }
+
+    /**
+     * Le rechargement periodique.
+     *
+     * <p>{@code initialDelay} a zero : le premier passage a lieu au demarrage,
+     * ce qui evite un second chemin de chargement initial a cote de celui-ci.
+     * Un seul mecanisme, donc une seule chose a verifier.
+     *
+     * <p>{@code subscribe} explicite, avec son gestionnaire d'erreur : un
+     * {@code Mono} non souscrit ne s'execute pas, et ce depot a deja trouve des
+     * chaines reactives construites puis abandonnees. L'erreur est deja traitee
+     * dans {@code rechargerMaintenant}, le gestionnaire ici ne couvre que
+     * l'imprevu.
+     */
+    @Scheduled(fixedDelayString = "${notification.modeles.rechargement-ms:60000}",
+            initialDelay = 0)
+    public void rechargerPeriodiquement() {
+        rechargerMaintenant().subscribe(
+                nombre -> { },
+                imprevu -> log.error("Rechargement des modeles interrompu : {}",
+                        imprevu.getMessage()));
+    }
+
+    /** Les surcharges en vigueur, pour l'API d'administration. */
+    public Map<String, String> surchargesEnVigueur() {
+        return instantane.get();
+    }
+
+    /** Les cles du fichier, pour l'API d'administration. */
+    public Set<String> clesDuSocle() {
+        return socle.stringPropertyNames();
+    }
+
+    /**
+     * Le texte du fichier pour une cle exacte, sans tenir compte des surcharges.
+     *
+     * <p>Expose pour que l'API d'administration montre ce qui reprendrait effet
+     * si l'on retirait une surcharge. Elle le lit ICI et ne recharge pas le
+     * fichier de son cote : deux lecteurs du meme fichier finissent par ne plus
+     * dire la meme chose, et c'est le moteur qui fait foi puisque c'est lui qui
+     * rend.
+     */
+    public String valeurDuSocle(String cle) {
+        return socle.getProperty(cle);
     }
 
     /**
@@ -95,6 +297,10 @@ public class MoteurDeModeles {
      * contiendrait elle-meme {@code {autreCle}} reste donc litterale : sans
      * cela, un emetteur pourrait faire lire une variable qu'il n'a pas fournie,
      * ou provoquer une recursion.
+     *
+     * <p>Cela compte doublement depuis que les textes sont modifiables a chaud :
+     * un gabarit surcharge vient d'une table, et non plus seulement d'un fichier
+     * relu en revue de code.
      *
      * <p>Une cle absente du gabarit laisse le marqueur en place plutot que
      * d'inserer « null » : un texte ou l'on voit {@code {nomDuProjet}} se

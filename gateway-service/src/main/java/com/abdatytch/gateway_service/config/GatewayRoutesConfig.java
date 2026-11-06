@@ -361,6 +361,28 @@ public class GatewayRoutesConfig {
                 .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
                 .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
             )
+            // Administration des TEXTES de notification : correction a chaud des
+            // modeles, sans livraison.
+            //
+            // Meme raison d'etre ici que la route SMS juste au-dessus, et meme
+            // piege evite : /api/v1/admin/** part vers interface-service, qui ne
+            // porte pas /admin/modeles. Sans cette route, les trois endpoints
+            // rendraient 404 — une API d'administration ecrite, testee, et
+            // injoignable.
+            //
+            // AVANT la route generale /api/v1/admin/** : la premiere route qui
+            // correspond gagne.
+            //
+            // GET, PUT et DELETE seulement, parce que le controleur n'expose que
+            // ces trois methodes. Ouvrir POST acheminerait une methode qu'aucun
+            // gestionnaire ne sert, donc un 405 venu du service au lieu d'un 404
+            // venu de la passerelle — plus difficile a diagnostiquer, pour
+            // aucun gain.
+            .nest(path("/api/v1/admin/modeles/**"), builder -> builder
+                .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
+                .PUT("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
+                .DELETE("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
+            )
             // Route: /api/v1/files/** user-service (photos de profil)
             //
             // Cette route n'existait NULLE PART, et le chemin etait pourtant

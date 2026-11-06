@@ -10,6 +10,7 @@ import com.abdatytch.notification_service.entities.RemiseParCanal;
 import com.abdatytch.notification_service.metrics.NotificationMetrics;
 import com.abdatytch.notification_service.repositories.NotificationRepository;
 import com.abdatytch.notification_service.repositories.RemiseParCanalRepository;
+import com.abdatytch.notification_service.repositories.SurchargeDeModeleRepository;
 import com.abdatytch.notification_service.service.CanalDeRemise;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
@@ -116,11 +118,33 @@ class ServiceDeNotificationImplTest {
         });
     }
 
+    /**
+     * Le vrai moteur, sur le fichier seul.
+     *
+     * <p>Le depot de surcharges est simule et rend un {@code Flux} vide : ces
+     * tests portent sur le CHEMIN de remise, pas sur la couche de surcharge, et
+     * une table vide se comporte exactement comme avant son existence. C'est
+     * d'ailleurs la propriete que la conception des surcharges revendique — la
+     * verifier ici gratuitement ne coute rien.
+     *
+     * <p>{@code rechargerMaintenant} n'est jamais appele par ce test, donc
+     * l'instantane reste vide sans meme souscrire au {@code Flux}. Il est stubbe
+     * quand meme : un mock non stubbe rendrait {@code null}, et le jour ou un
+     * rechargement serait ajoute ici, l'echec serait un NullPointerException au
+     * lieu d'un resultat lisible.
+     */
+    private MoteurDeModeles moteurSurLeFichierSeul() {
+        var sansSurcharge = mock(SurchargeDeModeleRepository.class);
+        when(sansSurcharge.findAll()).thenReturn(Flux.empty());
+        return new MoteurDeModeles(
+                new ClassPathResource("modeles-notification.properties"), sansSurcharge);
+    }
+
     private ServiceDeNotificationImpl service(CanalEspion... canaux) {
         return new ServiceDeNotificationImpl(
                 notifications,
                 remises,
-                new MoteurDeModeles(new ClassPathResource("modeles-notification.properties")),
+                moteurSurLeFichierSeul(),
                 new ResolveurDeCoordonnees(client, prefs, true, false, false),
                 new NotificationMetrics(new SimpleMeterRegistry()),
                 new ObjectMapper(),
