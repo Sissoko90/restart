@@ -146,7 +146,7 @@
 		  SMS ayant rejoint notification-service, la version se declare ici
 		  plutot que de suivre le code de module en module.
 		-->
-		<twilio.version>10.6.3</twilio.version>
+		<twilio.version>10.9.2</twilio.version>
 
 		<!--
 		  SDK Firebase Admin, pour les notifications push (FCM).
