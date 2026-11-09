@@ -441,58 +441,53 @@ public final class AppConstants {
     // acces a la boite un chemin de reprise en main ; la personne est donc
     // invitee a passer par l'application, qu'elle atteint elle-meme.
 
-    public static final String ALERTE_SUJET_MOT_DE_PASSE =
-            "Votre mot de passe a ete modifie";
-    public static final String ALERTE_CORPS_MOT_DE_PASSE =
-            "Le mot de passe de votre compte vient d'etre modifie, et toutes vos "
-            + "sessions ont ete fermees.";
+    // ------------------------------------------------------------------
+    // Les TEXTES d'alerte ne sont plus ici
+    // ------------------------------------------------------------------
+    // Douze constantes vivaient a cet endroit : un sujet, un corps et un
+    // message court par evenement, plus la conduite a tenir commune. Elles sont
+    // parties dans modeles-notification.properties de notification-service,
+    // sous les cles :
+    //
+    //   securite.mot-de-passe-modifie    securite.adresse-modifiee
+    //   securite.numero-modifie          securite.nouvelle-connexion
+    //
+    // POURQUOI LE DEPLACEMENT. Ce module composait le texte puis le transmettait
+    // tout fait a notification-service, qui tient lui aussi un moteur de
+    // modeles. Deux detenteurs du meme message : la correction d'une faute
+    // demandait une livraison d'auth-service, et le texte n'etait relisible
+    // qu'en ouvrant ce fichier Java.
+    //
+    // Les textes sont desormais corrigeables a chaud par
+    // PUT /api/v1/admin/modeles, et une variante courte pour le SMS est une
+    // propriete du MODELE, non une constante separee que l'appelant choisit.
+    //
+    // Les constantes d'ASSEMBLAGE restent ci-dessous : les lignes « Quand /
+    // Lieu / Adresse IP / Appareil » sont des FAITS, et ce service est le seul a
+    // les connaitre. Il les assemble dans la variable {circonstances}, que les
+    // quatre modeles placent.
 
-    public static final String ALERTE_SUJET_ADRESSE =
-            "L'adresse electronique de votre compte a ete modifiee";
+    /** Le modele d'un code de verification, tous canaux. */
+    public static final String MODELE_CODE_DE_VERIFICATION = "securite.code-de-verification";
+
+    /** Le modele d'un code de reinitialisation de mot de passe, tous canaux. */
+    public static final String MODELE_REINITIALISATION = "securite.reinitialisation-mot-de-passe";
+
+    public static final String MODELE_ALERTE_MOT_DE_PASSE = "securite.mot-de-passe-modifie";
+    public static final String MODELE_ALERTE_ADRESSE = "securite.adresse-modifiee";
+    public static final String MODELE_ALERTE_NUMERO = "securite.numero-modifie";
+    public static final String MODELE_ALERTE_CONNEXION = "securite.nouvelle-connexion";
+
     /**
-     * Adresse a l'ANCIENNE adresse : le texte doit le dire explicitement.
+     * La variable que les quatre modeles d'alerte placent.
      *
-     * <p>Sans cette precision, la personne lit « votre adresse a ete modifiee »
-     * sur une adresse qui, de son point de vue, est toujours la bonne — et ne
-     * comprend pas qu'elle vient de perdre l'acces a son compte.
+     * <p>Elle porte les lignes deja assemblees. Une seule variable et non quatre
+     * parce que le lieu et l'adresse IP sont parfois INCONNUS, et la ligne doit
+     * alors disparaitre : le moteur de modeles ne porte aucune conditionnelle —
+     * volontairement, une conditionnelle supposant l'evaluation d'expressions
+     * sur un texte desormais modifiable a chaud en base.
      */
-    public static final String ALERTE_CORPS_ADRESSE =
-            "L'adresse electronique de votre compte vient d'etre remplacee par une "
-            + "autre. Ce message est envoye a votre ancienne adresse : si vous "
-            + "n'etes pas a l'origine de ce changement, vous n'avez plus acces a "
-            + "ce compte.";
-
-    public static final String ALERTE_SUJET_NUMERO =
-            "Le numero de telephone de votre compte a ete modifie";
-    /**
-     * Adresse a l'ANCIEN numero : le texte doit le dire explicitement.
-     *
-     * <p>Et il doit nommer la consequence reelle, qui n'est pas evidente : le
-     * numero est le canal de la reinitialisation du mot de passe. Qui le
-     * remplace prend le controle du compte entier sans connaitre le mot de
-     * passe.
-     */
-    public static final String ALERTE_CORPS_NUMERO =
-            "Le numero de telephone de votre compte vient d'etre remplace par un "
-            + "autre. Ce message est envoye a votre ancien numero : si vous n'etes "
-            + "pas a l'origine de ce changement, la recuperation de votre compte "
-            + "par SMS ne vous appartient plus.";
-
-    public static final String ALERTE_SUJET_CONNEXION =
-            "Nouvelle connexion a votre compte";
-    public static final String ALERTE_CORPS_CONNEXION =
-            "Une connexion a votre compte vient d'aboutir.";
-
-    /** Messages courts, pour le repli par SMS. Pas de lieu : 160 caracteres. */
-    public static final String ALERTE_SMS_MOT_DE_PASSE =
-            "Restart : le mot de passe de votre compte vient d'etre modifie. "
-            + "Si ce n'est pas vous, contactez-nous immediatement.";
-    public static final String ALERTE_SMS_ADRESSE =
-            "Restart : l'adresse electronique de votre compte vient d'etre "
-            + "modifiee. Si ce n'est pas vous, contactez-nous immediatement.";
-    public static final String ALERTE_SMS_NUMERO =
-            "Restart : ce numero n'est plus celui de votre compte. Si ce n'est "
-            + "pas vous, contactez-nous immediatement.";
+    public static final String VARIABLE_CIRCONSTANCES = "circonstances";
 
     // ------------------------------------------------------------------
     // Changement de numero de telephone
@@ -514,15 +509,20 @@ public final class AppConstants {
             "Confirmation de changement de numero refusee au compte {} : "
             + "aucune demande en cours ou demande expiree";
 
+    // Les lignes de CIRCONSTANCES : des faits, que ce service est seul a
+    // connaitre. Il les assemble, le modele les place. ALERTE_SEPARATEUR n'est
+    // plus utilise ici — le modele porte lui-meme le saut de ligne avant
+    // {circonstances} — mais reste disponible pour l'assemblage.
     public static final String ALERTE_SEPARATEUR = "\n\n";
     public static final String ALERTE_LIGNE_QUAND = "Quand : %s%n";
     public static final String ALERTE_LIGNE_LIEU = "Lieu : %s%n";
     public static final String ALERTE_LIGNE_ADRESSE_IP = "Adresse IP : %s%n";
     public static final String ALERTE_LIGNE_APPAREIL = "Appareil : %s%n";
-    public static final String ALERTE_CONDUITE_A_TENIR =
-            "\nSi vous reconnaissez cette operation, aucune action n'est necessaire."
-            + "\nSinon, ouvrez l'application et changez votre mot de passe sans "
-            + "attendre, puis deconnectez vos autres appareils.";
+
+    // ALERTE_CONDUITE_A_TENIR a disparu d'ici. Ce paragraphe — « Si vous
+    // reconnaissez cette operation… » — fait partie du TEXTE de l'alerte, et
+    // figure desormais dans les quatre modeles de notification-service.
+    // ModelesSansDoublonTest verifie que les quatre copies restent identiques.
 
     public static final String ALERTE_DE_CONNEXION_ACTIVEE =
             "Vous serez prevenu par courriel a chaque connexion";
@@ -533,6 +533,17 @@ public final class AppConstants {
             "Alerte de nouvelle connexion mise a {} pour le compte {}";
     public static final String LOG_INFO_ALERTE_SANS_ADRESSE =
             "Alerte de connexion refusee au compte {} : adresse non verifiee";
+    /**
+     * L'envoi a eu lieu et a ete refuse — distinct d'une panne.
+     *
+     * <p>Ni le canal ni le motif ne figurent ici : le client les journalise au
+     * point d'appel, ou il les connait precisement. Ce message-ci dit QUELLE
+     * alerte et QUEL compte n'ont pas abouti, ce que le client ignore.
+     */
+    public static final String LOG_WARN_ALERTE_NON_REMISE =
+            "Alerte de securite « {} » non remise au compte {} : la personne "
+            + "n'a pas ete prevenue";
+
     public static final String LOG_WARN_ALERTE_SANS_DESTINATAIRE =
             "Alerte « {} » non envoyee au compte {} : aucune coordonnee verifiee";
     public static final String LOG_ERROR_ALERTE_NON_ENVOYEE =

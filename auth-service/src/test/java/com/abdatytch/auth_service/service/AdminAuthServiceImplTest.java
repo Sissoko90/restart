@@ -72,7 +72,7 @@ class AdminAuthServiceImplTest {
     @Mock private IEventPublisher eventPublisher;
     @Mock private com.abdatytch.auth_service.client.GatewayGeoLocationClient geoLocationClient;
     @Mock private com.abdatytch.auth_service.metrics.AuthMetrics authMetrics;
-    @Mock private ISmsService smsService;
+    @Mock private IMessagerieSortante messagerie;
 
     private AdminAuthServiceImpl service;
     private User superAdmin;
@@ -101,7 +101,7 @@ class AdminAuthServiceImplTest {
                         userRepository, verificationCodeService, jwtService, refreshTokenService,
                         authenticationLogService, authResponseMapper, verificationResponseMapper,
                         motDePasseReel(), eventPublisher, geoLocationClient, authMetrics,
-                        serviceDeVerrouillage(), smsService, secondFacteur,
+                        serviceDeVerrouillage(), messagerie, secondFacteur,
                         aucunAppareilDeConfiance(),
                 com.abdatytch.auth_service.testutil.AlertesDEssai.aucuneAlerte());
 

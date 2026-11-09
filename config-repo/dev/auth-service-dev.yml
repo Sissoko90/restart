@@ -40,23 +40,21 @@ spring:
           default:
             connectTimeout: ${FEIGN_CONNECT_TIMEOUT_MS:3000}
             readTimeout: ${FEIGN_READ_TIMEOUT_MS:5000}
-  mail:
-    host: ${EMAIL_HOST}
-    port: ${EMAIL_PORT}
-    username: ${EMAIL_USERNAME}
-    password: ${EMAIL_PASSWORD}
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
-            required: true
-          connectiontimeout: 30000  # 30 secondes au lieu de 5
-          timeout: 30000
-          writetimeout: 30000
-    test-connection: false  # Ne pas tester la connexion au démarrage
-  
+  # `spring.mail` a été RETIRÉ de ce module.
+  #
+  # Il décrivait un compte SMTP complet — hôte, identifiants, délais — qu'aucune
+  # ligne de ce service ne lit plus : EmailServiceImpl est parti, et la
+  # dépendance spring-boot-starter-mail avec lui.
+  #
+  # Noter au passage ce que ce bloc portait : des délais de 30 secondes, là où
+  # notification-service en pose 5 pour la connexion et 3 pour la lecture. Un
+  # serveur SMTP qui accepte la connexion et ne répond plus retenait donc un
+  # thread dix fois plus longtemps ici. Deux comptes SMTP configurés à deux
+  # endroits finissent par ne plus se ressembler, et personne ne compare — c'est
+  # précisément ce que la réunion dans un seul service supprime.
+  #
+  # Les réglages d'expédition vivent dans notification-service-dev.yml.
+
   # ==========================================
   # DATABASE CONFIGURATION - PostgreSQL R2DBC
   # ==========================================
@@ -100,13 +98,25 @@ spring:
       - oauth2Tokens
 
 # ==========================================
-# EMAIL CONFIGURATION
+# AUCUNE CONFIGURATION DE COURRIEL ICI
 # ==========================================
-# Note: email.enabled est géré par @Value dans EmailService.java
-# car DotenvConfig charge après Config Server
-email:
-  enabled: ${EMAIL_ENABLED}
-  from: ${EMAIL_FROM}
+# `email.enabled` et `email.from` ont été retirés, avec le bloc `spring.mail.*`
+# plus haut et la dépendance spring-boot-starter-mail du POM.
+#
+# Ce module n'envoie plus de courriel. EmailServiceImpl est parti, et les
+# messages passent par notification-service — seul détenteur des comptes
+# d'expédition, des textes et des garde-fous de dépense.
+#
+# POURQUOI LES RETIRER plutôt que les laisser dormir : une clé lue par personne
+# demande une variable d'environnement à renseigner, donne l'impression que ce
+# service expédie des courriels, et le jour où quelqu'un corrige EMAIL_FROM ici
+# en pensant changer l'expéditeur, il ne change rien. Ce dépôt a déjà trouvé
+# trois clés inertes dans setting-service et trois correspondances dotenv
+# mortes ; c'est le même défaut.
+#
+# Les réglages d'expédition vivent désormais dans
+# notification-service-dev.yml : `spring.mail.*` pour le compte ordinaire et
+# `notification.email.critique.*` pour celui des alertes de sécurité.
 
 # ==========================================
 # GATEWAY SECURITY

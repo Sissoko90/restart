@@ -67,7 +67,7 @@ public class AuthServiceImpl implements IAuthService {
     private final GatewayGeoLocationClient geoLocationClient;
     private final AuthMetrics authMetrics;
     private final IAccountLockoutService accountLockoutService;
-    private final ISmsService smsService;
+    private final IMessagerieSortante messagerie;
     private final ISecondFacteurService secondFacteurService;
 
     /**
@@ -214,7 +214,7 @@ public class AuthServiceImpl implements IAuthService {
      * généré : c'est l'<b>envoi</b> qui n'a pas lieu, et la réponse le dit.
      */
     private String messageDEnvoiOtp() {
-        return smsService.envoiActif()
+        return messagerie.envoiSmsActif()
                 ? AppConstants.OTP_ENVOYE_PAR_SMS
                 : AppConstants.OTP_GENERE_SANS_ENVOI;
     }

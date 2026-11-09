@@ -231,6 +231,94 @@ class MoteurDeModelesSurchargeTest {
     }
 
     @Nested
+    @DisplayName("Le SMS ne replie pas sur le texte commun")
+    class SmsSansRepli {
+
+        /**
+         * Un garde-fou de DEPENSE, et la correction d'une affirmation fausse.
+         *
+         * <p>Le fichier portait, sur {@code compte.bienvenue}, le commentaire
+         * « un canal sans modele produit un refus modele introuvable, mieux
+         * qu'un SMS de bienvenue qui coute un credit ». C'etait faux : le moteur
+         * repliait sur le corps commun, donc le SMS partait — avec un texte
+         * ecrit pour le courriel, tronque par l'operateur ou facture en
+         * plusieurs messages.
+         */
+        @Test
+        @DisplayName("un modèle sans variante SMS refuse au lieu d'envoyer le texte du courriel")
+        void sansVarianteSmsLeModeleEstIntrouvable() {
+            var moteur = moteur();
+
+            // Le prealable : ce modele a bien un corps commun, et pas de
+            // variante SMS. Sans ces deux faits, le test serait vacuement vert.
+            assertThat(moteur.valeurDuSocle("compte.bienvenue.corps"))
+                    .withFailMessage("compte.bienvenue.corps a disparu : ce test "
+                            + "ne mesure plus un repli")
+                    .isNotNull();
+            assertThat(moteur.valeurDuSocle("compte.bienvenue.sms.corps"))
+                    .withFailMessage("compte.bienvenue a desormais une variante "
+                            + "SMS : ce test ne mesure plus l'absence de repli")
+                    .isNull();
+
+            assertThat(moteur.rendre("compte.bienvenue", CanalDeNotification.SMS,
+                    Map.of("firstName", "Ada")))
+                    .withFailMessage("""
+                            Le SMS a replie sur le corps commun.
+
+                            Ce corps est ecrit pour le courriel : il depasse 160 \
+                            caracteres, donc le message partirait tronque ou \
+                            facture en plusieurs credits — et rien ne le \
+                            signalerait.""")
+                    .isEmpty();
+        }
+
+        /**
+         * Et les autres canaux replient toujours.
+         *
+         * <p>Sans cette seconde assertion, une implementation qui aurait
+         * supprime le repli pour TOUS les canaux passerait le test precedent —
+         * et tout modele sans variante par canal cesserait d'etre rendu.
+         */
+        @Test
+        @DisplayName("le courriel, lui, replie bien sur le texte commun")
+        void leCourrielReplie() {
+            var moteur = moteur();
+
+            assertThat(moteur.valeurDuSocle("compte.bienvenue.courriel.corps"))
+                    .withFailMessage("compte.bienvenue a desormais une variante "
+                            + "courriel : ce test ne mesure plus un repli")
+                    .isNull();
+
+            // Variables VIDES : la substitution est alors un passage a vide, et
+            // ce qui revient est exactement la valeur choisie par la
+            // resolution. Avec {firstName} fourni, ce test comparait un texte
+            // substitue au gabarit brut — la meme erreur de mesure que celle
+            // deja corrigee dans `corps(...)` plus haut, refaite ici.
+            var rendu = moteur.rendre("compte.bienvenue", CanalDeNotification.COURRIEL,
+                    Map.of());
+
+            assertThat(rendu)
+                    .withFailMessage("le courriel ne replie plus : tout modele "
+                            + "sans variante par canal cesserait d'etre rendu")
+                    .isPresent();
+            assertThat(rendu.get().corps())
+                    .isEqualTo(moteur.valeurDuSocle("compte.bienvenue.corps"));
+        }
+
+        /*
+         * Et qu'une surcharge debloque le SMS est deja prouve par
+         * `surchargePeutCreerUneVariante` ci-dessus, qui pose precisement
+         * compte.bienvenue.sms.corps et verifie que le rendu aboutit. C'est ce
+         * qui rend ce refus acceptable plutot que bloquant : si l'on veut
+         * vraiment ce message par SMS, PUT /admin/modeles suffit — sans
+         * livraison.
+         *
+         * Pas de second test identique ici : deux tests qui mesurent la meme
+         * chose finissent par ne plus etre modifies ensemble.
+         */
+    }
+
+    @Nested
     @DisplayName("Le rechargement")
     class Rechargement {
 

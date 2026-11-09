@@ -347,9 +347,29 @@ groups:
       # compte redeviendraient silencieux sans que personne l'apprenne. C'est
       # exactement le motif que ce depot passe son temps a retirer : une
       # protection ecrite, presente, et que plus rien n'atteint.
+      # ELLE ETAIT AVEUGLE AU CAS QU'ELLE DECRIT.
+      #
+      # Elle ne surveillait que resultat="echec", c'est-a-dire une EXCEPTION
+      # remontee jusqu'a l'enregistrement de la metrique. Or le client d'envoi
+      # avalait toutes les exceptions pour ne pas faire echouer l'operation
+      # signalee, et son Mono<Void> vide etait indistinguable d'un succes : un
+      # SMS coupe, un numero hors liste autorisee ou un plafond journalier
+      # atteint etaient comptes « envoyee ».
+      #
+      # Autrement dit : la seule regle critique sur les alertes de securite
+      # surveillait la valeur que le code ne produisait presque jamais, et
+      # ignorait celle qu'il produisait reellement. Une protection ecrite,
+      # presente, et que plus rien n'atteignait — le motif meme que le
+      # commentaire ci-dessus dit vouloir retirer.
+      #
+      # `non_remise` est la valeur ajoutee pour ces refus, rendue possible par
+      # le passage a Mono<Boolean>. Les deux figurent ici parce que, pour la
+      # personne concernee, la consequence est la meme : elle n'a pas ete
+      # prevenue. La distinction reste dans l'etiquette, pour le diagnostic —
+      # une panne se repare, un plafond se releve.
       - alert: AlertesDeSecuriteNonEnvoyees
         expr: >-
-          sum(increase(auth_security_alerte_total{resultat="echec"}[15m])) > 0
+          sum(increase(auth_security_alerte_total{resultat=~"echec|non_remise"}[15m])) > 0
         for: 0m
         labels:
           severity: critical

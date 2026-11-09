@@ -175,7 +175,7 @@ class NoBlockingCallsTest {
                 userRepository, verificationCodeService, jwtService, refreshTokenService,
                 authenticationLogService, authResponseMapper, verificationResponseMapper,
                 motDePasseReel(), eventPublisher, geoLocationClient, authMetrics,
-                serviceDeVerrouillage(), smsServiceSimule(), secondFacteurReel(),
+                serviceDeVerrouillage(), messagerieSimulee(), secondFacteurReel(),
                 aucunAppareilDeConfiance(),
                 com.abdatytch.auth_service.testutil.AlertesDEssai.aucuneAlerte());
 
@@ -205,7 +205,7 @@ class NoBlockingCallsTest {
                 userRepository, verificationCodeService, jwtService, refreshTokenService,
                 authenticationLogService, authResponseMapper, verificationResponseMapper,
                 motDePasseReel(), eventPublisher, geoLocationClient, authMetrics,
-                serviceDeVerrouillage(), smsServiceSimule(), secondFacteurReel(),
+                serviceDeVerrouillage(), messagerieSimulee(), secondFacteurReel(),
                 aucunAppareilDeConfiance(),
                 com.abdatytch.auth_service.testutil.AlertesDEssai.aucuneAlerte());
 
@@ -264,16 +264,24 @@ class NoBlockingCallsTest {
         return verrouillage;
     }
 
-    /** Service SMS simule : l'envoi est ACTIF, formulation nominale. */
-    private com.abdatytch.auth_service.service.ISmsService smsServiceSimule() {
-        return new com.abdatytch.auth_service.service.ISmsService() {
+    /**
+     * Messagerie simulee : l'envoi est ACTIF et aboutit.
+     *
+     * <p>Rend {@code true}, et c'est une difference avec le bouchon precedent.
+     * Il implementait {@code ISmsService}, dont {@code sendSms} rendait
+     * {@code Mono<Void>} : « termine » et « rien n'est parti » y etaient
+     * indistinguables. Avec {@code Mono<Boolean>}, un bouchon doit CHOISIR ce
+     * qu'il simule, et celui-ci simule une remise reussie.
+     */
+    private com.abdatytch.auth_service.service.IMessagerieSortante messagerieSimulee() {
+        return new com.abdatytch.auth_service.service.IMessagerieSortante() {
             @Override
-            public reactor.core.publisher.Mono<Void> sendSms(String numero, String message) {
-                return reactor.core.publisher.Mono.empty();
+            public reactor.core.publisher.Mono<Boolean> envoyer(Demande demande) {
+                return reactor.core.publisher.Mono.just(true);
             }
 
             @Override
-            public boolean envoiActif() {
+            public boolean envoiSmsActif() {
                 return true;
             }
         };

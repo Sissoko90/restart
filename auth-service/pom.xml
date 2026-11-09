@@ -173,17 +173,22 @@
 			<artifactId>dotenv-java</artifactId>
 		</dependency>
 
-		<!-- Email Support -->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-mail</artifactId>
-			<exclusions>
-				<exclusion>
-					<groupId>org.springframework.boot</groupId>
-					<artifactId>spring-boot-starter-tomcat</artifactId>
-				</exclusion>
-			</exclusions>
-		</dependency>
+		<!--
+			spring-boot-starter-mail a ete RETIRE.
+
+			Ce module n'ouvre plus aucune connexion SMTP : EmailServiceImpl est
+			parti, et les courriels passent par notification-service, seul
+			detenteur des comptes d'expedition et des textes.
+
+			Le retirer n'est pas cosmetique. Tant que la dependance est la,
+			MailSenderAutoConfiguration cree un JavaMailSender des que
+			spring.mail.host est renseigne — un bean que personne n'injecte, une
+			configuration SMTP a tenir a jour pour rien, et un module qui a
+			toutes les apparences d'un emetteur de courriels.
+
+			L'exclusion de spring-boot-starter-tomcat part avec : elle etait la
+			parce que ce starter l'amenait, et ce module est en WebFlux.
+		-->
 
 		<!-- Kafka for Event Publishing -->
 		<dependency>

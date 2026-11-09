@@ -113,6 +113,23 @@ public class MoteurDeModeles {
 
     private static final Logger log = LoggerFactory.getLogger(MoteurDeModeles.class);
 
+    /**
+     * Les canaux pour lesquels l'absence de variante NE retombe PAS sur le texte
+     * commun.
+     *
+     * <p>Le SMS seul, et pour une raison de cout : le texte commun est ecrit
+     * pour le courriel. L'envoyer par SMS le fait tronquer par l'operateur, ou
+     * facturer en plusieurs messages — sans que rien ne le signale. Mieux vaut
+     * un refus visible dans le compte rendu.
+     *
+     * <p>Un ensemble et non un {@code == SMS} : le jour ou un canal borne
+     * s'ajoute — un message push limite en longueur, par exemple — la regle est
+     * a un seul endroit. Et son nom dit la regle, ce qu'une comparaison en ligne
+     * ne fait pas.
+     */
+    private static final Set<CanalDeNotification> CANAUX_SANS_REPLI =
+            Set.of(CanalDeNotification.SMS);
+
     /** Le socle : le fichier du chemin de classe. Jamais modifie apres le demarrage. */
     private final Properties socle = new Properties();
 
@@ -187,11 +204,38 @@ public class MoteurDeModeles {
      * couche. Pour changer aussi le SMS, il faut surcharger la cle du SMS — et
      * {@code GET /admin/modeles} liste justement les cles effectives, variantes
      * de canal comprises, pour que cela se voie au lieu de se deviner.
+     *
+     * <h3>LE SMS NE REPLIE PAS, et c'est un garde-fou de depense</h3>
+     *
+     * Pour tous les autres canaux, l'absence de variante retombe sur le texte
+     * commun. Pour le SMS, non : sans variante {@code .sms}, le modele est
+     * declare introuvable et rien ne part.
+     *
+     * <p>C'est une CORRECTION. Avec le repli, un modele sans variante courte
+     * partait par SMS avec le corps ecrit pour le courriel — plusieurs centaines
+     * de caracteres — donc tronque par l'operateur, ou facture en plusieurs
+     * messages. Silencieusement, et sur le canal qui coute.
+     *
+     * <p>Le commentaire de {@code compte.bienvenue} dans le fichier de modeles
+     * affirmait justement que « un canal sans modele produit un refus », et
+     * c'etait faux : le repli l'en empechait. Ce controle rend l'affirmation
+     * vraie au lieu de la corriger a la baisse.
+     *
+     * <p>Trois modeles sont concernes aujourd'hui — {@code compte.bienvenue},
+     * {@code quota.seuil-atteint} et {@code securite.nouvelle-connexion} — et
+     * pour les trois, refuser est l'intention ecrite. Donner une variante SMS a
+     * l'un d'eux ne demande pas de livraison : {@code PUT /admin/modeles} suffit.
      */
     private String valeur(String modele, CanalDeNotification canal, String partie) {
         String avecCanal = modele + "." + canal.name().toLowerCase(Locale.ROOT) + "." + partie;
         String resolue = effective(avecCanal);
-        return resolue != null ? resolue : effective(modele + "." + partie);
+        if (resolue != null) {
+            return resolue;
+        }
+        if (CANAUX_SANS_REPLI.contains(canal)) {
+            return null;
+        }
+        return effective(modele + "." + partie);
     }
 
     /** Une cle exacte : la surcharge si elle existe, le socle sinon. */

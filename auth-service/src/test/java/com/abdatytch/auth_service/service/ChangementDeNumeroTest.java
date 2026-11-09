@@ -126,15 +126,28 @@ class ChangementDeNumeroTest {
                 verrouillage, alertes);
     }
 
-    private static ISmsService smsInerte() {
-        return new ISmsService() {
+    /**
+     * Messagerie qui n'envoie rien, mais dont l'interrupteur est ACTIF.
+     *
+     * <p>La combinaison est volontaire, et c'est elle que l'ancien bouchon ne
+     * pouvait pas exprimer : son {@code sendSms} rendait un {@code Mono<Void>}
+     * vide, indistinguable d'un envoi reussi, tandis que son
+     * {@code envoiActif()} rendait {@code true}. Ces tests ne portent pas sur
+     * l'envoi — ils portent sur le changement de numero — d'ou un bouchon qui
+     * laisse la formulation des reponses inchangee tout en ne remettant rien.
+     *
+     * <p>{@code false} au retour, donc : le bouchon dit desormais ce qu'il fait,
+     * au lieu de rendre la valeur que rendait aussi un succes.
+     */
+    private static IMessagerieSortante smsInerte() {
+        return new IMessagerieSortante() {
             @Override
-            public Mono<Void> sendSms(String phoneNumber, String message) {
-                return Mono.empty();
+            public Mono<Boolean> envoyer(Demande demande) {
+                return Mono.just(false);
             }
 
             @Override
-            public boolean envoiActif() {
+            public boolean envoiSmsActif() {
                 return true;
             }
         };

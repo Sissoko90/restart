@@ -4,15 +4,13 @@ import com.abdatytch.auth_service.constants.AppConstants;
 import com.abdatytch.auth_service.constants.ErrorCode;
 import com.abdatytch.auth_service.constants.ServiceConstants;
 import com.abdatytch.auth_service.entities.VerificationCode;
-import com.abdatytch.auth_service.enums.TemplateType;
 import com.abdatytch.auth_service.enums.VerificationCodeType;
 import com.abdatytch.auth_service.exception.AuthException;
 import com.abdatytch.auth_service.metrics.AuthMetrics;
 import com.abdatytch.auth_service.repository.VerificationCodeRepository;
-import com.abdatytch.auth_service.service.IEmailService;
-import com.abdatytch.auth_service.service.IMessageTemplateService;
-import com.abdatytch.auth_service.service.ISmsService;
+import com.abdatytch.auth_service.service.IMessagerieSortante;
 import com.abdatytch.auth_service.service.IVerificationCodeService;
+import com.abdatytch.commons.notification.CanalDeNotification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -47,9 +45,18 @@ public class VerificationCodeServiceImpl implements IVerificationCodeService {
     private static final String TEMP_PHONE_PREFIX = AppConstants.TEMP_PHONE_PREFIX;
 
     private final VerificationCodeRepository verificationCodeRepository;
-    private final ISmsService smsService;
-    private final IEmailService emailService;
-    private final IMessageTemplateService templateService;
+
+    /**
+     * UNE dependance d'envoi, et il y en avait trois.
+     *
+     * <p>{@code ISmsService}, {@code IEmailService} et
+     * {@code IMessageTemplateService} : deux canaux et un moteur de modeles,
+     * pour un seul besoin — faire partir un code. Les trois ont ete remplaces
+     * par {@link IMessagerieSortante}, qui parle a notification-service, seul
+     * detenteur des textes et des fournisseurs.
+     */
+    private final IMessagerieSortante messagerie;
+
     private final AuthMetrics authMetrics;
 
     @Override
@@ -199,12 +206,32 @@ public class VerificationCodeServiceImpl implements IVerificationCodeService {
         return String.valueOf(RANDOM.nextInt(900000) + 100000);
     }
 
-    private TemplateType getSmsTemplateType(VerificationCodeType type) {
+    /**
+     * Le modele a rendre, pour TOUS les canaux.
+     *
+     * <h2>Une seule table, et il y en avait deux</h2>
+     *
+     * Ce module portait {@code getSmsTemplateType} ici et
+     * {@code getTemplateTypeForVerification} dans {@code EmailServiceImpl} —
+     * deux tables a tenir d'accord, pour le meme message sur deux canaux. Elles
+     * decoulaient d'un {@code TemplateType} qui MELANGEAIT le canal et l'objet :
+     * {@code SMS_VERIFICATION} et {@code EMAIL_VERIFICATION} nommaient le meme
+     * message.
+     *
+     * <p>Avec le couple (modele, canal) de notification-service, l'objet est
+     * nomme une fois et le canal n'est qu'une variante du texte. Les cinq
+     * anciens types se ramenaient a trois modeles ; les deux dont ce service a
+     * besoin sont ici.
+     */
+    private static String modelePour(VerificationCodeType type) {
         return switch (type) {
-            case PASSWORD_RESET -> TemplateType.SMS_PASSWORD_RESET;
+            case PASSWORD_RESET -> AppConstants.MODELE_REINITIALISATION;
+            // Pas de `default`, volontairement : il absorberait en silence le
+            // prochain type ajoute a l'enumeration, qui partirait alors avec le
+            // texte d'un code de verification ordinaire.
             case REGISTRATION, PHONE_VERIFICATION, EMAIL_VERIFICATION, TWO_FACTOR_AUTH,
                  PHONE_CONFIRMATION, EMAIL_CONFIRMATION, PHONE_CHANGE ->
-                    TemplateType.SMS_VERIFICATION;
+                    AppConstants.MODELE_CODE_DE_VERIFICATION;
         };
     }
 
@@ -213,53 +240,97 @@ public class VerificationCodeServiceImpl implements IVerificationCodeService {
      *
      * <p>Un numéro préfixé {@code temp_} signale une inscription par email seul :
      * il n'y a alors pas de SMS à envoyer.
+     *
+     * <h2>Ce service ne compose plus aucun texte</h2>
+     *
+     * Il nomme un modele et fournit ses variables ; notification-service rend.
+     * Le meme modele sert aux deux canaux, et c'est lui qui choisit sa variante
+     * courte pour le SMS — ce service n'a donc plus a savoir qu'un SMS tient en
+     * 160 caracteres.
+     *
+     * <h2>Aucun journal de succes ici</h2>
+     *
+     * {@code doOnSuccess} sur un {@code Mono<Void>} se declenchait AUSSI quand la
+     * source se terminait vide, c'est-a-dire quand rien n'etait parti :
+     * {@code sms.enabled = false}, ou repli du disjoncteur. Ce site ecrivait donc
+     * « SMS envoyé avec succès » juste apres « Disjoncteur SMS ouvert » — un
+     * journal qui affirme le contraire de ce qui s'est passe, et precisement
+     * pendant un incident.
+     *
+     * <p>Le client journalise desormais les NON-remises avec leur motif, ce que
+     * {@code Mono<Boolean>} rend possible et que {@code Mono<Void>} interdisait.
      */
-    private Mono<Void> sendCode(String phoneNumber, String email, String code, VerificationCodeType type) {
+    private Mono<Void> sendCode(String phoneNumber, String email, String code,
+                                VerificationCodeType type) {
         boolean emailOnly = phoneNumber != null && phoneNumber.startsWith(TEMP_PHONE_PREFIX);
 
-        if (emailOnly) {
-            if (email == null || email.isEmpty()) {
-                return Mono.error(new AuthException(ErrorCode.MISSING_REQUIRED_FIELD, "email"));
-            }
-            return emailService.sendVerificationEmail(email, code, type);
-        }
-
+        String modele = modelePour(type);
         Map<String, String> variables = Map.of(
                 ServiceConstants.TEMPLATE_VAR_CODE, code,
                 ServiceConstants.TEMPLATE_VAR_MINUTES,
                 String.valueOf(AppConstants.VERIFICATION_CODE_EXPIRY_MINUTES));
 
-        // Pas de journal de succes ici.
-        //
-        // `doOnSuccess` sur un Mono<Void> se declenche AUSSI quand la source se
-        // termine vide, et sendSms se termine vide dans deux cas ou rien n'est
-        // parti : sms.enabled = false, et le repli du disjoncteur. Ce site
-        // ecrivait donc « SMS envoyé avec succès » juste apres « Disjoncteur SMS
-        // ouvert » — un journal qui affirme le contraire de ce qui s'est passe,
-        // et precisement pendant un incident.
-        //
-        // Le succes est desormais journalise par le FOURNISSEUR, seul a savoir
-        // qu'un envoi a ete accepte.
-        Mono<Void> sms = templateService.formatTemplate(getSmsTemplateType(type), variables)
-                .flatMap(message -> smsService.sendSms(phoneNumber, message))
-                .onErrorMap(error -> !(error instanceof AuthException),
-                        error -> {
-                            log.error(ServiceConstants.LOG_ERROR_SMS_SEND_FAILED, phoneNumber, error);
-                            return new AuthException(ErrorCode.SMS_SERVICE_ERROR, error);
-                        });
+        if (emailOnly) {
+            if (email == null || email.isEmpty()) {
+                return Mono.error(new AuthException(ErrorCode.MISSING_REQUIRED_FIELD, "email"));
+            }
+            // CHANGEMENT DE COMPORTEMENT, assume et documente.
+            //
+            // Cette branche levait EMAIL_SERVICE_ERROR quand l'envoi echouait,
+            // et se terminait en silence quand `email.enabled` etait faux. Avec
+            // un booleen, les deux cas se confondent : un canal DELIBEREMENT
+            // inactif rend le meme `false` qu'un serveur SMTP en panne. Lever
+            // sur ce `false` casserait l'inscription par courriel en
+            // developpement, ou l'envoi est coupe par choix.
+            //
+            // Le code est enregistre et l'utilisateur peut en redemander un :
+            // on journalise donc, sans lever. La vraie correction est de faire
+            // remonter ce booleen jusqu'a la reponse HTTP, comme le fait deja
+            // `messageDEnvoiOtp` pour le SMS — huit sites d'appel de
+            // generateAndSendCode, donc sa propre passe.
+            return messagerie.envoyer(IMessagerieSortante.Demande.critique(
+                            CanalDeNotification.COURRIEL, email, modele, variables))
+                    .doOnNext(parti -> {
+                        if (!Boolean.TRUE.equals(parti)) {
+                            // L'adresse n'est PAS journalisee : donnee
+                            // personnelle, et ce journal part vers Loki.
+                            log.warn("Inscription par courriel seul : le code n'a "
+                                    + "pas pu etre remis. L'utilisateur devra en "
+                                    + "redemander un.");
+                        }
+                    })
+                    .then();
+        }
+
+        Mono<Boolean> sms = messagerie.envoyer(IMessagerieSortante.Demande.critique(
+                CanalDeNotification.SMS, phoneNumber, modele, variables));
 
         if (email == null || email.isEmpty()) {
-            return sms;
+            return sms.then();
         }
 
         // L'email est un doublon de courtoisie : son échec ne doit pas faire
         // échouer l'envoi alors que le SMS est parti.
-        return sms.then(emailService.sendVerificationEmail(email, code, type)
-                .doOnSuccess(unused -> log.info(ServiceConstants.LOG_INFO_EMAIL_SENT_SUCCESS, email))
-                .onErrorResume(error -> {
-                    log.warn(ServiceConstants.LOG_WARN_EMAIL_SEND_ERROR, error);
-                    return Mono.empty();
-                }));
+        //
+        // Le rattrapage est garde malgre le contrat d'IMessagerieSortante, qui
+        // promet de ne JAMAIS lever. Raisonner sur l'implementation plutot que
+        // sur le contrat serait une erreur ici : une implementation future qui
+        // violerait cette promesse ferait echouer l'inscription APRES
+        // l'enregistrement du code, et le code serait perdu pour l'utilisateur
+        // alors qu'il est en base.
+        //
+        // Ce n'est pas du code defensif mort : un test le traverse, en
+        // simulant precisement cette violation.
+        return sms.then(messagerie.envoyer(IMessagerieSortante.Demande.critique(
+                                CanalDeNotification.COURRIEL, email, modele, variables))
+                        .onErrorResume(erreur -> {
+                            log.warn("Le courriel de courtoisie a leve {} alors que "
+                                            + "le contrat l'interdit ; le SMS est parti, "
+                                            + "l'inscription continue",
+                                    erreur.getClass().getSimpleName());
+                            return Mono.just(false);
+                        }))
+                .then();
     }
 
     // ==========================================

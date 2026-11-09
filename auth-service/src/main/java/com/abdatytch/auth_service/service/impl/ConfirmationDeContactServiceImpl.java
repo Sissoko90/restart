@@ -13,7 +13,7 @@ import com.abdatytch.auth_service.service.IAccountLockoutService;
 import com.abdatytch.auth_service.service.IAlerteDeSecuriteService;
 import com.abdatytch.auth_service.service.IConfirmationDeContactService;
 import com.abdatytch.auth_service.service.IMotDePasseService;
-import com.abdatytch.auth_service.service.ISmsService;
+import com.abdatytch.auth_service.service.IMessagerieSortante;
 import com.abdatytch.auth_service.service.IVerificationCodeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,7 +35,7 @@ public class ConfirmationDeContactServiceImpl implements IConfirmationDeContactS
     private final UserRepository userRepository;
     private final IVerificationCodeService verificationCodeService;
     private final VerificationResponseMapper verificationResponseMapper;
-    private final ISmsService smsService;
+    private final IMessagerieSortante messagerie;
 
     /**
      * Mot de passe actuel, exige pour remplacer le numero.
@@ -300,7 +300,7 @@ public class ConfirmationDeContactServiceImpl implements IConfirmationDeContactS
      * Repondre « code envoye » ferait attendre un SMS qui ne viendra pas.
      */
     private String messageDEnvoi() {
-        return smsService.envoiActif()
+        return messagerie.envoiSmsActif()
                 ? AppConstants.CONFIRMATION_TELEPHONE_ENVOYEE
                 : AppConstants.OTP_GENERE_SANS_ENVOI;
     }

@@ -106,7 +106,7 @@ class AuthServiceImplLoginTest {
                 userRepository, verificationCodeService, jwtService, refreshTokenService,
                 authenticationLogService, authResponseMapper, verificationResponseMapper,
                 motDePasseReel(), eventPublisher, geoLocationClient, authMetrics,
-                serviceDeVerrouillage(), smsServiceSimule(), secondFacteurReel(),
+                serviceDeVerrouillage(), messagerieSimulee(), secondFacteurReel(),
                 aucunAppareilDeConfiance(),
                 alertes);
 
@@ -564,16 +564,24 @@ class AuthServiceImplLoginTest {
         return verrouillage;
     }
 
-    /** Service SMS simule : l'envoi est ACTIF, formulation nominale. */
-    private com.abdatytch.auth_service.service.ISmsService smsServiceSimule() {
-        return new com.abdatytch.auth_service.service.ISmsService() {
+    /**
+     * Messagerie simulee : l'envoi est ACTIF et aboutit.
+     *
+     * <p>Rend {@code true}, et c'est une difference avec le bouchon precedent.
+     * Il implementait {@code ISmsService}, dont {@code sendSms} rendait
+     * {@code Mono<Void>} : « termine » et « rien n'est parti » y etaient
+     * indistinguables. Avec {@code Mono<Boolean>}, un bouchon doit CHOISIR ce
+     * qu'il simule, et celui-ci simule une remise reussie.
+     */
+    private com.abdatytch.auth_service.service.IMessagerieSortante messagerieSimulee() {
+        return new com.abdatytch.auth_service.service.IMessagerieSortante() {
             @Override
-            public reactor.core.publisher.Mono<Void> sendSms(String numero, String message) {
-                return reactor.core.publisher.Mono.empty();
+            public reactor.core.publisher.Mono<Boolean> envoyer(Demande demande) {
+                return reactor.core.publisher.Mono.just(true);
             }
 
             @Override
-            public boolean envoiActif() {
+            public boolean envoiSmsActif() {
                 return true;
             }
         };
@@ -650,14 +658,17 @@ class AuthServiceImplLoginTest {
         @Test
         @DisplayName("envoi coupe : la reponse ne pretend pas avoir envoye")
         void envoiCoupeNePretendPas() {
-            var sansEnvoi = new com.abdatytch.auth_service.service.ISmsService() {
+            var sansEnvoi = new com.abdatytch.auth_service.service.IMessagerieSortante() {
                 @Override
-                public Mono<Void> sendSms(String numero, String message) {
-                    return Mono.empty();
+                public Mono<Boolean> envoyer(Demande demande) {
+                    // `false`, et c'est enfin dicible. Avec l'ancien
+                    // Mono<Void>, un bouchon « rien ne part » rendait Mono.empty()
+                    // — exactement ce que rendait un envoi reussi.
+                    return Mono.just(false);
                 }
 
                 @Override
-                public boolean envoiActif() {
+                public boolean envoiSmsActif() {
                     return false;
                 }
             };

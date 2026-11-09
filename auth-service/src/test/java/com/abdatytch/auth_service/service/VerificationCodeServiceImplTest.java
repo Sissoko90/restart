@@ -3,12 +3,12 @@ package com.abdatytch.auth_service.service;
 import com.abdatytch.auth_service.constants.AppConstants;
 import com.abdatytch.auth_service.constants.ErrorCode;
 import com.abdatytch.auth_service.entities.VerificationCode;
-import com.abdatytch.auth_service.enums.TemplateType;
 import com.abdatytch.auth_service.enums.VerificationCodeType;
 import com.abdatytch.auth_service.exception.AuthException;
 import com.abdatytch.auth_service.metrics.AuthMetrics;
 import com.abdatytch.auth_service.repository.VerificationCodeRepository;
 import com.abdatytch.auth_service.service.impl.VerificationCodeServiceImpl;
+import com.abdatytch.commons.notification.CanalDeNotification;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,12 +22,13 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.LocalDateTime;
-import java.util.Map;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -49,12 +50,19 @@ class VerificationCodeServiceImplTest {
 
     @Mock
     private VerificationCodeRepository verificationCodeRepository;
+    /**
+     * UNE dependance d'envoi, et il y en avait trois.
+     *
+     * <p>{@code ISmsService}, {@code IEmailService} et
+     * {@code IMessageTemplateService} ont ete remplaces par
+     * {@link IMessagerieSortante}. Les tests y gagnent une verification qu'ils
+     * ne pouvaient pas faire : le MODELE demande, pour les deux canaux. L'ancien
+     * test ne contrôlait le modele que du cote SMS — par
+     * {@code formatTemplate(SMS_PASSWORD_RESET, ...)} — et jamais celui du
+     * courriel, qui etait choisi dans un second switch, ailleurs.
+     */
     @Mock
-    private ISmsService smsService;
-    @Mock
-    private IEmailService emailService;
-    @Mock
-    private IMessageTemplateService templateService;
+    private IMessagerieSortante messagerie;
     @Mock
     private AuthMetrics authMetrics;
 
@@ -63,17 +71,31 @@ class VerificationCodeServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new VerificationCodeServiceImpl(
-                verificationCodeRepository, smsService, emailService, templateService, authMetrics);
+                verificationCodeRepository, messagerie, authMetrics);
 
-        when(templateService.formatTemplate(any(TemplateType.class), any()))
-                .thenReturn(Mono.just("Votre code est 123456"));
-        when(smsService.sendSms(anyString(), anyString())).thenReturn(Mono.empty());
-        when(emailService.sendVerificationEmail(anyString(), anyString(), any()))
-                .thenReturn(Mono.empty());
+        // Remise reussie par defaut. Un bouchon doit desormais CHOISIR : avec
+        // l'ancien Mono<Void>, « termine » et « rien n'est parti » etaient
+        // indistinguables, et un test ne pouvait pas exprimer l'un sans l'autre.
+        when(messagerie.envoyer(any())).thenReturn(Mono.just(true));
         when(verificationCodeRepository.deleteByPhoneNumberAndType(anyString(), any()))
                 .thenReturn(Mono.empty());
         when(verificationCodeRepository.save(any(VerificationCode.class)))
                 .thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+    }
+
+    /**
+     * Les messages reellement demandes a la messagerie.
+     *
+     * <p>Un capteur plutot que des {@code verify} par appel : il permet
+     * d'affirmer le CANAL, le DESTINATAIRE et le MODELE d'un seul tenant, et de
+     * constater l'ABSENCE d'un canal sans dependre de la signature d'une
+     * methode disparue.
+     */
+    private List<IMessagerieSortante.Demande> messagesDemandes() {
+        ArgumentCaptor<IMessagerieSortante.Demande> capteur =
+                ArgumentCaptor.forClass(IMessagerieSortante.Demande.class);
+        verify(messagerie, atLeast(0)).envoyer(capteur.capture());
+        return capteur.getAllValues();
     }
 
     private VerificationCode validCode() {
@@ -105,7 +127,15 @@ class VerificationCodeServiceImplTest {
                 })
                 .verifyComplete();
 
-        verify(smsService).sendSms(eq(PHONE), anyString());
+        assertThat(messagesDemandes())
+                .singleElement()
+                .satisfies(message -> {
+                    assertThat(message.canal()).isEqualTo(CanalDeNotification.SMS);
+                    assertThat(message.destinataire()).isEqualTo(PHONE);
+                    // Le MODELE, que l'ancien test ne pouvait pas voir ici.
+                    assertThat(message.modele())
+                            .isEqualTo(AppConstants.MODELE_CODE_DE_VERIFICATION);
+                });
         verify(authMetrics).recordOtpSent("sms");
     }
 
@@ -121,7 +151,10 @@ class VerificationCodeServiceImplTest {
                 .verify();
 
         verify(verificationCodeRepository, never()).save(any());
-        verify(smsService, never()).sendSms(anyString(), anyString());
+        assertThat(messagesDemandes())
+                .withFailMessage("un message a ete demande alors que le code a "
+                        + "ete refuse : l'anti-spam ne protege plus la depense")
+                .isEmpty();
     }
 
     @Test
@@ -148,8 +181,14 @@ class VerificationCodeServiceImplTest {
                 .expectNextCount(1)
                 .verifyComplete();
 
-        verify(smsService, never()).sendSms(anyString(), anyString());
-        verify(emailService).sendVerificationEmail(eq(EMAIL), anyString(), eq(VerificationCodeType.REGISTRATION));
+        assertThat(messagesDemandes())
+                .singleElement()
+                .satisfies(message -> {
+                    assertThat(message.canal()).isEqualTo(CanalDeNotification.COURRIEL);
+                    assertThat(message.destinataire()).isEqualTo(EMAIL);
+                    assertThat(message.modele())
+                            .isEqualTo(AppConstants.MODELE_CODE_DE_VERIFICATION);
+                });
     }
 
     @Test
@@ -165,19 +204,59 @@ class VerificationCodeServiceImplTest {
                 .verify();
     }
 
+    /**
+     * Un courriel de courtoisie REFUSE ne casse rien.
+     *
+     * <p>C'est le cas nominal du nouveau contrat : la messagerie rend
+     * {@code false}, sans lever.
+     */
     @Test
-    @DisplayName("l'échec de l'email de courtoisie ne casse pas l'envoi SMS")
-    void courtesyEmailFailureDoesNotBreakSmsFlow() {
+    @DisplayName("un courriel de courtoisie refusé ne casse pas l'envoi SMS")
+    void courtesyEmailRefusedDoesNotBreakSmsFlow() {
         when(verificationCodeRepository.findByPhoneNumberAndType(PHONE, VerificationCodeType.REGISTRATION))
                 .thenReturn(Mono.empty());
-        when(emailService.sendVerificationEmail(anyString(), anyString(), any()))
-                .thenReturn(Mono.error(new RuntimeException("SMTP indisponible")));
+        when(messagerie.envoyer(any())).thenAnswer(appel -> {
+            IMessagerieSortante.Demande message = appel.getArgument(0);
+            return Mono.just(message.canal() == CanalDeNotification.SMS);
+        });
 
         StepVerifier.create(service.generateAndSendCode(PHONE, EMAIL, VerificationCodeType.REGISTRATION))
                 .expectNextCount(1)
                 .verifyComplete();
 
-        verify(smsService).sendSms(eq(PHONE), anyString());
+        assertThat(messagesDemandes())
+                .extracting(IMessagerieSortante.Demande::canal)
+                .containsExactly(CanalDeNotification.SMS, CanalDeNotification.COURRIEL);
+    }
+
+    /**
+     * Et un courriel de courtoisie qui LEVE ne casse rien non plus.
+     *
+     * <p>{@code IMessagerieSortante} promet de ne jamais lever. Ce test simule
+     * la violation de cette promesse, parce que la consequence serait grave :
+     * l'inscription echouerait APRES l'enregistrement du code, donc le code
+     * serait en base et perdu pour l'utilisateur.
+     *
+     * <p>C'est ce qui rend le {@code onErrorResume} de {@code sendCode} un
+     * garde-fou atteint, et non du code defensif que personne n'exerce — la
+     * distinction qui a fait retirer, dans la meme passe, une garde
+     * « messageCourt == null » qu'aucun chemin ne pouvait declencher.
+     */
+    @Test
+    @DisplayName("un courriel de courtoisie qui lève ne fait pas échouer l'inscription")
+    void courtesyEmailThrowingDoesNotBreakSmsFlow() {
+        when(verificationCodeRepository.findByPhoneNumberAndType(PHONE, VerificationCodeType.REGISTRATION))
+                .thenReturn(Mono.empty());
+        when(messagerie.envoyer(any())).thenAnswer(appel -> {
+            IMessagerieSortante.Demande message = appel.getArgument(0);
+            return message.canal() == CanalDeNotification.SMS
+                    ? Mono.just(true)
+                    : Mono.error(new RuntimeException("contrat viole"));
+        });
+
+        StepVerifier.create(service.generateAndSendCode(PHONE, EMAIL, VerificationCodeType.REGISTRATION))
+                .expectNextCount(1)
+                .verifyComplete();
     }
 
     // ==========================================================
@@ -273,16 +352,33 @@ class VerificationCodeServiceImplTest {
         verify(verificationCodeRepository).save(any(VerificationCode.class));
     }
 
+    /**
+     * Le modele depend du type de code — et le MEME modele sert aux deux canaux.
+     *
+     * <p>C'est tout l'apport du couple (modele, canal). L'ancien code portait
+     * DEUX tables de correspondance — {@code getSmsTemplateType} ici et
+     * {@code getTemplateTypeForVerification} dans {@code EmailServiceImpl} — a
+     * tenir d'accord pour le meme message. Ce test ne pouvait en verifier
+     * qu'une.
+     */
     @Test
-    @DisplayName("le template SMS dépend du type de code")
-    void smsTemplateDependsOnCodeType() {
+    @DisplayName("le modèle dépend du type de code, et vaut pour les deux canaux")
+    void modeleDependsOnCodeType() {
         when(verificationCodeRepository.findByPhoneNumberAndType(PHONE, VerificationCodeType.PASSWORD_RESET))
                 .thenReturn(Mono.empty());
 
-        StepVerifier.create(service.generateAndSendCode(PHONE, null, VerificationCodeType.PASSWORD_RESET))
+        StepVerifier.create(service.generateAndSendCode(PHONE, EMAIL, VerificationCodeType.PASSWORD_RESET))
                 .expectNextCount(1)
                 .verifyComplete();
 
-        verify(templateService).formatTemplate(eq(TemplateType.SMS_PASSWORD_RESET), any(Map.class));
+        assertThat(messagesDemandes())
+                .hasSize(2)
+                .allSatisfy(message -> assertThat(message.modele())
+                        .withFailMessage("le canal %s n'emploie pas le modele de "
+                                + "reinitialisation : les deux canaux doivent "
+                                + "nommer le MEME objet", message.canal())
+                        .isEqualTo(AppConstants.MODELE_REINITIALISATION))
+                .extracting(IMessagerieSortante.Demande::canal)
+                .containsExactly(CanalDeNotification.SMS, CanalDeNotification.COURRIEL);
     }
 }

@@ -5,7 +5,10 @@ import com.abdatytch.auth_service.dto.ContexteDeSecurite;
 import com.abdatytch.auth_service.dto.request.GeoLocationData;
 import com.abdatytch.auth_service.entities.User;
 import com.abdatytch.auth_service.exception.AuthException;
+import com.abdatytch.auth_service.constants.AppConstants;
 import com.abdatytch.auth_service.metrics.AuthMetrics;
+import com.abdatytch.auth_service.service.IMessagerieSortante;
+import com.abdatytch.commons.notification.CanalDeNotification;
 import com.abdatytch.auth_service.repository.UserRepository;
 import com.abdatytch.auth_service.service.impl.AlerteDeSecuriteServiceImpl;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -60,12 +63,38 @@ class AlerteDeSecuriteServiceImplTest {
     private static final String USER_AGENT =
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/131.0.0.0";
 
-    /** Un envoi retenu : destinataire, sujet, corps. */
-    private record Envoi(String canal, String destinataire, String sujet, String corps) {
+    /**
+     * Ce que le service a DEMANDE, et non ce qui a ete compose.
+     *
+     * <p>Les champs ont change avec le contrat : il n'y a plus de {@code sujet}
+     * ni de {@code corps}, parce que ce service ne compose plus de texte. Il
+     * nomme un MODELE et fournit les CIRCONSTANCES, et notification-service
+     * rend.
+     *
+     * <p>Consequence sur ces tests : ce qui portait sur le TEXTE — la mention
+     * « ancienne adresse », la conduite a tenir, l'absence de lien — est
+     * verifie la ou le texte vit desormais, dans {@code ModelesSansDoublonTest}
+     * de notification-service. Ce qui porte sur les FAITS assembles ici reste
+     * ici.
+     */
+    private record Envoi(CanalDeNotification canal, String destinataire,
+                         String modele, String circonstances) {
     }
 
     private List<Envoi> envois;
     private boolean smtpEnPanne;
+
+    /**
+     * La messagerie a REFUSE la remise : canal coupe, plafond atteint, numero
+     * hors liste autorisee.
+     *
+     * <p>Distinct de {@code smtpEnPanne}, qui simule une exception. La
+     * difference n'est pas cosmetique : le refus etait jusqu'ici indicible —
+     * l'ancien {@code Mono<Void>} vide valait a la fois « remis » et « rien
+     * n'est parti » — et c'est precisement pour cela qu'il etait compte
+     * « envoyee ».
+     */
+    private boolean remiseRefusee;
     private SimpleMeterRegistry registre;
     private UserRepository userRepository;
     private AlerteDeSecuriteServiceImpl service;
@@ -75,48 +104,37 @@ class AlerteDeSecuriteServiceImplTest {
     void setUp() {
         envois = new ArrayList<>();
         smtpEnPanne = false;
+        remiseRefusee = false;
         registre = new SimpleMeterRegistry();
         userRepository = mock(UserRepository.class);
 
-        IEmailService emails = new IEmailService() {
+        // UN bouchon pour les deux canaux, la ou il en fallait deux. Le canal
+        // est une donnee de la demande, plus une interface distincte.
+        IMessagerieSortante messagerie = new IMessagerieSortante() {
             @Override
-            public Mono<Void> sendWelcomeEmail(String toEmail, String firstName) {
-                return Mono.empty();
-            }
-
-            @Override
-            public Mono<Void> sendVerificationEmail(
-                    String toEmail, String code,
-                    com.abdatytch.auth_service.enums.VerificationCodeType type) {
-                return Mono.empty();
-            }
-
-            @Override
-            public Mono<Void> envoyerAvisDeSecurite(String toEmail, String sujet,
-                                                     String corps) {
+            public Mono<Boolean> envoyer(Demande demande) {
                 if (smtpEnPanne) {
+                    // La messagerie promet de ne jamais lever, et ce bouchon
+                    // viole la promesse exprès : les tests de « panne avalee »
+                    // doivent exercer ce chemin, qui existe precisement pour
+                    // qu'une violation du contrat ne fasse pas echouer
+                    // l'operation signalee.
                     return Mono.error(new IllegalStateException("SMTP indisponible"));
                 }
-                envois.add(new Envoi("courriel", toEmail, sujet, corps));
-                return Mono.empty();
-            }
-        };
-
-        ISmsService sms = new ISmsService() {
-            @Override
-            public Mono<Void> sendSms(String phoneNumber, String message) {
-                envois.add(new Envoi("sms", phoneNumber, null, message));
-                return Mono.empty();
+                envois.add(new Envoi(demande.canal(), demande.destinataire(),
+                        demande.modele(),
+                        demande.variables().get(AppConstants.VARIABLE_CIRCONSTANCES)));
+                return Mono.just(!remiseRefusee);
             }
 
             @Override
-            public boolean envoiActif() {
+            public boolean envoiSmsActif() {
                 return true;
             }
         };
 
         service = new AlerteDeSecuriteServiceImpl(
-                userRepository, emails, sms, new AuthMetrics(registre));
+                userRepository, messagerie, new AuthMetrics(registre));
 
         compte = new User();
         compte.setId("client-1");
@@ -176,7 +194,12 @@ class AlerteDeSecuriteServiceImplTest {
             // Sans cette precision, la personne lit « votre adresse a ete
             // modifiee » sur une adresse qui, de son point de vue, est toujours
             // la bonne — et ne comprend pas qu'elle vient de perdre l'acces.
-            assertThat(envois.get(0).corps()).containsIgnoringCase("ancienne adresse");
+            // Le TEXTE « ce message est envoye a votre ancienne adresse » vit
+            // desormais dans le modele, chez notification-service, qui en
+            // verifie le contenu. Ce qui se verifie ICI est que le bon MODELE
+            // est demande : c'est la seule chose que ce service decide.
+            assertThat(envois.get(0).modele())
+                    .isEqualTo(AppConstants.MODELE_ALERTE_ADRESSE);
         }
 
         @Test
@@ -206,7 +229,7 @@ class AlerteDeSecuriteServiceImplTest {
             // Rien : l'ancienne adresse n'etait pas verifiee, donc pas de
             // courriel — mais le numero l'est, donc le repli joue.
             assertThat(envois).hasSize(1);
-            assertThat(envois.get(0).canal()).isEqualTo("sms");
+            assertThat(envois.get(0).canal()).isEqualTo(CanalDeNotification.SMS);
             assertThat(envois.get(0).destinataire()).isEqualTo(TELEPHONE);
         }
     }
@@ -223,7 +246,7 @@ class AlerteDeSecuriteServiceImplTest {
                     .verifyComplete();
 
             assertThat(envois).hasSize(1);
-            assertThat(envois.get(0).canal()).isEqualTo("courriel");
+            assertThat(envois.get(0).canal()).isEqualTo(CanalDeNotification.COURRIEL);
             assertThat(envois.get(0).destinataire()).isEqualTo(ANCIENNE_ADRESSE);
             assertThat(compteur("mot_de_passe_modifie", "envoyee")).isEqualTo(1);
         }
@@ -254,7 +277,7 @@ class AlerteDeSecuriteServiceImplTest {
             // Un compte inscrit par telephone — cas courant ici — n'a pas
             // d'adresse verifiee. Sans repli, il ne serait prevenu de rien.
             assertThat(envois).hasSize(1);
-            assertThat(envois.get(0).canal()).isEqualTo("sms");
+            assertThat(envois.get(0).canal()).isEqualTo(CanalDeNotification.SMS);
         }
 
         @Test
@@ -266,7 +289,7 @@ class AlerteDeSecuriteServiceImplTest {
             service.motDePasseModifie(compte, contexte()).block();
 
             assertThat(envois).hasSize(1);
-            assertThat(envois.get(0).canal()).isEqualTo("courriel");
+            assertThat(envois.get(0).canal()).isEqualTo(CanalDeNotification.COURRIEL);
         }
 
         @Test
@@ -316,7 +339,7 @@ class AlerteDeSecuriteServiceImplTest {
                     .verifyComplete();
 
             assertThat(envois).hasSize(1);
-            assertThat(envois.get(0).canal()).isEqualTo("sms");
+            assertThat(envois.get(0).canal()).isEqualTo(CanalDeNotification.SMS);
             assertThat(envois.get(0).destinataire()).isEqualTo(ANCIEN_NUMERO);
             assertThat(envois.get(0).destinataire()).isNotEqualTo(NOUVEAU_NUMERO);
         }
@@ -332,7 +355,7 @@ class AlerteDeSecuriteServiceImplTest {
             service.numeroModifie(compte, ANCIEN_NUMERO, false, contexte()).block();
 
             assertThat(envois).hasSize(1);
-            assertThat(envois.get(0).canal()).isEqualTo("courriel");
+            assertThat(envois.get(0).canal()).isEqualTo(CanalDeNotification.COURRIEL);
             assertThat(envois.get(0).destinataire()).isEqualTo(ANCIENNE_ADRESSE);
         }
 
@@ -348,9 +371,16 @@ class AlerteDeSecuriteServiceImplTest {
             // le canal de la reinitialisation du mot de passe : qui le remplace
             // prend le controle du compte entier sans le mot de passe. La
             // personne doit pouvoir mesurer ce qu'elle vient de perdre.
-            assertThat(envois.get(0).corps())
-                    .containsIgnoringCase("ancien numero")
-                    .containsIgnoringCase("recuperation");
+            //
+            // Le TEXTE qui le dit vit desormais dans le modele, et
+            // ModelesSansDoublonTest de notification-service en verifie le
+            // contenu — y compris la mention de la recuperation par SMS. Ce qui
+            // se verifie ici est que le bon MODELE est demande : c'est la seule
+            // decision que prend ce service, et confondre un changement de
+            // numero avec un changement d'adresse ferait partir le mauvais
+            // texte.
+            assertThat(envois.get(0).modele())
+                    .isEqualTo(AppConstants.MODELE_ALERTE_NUMERO);
         }
 
         @Test
@@ -399,6 +429,52 @@ class AlerteDeSecuriteServiceImplTest {
             assertThat(compteur("mot_de_passe_modifie", "envoyee")).isZero();
         }
 
+        /**
+         * Un REFUS est compte « non_remise », et surtout pas « envoyee ».
+         *
+         * <h4>Le defaut que ce test ferme</h4>
+         *
+         * La metrique etait posee dans un {@code doOnSuccess} sur un
+         * {@code Mono<Void>}, qui se declenche aussi sur une terminaison VIDE.
+         * L'ancien client se terminait precisement vide quand rien n'etait
+         * parti : SMS coupe, numero hors liste, plafond journalier atteint.
+         * Chacun de ces refus etait donc compte « envoyee ».
+         *
+         * <p>Consequence en supervision : la regle critique
+         * {@code AlertesDeSecuriteNonEnvoyees} ne surveille que les echecs, et
+         * ne voyait donc jamais ces cas — une alerte de securite pouvait cesser
+         * de partir sans que rien ne monte.
+         *
+         * <h4>Etiquette en LITTERAL, et ce n'est pas un raccourci</h4>
+         *
+         * « auth.security.alerte » et « non_remise » sont le contrat avec
+         * security-admin-alerts.yml, qui interroge desormais
+         * {@code auth_security_alerte_total{resultat=~"echec|non_remise"}}.
+         * Passer par une constante Java laisserait un renommage casser
+         * silencieusement l'alerte : le code compilerait, le test passerait, et
+         * l'alerte redeviendrait muette. Meme raisonnement que pour
+         * « seuil_tentatives_atteint » dans AuthServiceImplLoginTest.
+         */
+        @Test
+        @DisplayName("un refus de remise est compte « non_remise », jamais « envoyee »")
+        void refusCompteNonRemise() {
+            remiseRefusee = true;
+            service.motDePasseModifie(compte, contexte()).block();
+
+            assertThat(compteur("mot_de_passe_modifie", "non_remise"))
+                    .withFailMessage("un refus de remise n'est pas compte : la "
+                            + "regle AlertesDeSecuriteNonEnvoyees ne le verra pas")
+                    .isEqualTo(1);
+            assertThat(compteur("mot_de_passe_modifie", "envoyee"))
+                    .withFailMessage("un refus de remise est compte « envoyee » : "
+                            + "la metrique affirme avoir prevenu quelqu'un qui "
+                            + "n'a rien recu")
+                    .isZero();
+            // Ni un echec : une limite de depense voulue n'est pas une panne, et
+            // les confondre ferait reparer ce qui fonctionne.
+            assertThat(compteur("mot_de_passe_modifie", "echec")).isZero();
+        }
+
         @Test
         @DisplayName("aucun repli par SMS apres un echec de courriel")
         void pasDeRepliApresEchec() {
@@ -441,7 +517,7 @@ class AlerteDeSecuriteServiceImplTest {
             service.nouvelleConnexion(compte, contexte()).block();
 
             assertThat(envois).hasSize(1);
-            assertThat(envois.get(0).canal()).isEqualTo("courriel");
+            assertThat(envois.get(0).canal()).isEqualTo(CanalDeNotification.COURRIEL);
         }
 
         @Test
@@ -541,11 +617,11 @@ class AlerteDeSecuriteServiceImplTest {
         void circonstances() {
             service.motDePasseModifie(compte, contexte()).block();
 
-            String corps = envois.get(0).corps();
+            String faits = envois.get(0).circonstances();
             // Sans circonstances, l'avis n'informe pas, il inquiete : la
             // personne ne peut pas juger si c'est elle.
-            assertThat(corps).contains("Bamako", "Mali", IP, USER_AGENT);
-            assertThat(corps).contains("Quand");
+            assertThat(faits).contains("Bamako", "Mali", IP, USER_AGENT);
+            assertThat(faits).contains("Quand");
         }
 
         @Test
@@ -554,14 +630,14 @@ class AlerteDeSecuriteServiceImplTest {
             service.motDePasseModifie(compte,
                     ContexteDeSecurite.de(IP, USER_AGENT)).block();
 
-            String corps = envois.get(0).corps();
+            String faits = envois.get(0).circonstances();
             // « depuis Unknown » se lit comme une anomalie du systeme plutot
             // que comme une information manquante, et detourne l'attention de
             // ce que l'avis annonce.
-            assertThat(corps).doesNotContain("Unknown");
-            assertThat(corps).doesNotContain("Lieu");
+            assertThat(faits).doesNotContain("Unknown");
+            assertThat(faits).doesNotContain("Lieu");
             // Le reste est bien la : l'absence de lieu ne retient pas l'avis.
-            assertThat(corps).contains(IP);
+            assertThat(faits).contains(IP);
         }
 
         @Test
@@ -578,34 +654,49 @@ class AlerteDeSecuriteServiceImplTest {
             service.motDePasseModifie(compte, ContexteDeSecurite.de(
                     IP, USER_AGENT, GeoLocationData.builder().build())).block();
 
-            String corps = envois.get(0).corps();
-            assertThat(corps).doesNotContain("Unknown");
-            assertThat(corps).doesNotContain("Lieu");
-            assertThat(corps).contains(IP);
+            String faits = envois.get(0).circonstances();
+            assertThat(faits).doesNotContain("Unknown");
+            assertThat(faits).doesNotContain("Lieu");
+            assertThat(faits).contains(IP);
         }
 
+        /*
+         * LA CONDUITE A TENIR N'EST PLUS VERIFIEE ICI, et ce n'est pas un
+         * relachement : ce paragraphe fait partie du TEXTE, qui vit desormais
+         * dans les quatre modeles de notification-service.
+         *
+         * ModelesSansDoublonTest y verifie mieux que ce test ne le faisait : il
+         * controle que les QUATRE alertes portent exactement la meme conduite a
+         * tenir, ce qu'une assertion « contient "mot de passe" » sur une seule
+         * alerte ne disait pas.
+         */
+
+        /**
+         * Les CIRCONSTANCES ne portent ni lien ni secret.
+         *
+         * <p>Le test d'origine controlait le corps entier. Le corps est
+         * desormais compose ailleurs, et l'absence de lien y est verifiee par
+         * {@code ModelesSansDoublonTest}. Reste a verifier ici ce que CE service
+         * injecte : l'adresse IP et l'agent utilisateur viennent de la requete,
+         * donc de l'exterieur, et un agent utilisateur peut parfaitement
+         * contenir une URL.
+         *
+         * <p>C'est d'ailleurs la partie la plus risquee des deux : le texte du
+         * modele est ecrit une fois et relu, les circonstances arrivent a chaque
+         * requete.
+         */
         @Test
-        @DisplayName("la conduite a tenir y figure")
-        void conduiteATenir() {
+        @DisplayName("les circonstances ne portent ni lien ni code")
+        void aucunLienNiSecretDansLesCirconstances() {
             service.motDePasseModifie(compte, contexte()).block();
 
-            // Une alerte sans suite a donner laisse la personne inquiete et
-            // sans prise.
-            assertThat(envois.get(0).corps()).containsIgnoringCase("mot de passe");
-        }
-
-        @Test
-        @DisplayName("AUCUN lien d'action, aucun code, aucun jeton")
-        void aucunLienNiSecret() {
-            service.motDePasseModifie(compte, contexte()).block();
-
-            String corps = envois.get(0).corps();
+            String faits = envois.get(0).circonstances();
             // Un courriel d'alerte est lu par qui a acces a la boite — et c'est
             // precisement ce dont on n'est pas sur a l'instant ou on l'envoie.
             // Un lien « ce n'etait pas moi, reinitialiser ici » offrirait a
             // l'attaquant un chemin de reprise en main.
-            assertThat(corps).doesNotContain("http://", "https://");
-            assertThat(corps).doesNotMatch("(?s).*\\b\\d{6}\\b.*");
+            assertThat(faits).doesNotContain("http://", "https://");
+            assertThat(faits).doesNotMatch("(?s).*\\b\\d{6}\\b.*");
         }
     }
 }

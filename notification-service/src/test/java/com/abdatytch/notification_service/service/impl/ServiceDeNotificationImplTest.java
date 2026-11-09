@@ -53,7 +53,15 @@ import static org.mockito.Mockito.when;
 class ServiceDeNotificationImplTest {
 
     private static final String PORTEUR = "11111111-1111-1111-1111-111111111111";
-    private static final String MODELE = "securite.contact-modifie";
+    /**
+     * Un modele REEL du fichier, qui porte une variante SMS.
+     *
+     * <p>C'etait {@code securite.contact-modifie}, retire du fichier : un unique
+     * modele generique pour « une coordonnee a change » disait moins que les
+     * textes de son seul emetteur reel, qui distingue l'adresse du numero et
+     * nomme la consequence de chacun.
+     */
+    private static final String MODELE = "securite.adresse-modifiee";
 
     private NotificationRepository notifications;
     private RemiseParCanalRepository remises;
@@ -153,7 +161,14 @@ class ServiceDeNotificationImplTest {
 
     private static DemandeDeNotification demande(List<CanalDeNotification> canaux) {
         return new DemandeDeNotification(UUID.randomUUID(), PORTEUR, canaux, MODELE,
-                Map.of("date", "2026-11-06"),
+                // La variable REELLE du modele. C'etait « date », qui
+                // n'existait plus dans le texte : le rendu reussissait, le
+                // marqueur {circonstances} restait litteral, et seule
+                // l'assertion de contenu l'a signale. C'est le comportement
+                // voulu du moteur — un marqueur visible se diagnostique, « null »
+                // se devine — mais cela montre qu'un nom de variable fautif ne
+                // fait echouer AUCUN rendu.
+                Map.of("circonstances", "Quand : 06/11/2026 a 15h30\n"),
                 DemandeDeNotification.Urgence.CRITIQUE, "test", null, Instant.now());
     }
 
@@ -292,7 +307,11 @@ class ServiceDeNotificationImplTest {
             assertThat(courriel.recu.coordonnee()).isEqualTo("personne@exemple.test");
             // Le modele REEL a ete rendu, variable substituee : c'est ce qui
             // verifie que la chaine complete tient, et non seulement ses bords.
-            assertThat(courriel.recu.corps()).contains("2026-11-06");
+            assertThat(courriel.recu.corps()).contains("06/11/2026 a 15h30");
+            // Et le marqueur a bien disparu : sans cette seconde assertion, un
+            // nom de variable fautif passerait, le texte partant avec
+            // « {circonstances} » en clair sous les yeux du destinataire.
+            assertThat(courriel.recu.corps()).doesNotContain("{circonstances}");
             assertThat(courriel.recu.sujet()).isNotBlank();
         }
 

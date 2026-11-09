@@ -88,65 +88,9 @@ public class EmailServiceImpl implements EmailService {
     @Value("${app.email.from:}")
     private String fromEmail;
 
-    @Value("${app.email.verification-url:http://localhost:3000/verify-email}")
-    private String verificationBaseUrl;
 
-    @Value("${app.email.reset-password-url:http://localhost:3000/reset-password}")
-    private String resetPasswordBaseUrl;
 
-    @Override
-    public Mono<Void> sendVerificationEmail(String email, String token, String firstName) {
-        log.info("Envoi d'email de vérification à: {}", email);
-        
-        return Mono.fromRunnable(() -> {
-            try {
-                SimpleMailMessage message = new SimpleMailMessage();
-                message.setFrom(fromEmail);
-                message.setTo(email);
-                message.setSubject("Vérifiez votre adresse email - Restart");
-                
-                String verificationUrl = verificationBaseUrl + "?token=" + token;
-                String emailBody = buildVerificationEmailBody(firstName, verificationUrl);
-                message.setText(emailBody);
-                
-                mailSender.send(message);
-                log.info("Email de vérification envoyé avec succès à: {}", email);
-                
-            } catch (Exception e) {
-                log.error("Erreur lors de l'envoi de l'email de vérification à: {} - {}", email, e.getMessage());
-                throw new RuntimeException("Erreur lors de l'envoi de l'email", e);
-            }
-        })
-        .subscribeOn(Schedulers.boundedElastic())
-        .then();
-    }
 
-    @Override
-    public Mono<Void> sendPasswordResetEmail(String email, String token, String firstName) {
-        log.info("Envoi d'email de réinitialisation à: {}", email);
-
-        return Mono.fromRunnable(() -> {
-            try {
-                SimpleMailMessage message = new SimpleMailMessage();
-                message.setFrom(fromEmail);
-                message.setTo(email);
-                message.setSubject("Réinitialisation de votre mot de passe - Restart");
-
-                String resetUrl = resetPasswordBaseUrl + "?token=" + token;
-                String emailBody = buildPasswordResetEmailBody(firstName, resetUrl);
-                message.setText(emailBody);
-
-                mailSender.send(message);
-                log.info("Email de réinitialisation envoyé avec succès à: {}", email);
-
-            } catch (Exception e) {
-                log.error("Erreur lors de l'envoi de l'email de réinitialisation à: {} - {}", email, e.getMessage());
-                throw new RuntimeException("Erreur lors de l'envoi de l'email", e);
-            }
-        })
-        .subscribeOn(Schedulers.boundedElastic())
-        .then();
-    }
 
     @Override
     public Mono<Void> sendEmailOtp(String email, String otpCode, String firstName) {
@@ -226,49 +170,7 @@ public class EmailServiceImpl implements EmailService {
         .then();
     }
 
-    /**
-     * Construit le corps de l'email de vérification
-     */
-    private String buildVerificationEmailBody(String firstName, String verificationUrl) {
-        return String.format("""
-            Bonjour %s,
-            
-            Bienvenue sur Restart ! 
-            
-            Pour activer votre compte développeur, veuillez cliquer sur le lien ci-dessous :
-            
-            %s
-            
-            Ce lien est valide pendant 24 heures.
-            
-            Si vous n'avez pas créé de compte, vous pouvez ignorer cet email.
-            
-            Cordialement,
-            L'équipe Restart
-            """
-, firstName, verificationUrl);
-    }
 
-    /**
-     * Construit le corps de l'email de réinitialisation
-     */
-    private String buildPasswordResetEmailBody(String firstName, String resetUrl) {
-        return String.format("""
-            Bonjour %s,
-
-            Vous avez demandé la réinitialisation de votre mot de passe.
-
-            Pour créer un nouveau mot de passe, cliquez sur le lien ci-dessous :
-
-            %s
-
-            Ce lien est valide pendant 1 heure.
-
-            Si vous n'avez pas demandé cette réinitialisation, vous pouvez ignorer cet email.
-            Votre mot de passe actuel reste inchangé.
-            """
-, firstName, resetUrl);
-    }
 
     @Override
     public Mono<Void> sendAdminAlertEmail(String adminEmail, String subject, String message) {

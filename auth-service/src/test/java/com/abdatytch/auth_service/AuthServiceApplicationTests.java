@@ -23,7 +23,6 @@ class AuthServiceApplicationTests {
 	@MockitoBean private OAuthAccountRepository oAuthAccountRepository;
 	@MockitoBean private BiometricCredentialRepository biometricCredentialRepository;
 	@MockitoBean private AuthenticationLogRepository authenticationLogRepository;
-	@MockitoBean private MessageTemplateRepository messageTemplateRepository;
 	@MockitoBean private AppareilDeConfianceRepository appareilDeConfianceRepository;
 	@MockitoBean private CodeDeSecoursRepository codeDeSecoursRepository;
 
