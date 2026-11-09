@@ -90,6 +90,30 @@
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
+		<!--
+			L'AUTOCONFIGURATION Flyway, et sans elle rien ne migre.
+
+			Spring Boot 4 a eclate ses autoconfigurations en modules distincts :
+			FlywayAutoConfiguration vit dans spring-boot-flyway, et non plus
+			dans spring-boot-autoconfigure. flyway-core seul met la
+			BIBLIOTHEQUE sur le classpath, et personne ne lit spring.flyway.*.
+
+			CONSTATE SUR L'ENVIRONNEMENT DE DEVELOPPEMENT, au premier demarrage
+			reel : la base de ce service contenait ZERO table, sans
+			flyway_schema_history, alors que les migrations etaient dans le jar
+			et que `spring.flyway.enabled: true` etait servi par config-service.
+			Aucune erreur, aucun avertissement.
+
+			auth-service portait deja cette dependance — voir son pom.xml pour
+			le recit complet du diagnostic. Elle manquait a TROIS modules sur
+			quatre : la correction avait ete appliquee a un seul.
+
+			FlywayAutoconfigureePartoutTest le garde desormais.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-flyway</artifactId>
+		</dependency>
 
 		<!--
 		  Envoi de courriel. JavaMailSender n'a PAS d'API reactive : chaque envoi
