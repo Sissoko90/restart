@@ -213,11 +213,19 @@ public class AuthServiceImpl implements IAuthService {
      * faux faisait attendre un message qui ne partait pas. Le code est bien
      * généré : c'est l'<b>envoi</b> qui n'a pas lieu, et la réponse le dit.
      */
-    private String messageDEnvoiOtp() {
-        return messagerie.envoiSmsActif()
-                ? AppConstants.OTP_ENVOYE_PAR_SMS
-                : AppConstants.OTP_GENERE_SANS_ENVOI;
-    }
+    /*
+     * `messageDEnvoiOtp()` a disparu.
+     *
+     * Elle lisait `envoiSmsActif()`, un interrupteur de CONFIGURATION, et ne
+     * connaissait donc qu'une des quatre raisons de ne rien envoyer. Un numero
+     * hors liste autorisee, un plafond journalier atteint ou un fournisseur mal
+     * configure produisaient tous « Code OTP envoyé par SMS » — et la personne
+     * attendait un message qui n'arriverait jamais.
+     *
+     * La reponse est desormais formulee depuis EnvoiDuCode, qui porte ce qui est
+     * REELLEMENT parti, canal par canal. La regle « si ce n'est pas parti, le
+     * dire » est posee une seule fois, dans ce type.
+     */
 
     private Mono<User> ensureNotLocked(User user) {
         // Delegue : la regle de verrouillage n'a plus qu'un seul detenteur.
@@ -706,8 +714,14 @@ public class AuthServiceImpl implements IAuthService {
                 .switchIfEmpty(Mono.error(new AuthException(ErrorCode.USER_NOT_FOUND)))
                 .flatMap(user -> verificationCodeService.generateAndSendCode(
                         request.getPhoneNumber(), user.getEmail(), VerificationCodeType.PHONE_VERIFICATION))
-                .thenReturn(verificationResponseMapper.toSuccessResponse(
-                        messageDEnvoiOtp(), AppConstants.VERIFICATION_CODE_EXPIRY_MINUTES));
+                // `map` et non `thenReturn` : la reponse depend desormais de ce
+                // qui est REELLEMENT parti. L'amont ne peut pas etre vide — le
+                // `switchIfEmpty` ci-dessus leve sur un compte inconnu — donc
+                // aucune reponse ne disparait au passage.
+                .map(envoi -> verificationResponseMapper.toSuccessResponse(
+                        IVerificationCodeService.EnvoiDuCode.message(
+                                envoi.smsAccepte(), AppConstants.OTP_ENVOYE_PAR_SMS),
+                        AppConstants.VERIFICATION_CODE_EXPIRY_MINUTES));
     }
 
     @Override
@@ -751,9 +765,14 @@ public class AuthServiceImpl implements IAuthService {
                         ? Mono.error(new AuthException(ErrorCode.PHONE_ALREADY_EXISTS))
                         : verificationCodeService.generateAndSendCode(
                                 request.getPhoneNumber(), null, VerificationCodeType.REGISTRATION))
-                .then(Mono.fromRunnable(() -> authMetrics.recordOtpSent("sms")))
-                .thenReturn(verificationResponseMapper.toSuccessResponse(
-                        messageDEnvoiOtp(), AppConstants.VERIFICATION_CODE_EXPIRY_MINUTES));
+                // `recordOtpSent` a ete RETIRE d'ici. VerificationCodeServiceImpl
+                // le pose deja pour chaque envoi : ce chemin comptait donc
+                // DOUBLE, et le panneau Grafana affichait deux fois le nombre
+                // reel d'OTP d'inscription. La metrique appartient a qui envoie.
+                .map(envoi -> verificationResponseMapper.toSuccessResponse(
+                        IVerificationCodeService.EnvoiDuCode.message(
+                                envoi.smsAccepte(), AppConstants.OTP_ENVOYE_PAR_SMS),
+                        AppConstants.VERIFICATION_CODE_EXPIRY_MINUTES));
     }
 
     @Override
@@ -803,8 +822,11 @@ public class AuthServiceImpl implements IAuthService {
                 .flatMap(user -> verificationCodeService.generateAndSendCode(
                         tempPhoneFor(request.getEmail()), request.getEmail(),
                         VerificationCodeType.EMAIL_VERIFICATION))
-                .thenReturn(verificationResponseMapper.toSuccessResponse(
-                        "Code OTP envoyé par email", AppConstants.VERIFICATION_CODE_EXPIRY_MINUTES));
+                // Le message etait un LITTERAL annoncant l'envoi sans condition.
+                .map(envoi -> verificationResponseMapper.toSuccessResponse(
+                        IVerificationCodeService.EnvoiDuCode.message(
+                                envoi.courrielAccepte(), AppConstants.OTP_ENVOYE_PAR_COURRIEL),
+                        AppConstants.VERIFICATION_CODE_EXPIRY_MINUTES));
     }
 
     @Override
@@ -847,9 +869,12 @@ public class AuthServiceImpl implements IAuthService {
                         : verificationCodeService.generateAndSendCode(
                                 tempPhoneFor(request.getEmail()), request.getEmail(),
                                 VerificationCodeType.REGISTRATION))
-                .then(Mono.fromRunnable(() -> authMetrics.recordOtpSent("email")))
-                .thenReturn(verificationResponseMapper.toSuccessResponse(
-                        "Code OTP envoyé par email", AppConstants.VERIFICATION_CODE_EXPIRY_MINUTES));
+                // Comme pour l'inscription par telephone : `recordOtpSent`
+                // retire, ce chemin comptait double.
+                .map(envoi -> verificationResponseMapper.toSuccessResponse(
+                        IVerificationCodeService.EnvoiDuCode.message(
+                                envoi.courrielAccepte(), AppConstants.OTP_ENVOYE_PAR_COURRIEL),
+                        AppConstants.VERIFICATION_CODE_EXPIRY_MINUTES));
     }
 
     @Override

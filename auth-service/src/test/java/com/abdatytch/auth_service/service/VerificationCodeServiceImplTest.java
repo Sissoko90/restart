@@ -98,6 +98,21 @@ class VerificationCodeServiceImplTest {
         return capteur.getAllValues();
     }
 
+    /**
+     * L'entite reellement PERSISTEE.
+     *
+     * <p>Lue par capteur sur {@code save}, et non dans la valeur de retour : le
+     * service rend desormais ce qui est PARTI, pas ce qui est enregistre. Et
+     * c'est le bon endroit pour ces assertions — ce qui compte d'un code est ce
+     * que la validation relira en base, pas ce qu'une methode a renvoye.
+     */
+    private VerificationCode codeEnregistre() {
+        ArgumentCaptor<VerificationCode> capteur =
+                ArgumentCaptor.forClass(VerificationCode.class);
+        verify(verificationCodeRepository, atLeast(1)).save(capteur.capture());
+        return capteur.getValue();
+    }
+
     private VerificationCode validCode() {
         return VerificationCode.builder()
                 .phoneNumber(PHONE)
@@ -120,12 +135,24 @@ class VerificationCodeServiceImplTest {
                 .thenReturn(Mono.empty());
 
         StepVerifier.create(service.generateAndSendCode(PHONE, null, VerificationCodeType.REGISTRATION))
-                .assertNext(saved -> {
-                    assertThat(saved.getCode()).hasSize(6).containsOnlyDigits();
-                    assertThat(saved.getExpiresAt()).isAfter(LocalDateTime.now());
-                    assertThat(saved.getIsUsed()).isFalse();
+                // Le resultat porte desormais CE QUI EST PARTI, et non l'entite
+                // enregistree — qu'aucun des huit appelants n'utilisait.
+                .assertNext(envoi -> {
+                    assertThat(envoi.smsAccepte()).isTrue();
+                    // null et non false : aucun courriel n'a ete TENTE, ce qui
+                    // n'est pas un echec. Les confondre ferait croire a une
+                    // panne de courriel sur chaque inscription par telephone.
+                    assertThat(envoi.parCourriel()).isNull();
                 })
                 .verifyComplete();
+
+        // Les proprietes du code sont verifiees sur ce qui est PERSISTE, par
+        // capteur sur `save`. C'est plus juste que de les lire dans la valeur
+        // de retour : ce qui compte est ce que la validation relira en base.
+        VerificationCode enregistre = codeEnregistre();
+        assertThat(enregistre.getCode()).hasSize(6).containsOnlyDigits();
+        assertThat(enregistre.getExpiresAt()).isAfter(LocalDateTime.now());
+        assertThat(enregistre.getIsUsed()).isFalse();
 
         assertThat(messagesDemandes())
                 .singleElement()
@@ -137,6 +164,67 @@ class VerificationCodeServiceImplTest {
                             .isEqualTo(AppConstants.MODELE_CODE_DE_VERIFICATION);
                 });
         verify(authMetrics).recordOtpSent("sms");
+    }
+
+    /**
+     * Un envoi REFUSE ne compte pas comme envoye.
+     *
+     * <h4>Le defaut que ce test ferme, et pourquoi il manquait</h4>
+     *
+     * La metrique etait posee dans un {@code doOnSuccess} sur un
+     * {@code Mono<Void>} : elle comptait un envoi par APPEL, quoi qu'il arrive.
+     * Un plafond journalier atteint ou un numero hors liste autorisee
+     * produisait le meme increment qu'un envoi reussi, et le panneau Grafana
+     * {@code sum(auth_otp_sent_total) by (channel)} affichait des envois qui
+     * n'avaient pas eu lieu.
+     *
+     * <p>Le test du cas heureux ne pouvait pas l'attraper : il verifiait que la
+     * metrique EST posee quand tout va bien. C'est la moitie de la regle. Une
+     * mutation l'a montre — rendre le comptage inconditionnel laissait les
+     * quatorze tests verts.
+     *
+     * <p>Etiquette en LITTERAL, comme ailleurs dans ce depot : « sms » est le
+     * contrat avec le panneau Grafana, et une constante Java laisserait un
+     * renommage couper la serie sans qu'aucun test ne bronche.
+     */
+    @Test
+    @DisplayName("envoi refusé : la métrique ne compte RIEN")
+    void envoiRefuseNeComptePas() {
+        when(verificationCodeRepository.findByPhoneNumberAndType(PHONE, VerificationCodeType.REGISTRATION))
+                .thenReturn(Mono.empty());
+        when(messagerie.envoyer(any())).thenReturn(Mono.just(false));
+
+        StepVerifier.create(service.generateAndSendCode(PHONE, null, VerificationCodeType.REGISTRATION))
+                .assertNext(envoi -> assertThat(envoi.smsAccepte()).isFalse())
+                .verifyComplete();
+
+        verify(authMetrics, never()).recordOtpSent("sms");
+        verify(authMetrics, never()).recordOtpSent("email");
+    }
+
+    /**
+     * Un parcours telephone+courriel compte DEUX envois, un par canal.
+     *
+     * <p>L'ancien code en comptait UN, etiquete depuis
+     * {@code email != null ? "email" : "sms"} : le SMS disparaissait purement
+     * de la mesure sur le cas le plus courant — le SMS et son doublon de
+     * courtoisie par courriel.
+     */
+    @Test
+    @DisplayName("SMS et courriel : la métrique compte les deux canaux")
+    void deuxCanauxComptentDeuxFois() {
+        when(verificationCodeRepository.findByPhoneNumberAndType(PHONE, VerificationCodeType.REGISTRATION))
+                .thenReturn(Mono.empty());
+
+        StepVerifier.create(service.generateAndSendCode(PHONE, EMAIL, VerificationCodeType.REGISTRATION))
+                .assertNext(envoi -> {
+                    assertThat(envoi.smsAccepte()).isTrue();
+                    assertThat(envoi.courrielAccepte()).isTrue();
+                })
+                .verifyComplete();
+
+        verify(authMetrics).recordOtpSent("sms");
+        verify(authMetrics).recordOtpSent("email");
     }
 
     @Test

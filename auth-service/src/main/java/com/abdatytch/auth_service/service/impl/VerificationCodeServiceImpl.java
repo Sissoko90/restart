@@ -61,17 +61,17 @@ public class VerificationCodeServiceImpl implements IVerificationCodeService {
 
     @Override
     @Transactional
-    public Mono<VerificationCode> generateAndSendCode(String phoneNumber, String email,
-                                                      VerificationCodeType type) {
+    public Mono<EnvoiDuCode> generateAndSendCode(String phoneNumber, String email,
+                                                 VerificationCodeType type) {
         return generateAndSendCode(phoneNumber, email, type, null, null, null);
     }
 
     @Override
     @Transactional
-    public Mono<VerificationCode> generateAndSendCode(String phoneNumber, String email,
-                                                      VerificationCodeType type,
-                                                      String firstName, String lastName,
-                                                      String countryCode) {
+    public Mono<EnvoiDuCode> generateAndSendCode(String phoneNumber, String email,
+                                                 VerificationCodeType type,
+                                                 String firstName, String lastName,
+                                                 String countryCode) {
         log.info(ServiceConstants.LOG_INFO_GENERATING_CODE, phoneNumber, type);
 
         return verificationCodeRepository.findByPhoneNumberAndType(phoneNumber, type)
@@ -95,12 +95,15 @@ public class VerificationCodeServiceImpl implements IVerificationCodeService {
                                     .plusMinutes(AppConstants.VERIFICATION_CODE_EXPIRY_MINUTES))
                             .build();
 
+                    // Le code est ENREGISTRE avant toute tentative d'envoi, et
+                    // c'est l'ordre voulu : un envoi qui echoue laisse un code
+                    // valide que la personne peut redemander, alors qu'un envoi
+                    // reussi sans enregistrement produirait un code qu'aucune
+                    // validation ne reconnaitrait.
                     return verificationCodeRepository.save(verificationCode)
-                            .flatMap(saved -> sendCode(phoneNumber, email, code, type)
-                                    .thenReturn(saved))
-                            .doOnSuccess(saved -> {
-                                authMetrics.recordOtpSent(
-                                        (email != null && !email.isEmpty()) ? "email" : "sms");
+                            .flatMap(saved -> sendCode(phoneNumber, email, code, type))
+                            .doOnNext(envoi -> {
+                                compterLesEnvois(envoi);
                                 // Le CODE n'est plus journalise. Il l'etait avec
                                 // le numero de destination, a INFO et sans
                                 // condition : chaque code a usage unique jamais
@@ -109,6 +112,42 @@ public class VerificationCodeServiceImpl implements IVerificationCodeService {
                                 log.info(ServiceConstants.LOG_INFO_CODE_GENERATED, phoneNumber);
                             });
                 }));
+    }
+
+    /**
+     * Compte les envois REELLEMENT acceptes, un par canal.
+     *
+     * <h2>Deux defauts corriges d'un coup</h2>
+     *
+     * <p><b>Un.</b> La metrique etait posee dans un {@code doOnSuccess} et
+     * comptait <b>un</b> envoi par appel, avec un canal deduit de
+     * {@code email != null ? "email" : "sms"}. Un parcours telephone+courriel —
+     * le cas courant, le SMS et son doublon de courtoisie — comptait donc UN
+     * envoi etiquete « email », et le SMS disparaissait de la mesure.
+     *
+     * <p><b>Deux.</b> Elle comptait quoi qu'il arrive. Un plafond journalier
+     * atteint ou un numero hors liste autorisee produisait le meme increment
+     * qu'un envoi reussi : le panneau Grafana
+     * {@code sum(auth_otp_sent_total) by (channel)} montrait des envois qui
+     * n'avaient pas eu lieu.
+     *
+     * <p>Et {@code AuthServiceImpl} en posait un SECOND, sur ses deux chemins
+     * d'inscription : ceux-la comptaient donc <b>double</b>. Les deux sites ont
+     * ete retires — la metrique appartient a qui envoie, seul a savoir ce qui
+     * est parti. Meme regle que le verrouillage de compte, compte chez
+     * {@code AccountLockoutServiceImpl} et non chez ses appelants.
+     *
+     * <p>Les etiquettes {@code sms} et {@code email} sont conservees telles
+     * quelles : le panneau Grafana les groupe, et les renommer couperait la
+     * serie.
+     */
+    private void compterLesEnvois(EnvoiDuCode envoi) {
+        if (envoi.smsAccepte()) {
+            authMetrics.recordOtpSent("sms");
+        }
+        if (envoi.courrielAccepte()) {
+            authMetrics.recordOtpSent("email");
+        }
     }
 
     private AuthException rejectPendingCode(String phoneNumber) {
@@ -260,8 +299,8 @@ public class VerificationCodeServiceImpl implements IVerificationCodeService {
      * <p>Le client journalise desormais les NON-remises avec leur motif, ce que
      * {@code Mono<Boolean>} rend possible et que {@code Mono<Void>} interdisait.
      */
-    private Mono<Void> sendCode(String phoneNumber, String email, String code,
-                                VerificationCodeType type) {
+    private Mono<EnvoiDuCode> sendCode(String phoneNumber, String email, String code,
+                                       VerificationCodeType type) {
         boolean emailOnly = phoneNumber != null && phoneNumber.startsWith(TEMP_PHONE_PREFIX);
 
         String modele = modelePour(type);
@@ -274,7 +313,7 @@ public class VerificationCodeServiceImpl implements IVerificationCodeService {
             if (email == null || email.isEmpty()) {
                 return Mono.error(new AuthException(ErrorCode.MISSING_REQUIRED_FIELD, "email"));
             }
-            // CHANGEMENT DE COMPORTEMENT, assume et documente.
+            // AUCUNE ERREUR LEVEE, et le resultat REMONTE.
             //
             // Cette branche levait EMAIL_SERVICE_ERROR quand l'envoi echouait,
             // et se terminait en silence quand `email.enabled` etait faux. Avec
@@ -283,11 +322,10 @@ public class VerificationCodeServiceImpl implements IVerificationCodeService {
             // sur ce `false` casserait l'inscription par courriel en
             // developpement, ou l'envoi est coupe par choix.
             //
-            // Le code est enregistre et l'utilisateur peut en redemander un :
-            // on journalise donc, sans lever. La vraie correction est de faire
-            // remonter ce booleen jusqu'a la reponse HTTP, comme le fait deja
-            // `messageDEnvoiOtp` pour le SMS — huit sites d'appel de
-            // generateAndSendCode, donc sa propre passe.
+            // Le code est enregistre et l'utilisateur peut en redemander un. Ce
+            // qui a change : le booleen remonte desormais jusqu'a la REPONSE
+            // HTTP, qui ne pretend plus avoir envoye. Le journal reste, pour
+            // l'exploitant.
             return messagerie.envoyer(IMessagerieSortante.Demande.critique(
                             CanalDeNotification.COURRIEL, email, modele, variables))
                     .doOnNext(parti -> {
@@ -299,14 +337,14 @@ public class VerificationCodeServiceImpl implements IVerificationCodeService {
                                     + "redemander un.");
                         }
                     })
-                    .then();
+                    .map(EnvoiDuCode::parCourrielSeul);
         }
 
         Mono<Boolean> sms = messagerie.envoyer(IMessagerieSortante.Demande.critique(
                 CanalDeNotification.SMS, phoneNumber, modele, variables));
 
         if (email == null || email.isEmpty()) {
-            return sms.then();
+            return sms.map(EnvoiDuCode::parSmsSeul);
         }
 
         // L'email est un doublon de courtoisie : son échec ne doit pas faire
@@ -321,7 +359,14 @@ public class VerificationCodeServiceImpl implements IVerificationCodeService {
         //
         // Ce n'est pas du code defensif mort : un test le traverse, en
         // simulant precisement cette violation.
-        return sms.then(messagerie.envoyer(IMessagerieSortante.Demande.critique(
+        //
+        // `flatMap` et NON `then`, et c'est le coeur de la correction : `then`
+        // JETAIT le booleen du SMS. Le sort du canal principal etait donc perdu
+        // avant de remonter, et la reponse HTTP ne pouvait que le deviner depuis
+        // un interrupteur de configuration. Les deux resultats sont desormais
+        // conserves ensemble.
+        return sms.flatMap(smsParti ->
+                messagerie.envoyer(IMessagerieSortante.Demande.critique(
                                 CanalDeNotification.COURRIEL, email, modele, variables))
                         .onErrorResume(erreur -> {
                             log.warn("Le courriel de courtoisie a leve {} alors que "
@@ -329,8 +374,8 @@ public class VerificationCodeServiceImpl implements IVerificationCodeService {
                                             + "l'inscription continue",
                                     erreur.getClass().getSimpleName());
                             return Mono.just(false);
-                        }))
-                .then();
+                        })
+                        .map(courrielParti -> new EnvoiDuCode(smsParti, courrielParti)));
     }
 
     // ==========================================

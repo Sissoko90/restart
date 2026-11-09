@@ -71,8 +71,14 @@ public class ConfirmationDeContactServiceImpl implements IConfirmationDeContactS
                             user.getPhoneNumber(), user.getEmail(),
                             VerificationCodeType.EMAIL_CONFIRMATION);
                 })
-                .thenReturn(verificationResponseMapper.toSuccessResponse(
-                        AppConstants.CONFIRMATION_EMAIL_ENVOYEE,
+                // Le message annoncait l'envoi sans condition. L'amont ne peut
+                // pas etre vide : `compte(userId)` leve sur un compte inconnu,
+                // et les deux gardes ci-dessus levent aussi — donc `map` ne fait
+                // disparaitre aucune reponse.
+                .map(envoi -> verificationResponseMapper.toSuccessResponse(
+                        IVerificationCodeService.EnvoiDuCode.message(
+                                envoi.courrielAccepte(),
+                                AppConstants.CONFIRMATION_EMAIL_ENVOYEE),
                         AppConstants.VERIFICATION_CODE_EXPIRY_MINUTES));
     }
 
@@ -122,8 +128,11 @@ public class ConfirmationDeContactServiceImpl implements IConfirmationDeContactS
                             user.getPhoneNumber(), user.getEmail(),
                             VerificationCodeType.PHONE_CONFIRMATION);
                 })
-                .thenReturn(verificationResponseMapper.toSuccessResponse(
-                        messageDEnvoi(), AppConstants.VERIFICATION_CODE_EXPIRY_MINUTES));
+                .map(envoi -> verificationResponseMapper.toSuccessResponse(
+                        IVerificationCodeService.EnvoiDuCode.message(
+                                envoi.smsAccepte(),
+                                AppConstants.CONFIRMATION_TELEPHONE_ENVOYEE),
+                        AppConstants.VERIFICATION_CODE_EXPIRY_MINUTES));
     }
 
     @Override
@@ -180,8 +189,14 @@ public class ConfirmationDeContactServiceImpl implements IConfirmationDeContactS
                 // et laisserait passer une faute de frappe.
                 .flatMap(enregistre -> verificationCodeService.generateAndSendCode(
                         nouveauNumero, null, VerificationCodeType.PHONE_CHANGE))
-                .thenReturn(verificationResponseMapper.toSuccessResponse(
-                        AppConstants.CHANGEMENT_NUMERO_CODE_ENVOYE,
+                // Celui-ci compte double : le numero EN ATTENTE est deja
+                // enregistre quand le code part. Annoncer un envoi qui n'a pas
+                // eu lieu laisserait la personne attendre un SMS, sur un
+                // changement de numero qu'elle croirait engage.
+                .map(envoi -> verificationResponseMapper.toSuccessResponse(
+                        IVerificationCodeService.EnvoiDuCode.message(
+                                envoi.smsAccepte(),
+                                AppConstants.CHANGEMENT_NUMERO_CODE_ENVOYE),
                         AppConstants.VERIFICATION_CODE_EXPIRY_MINUTES));
     }
 
@@ -293,17 +308,15 @@ public class ConfirmationDeContactServiceImpl implements IConfirmationDeContactS
                 .switchIfEmpty(Mono.error(new AuthException(ErrorCode.USER_NOT_FOUND)));
     }
 
-    /**
-     * Le message dit si le SMS est reellement parti.
+    /*
+     * `messageDEnvoi()` a disparu.
      *
-     * <p>En developpement l'envoi est desactive et le code n'arrive nulle part.
-     * Repondre « code envoye » ferait attendre un SMS qui ne viendra pas.
+     * Son intention etait juste — « le message dit si le SMS est reellement
+     * parti » — mais sa mesure etait fausse : `envoiSmsActif()` est un
+     * interrupteur de configuration, et ne connait qu'une des quatre raisons de
+     * ne rien envoyer. La reponse vient desormais d'EnvoiDuCode, qui porte le
+     * resultat reel.
      */
-    private String messageDEnvoi() {
-        return messagerie.envoiSmsActif()
-                ? AppConstants.CONFIRMATION_TELEPHONE_ENVOYEE
-                : AppConstants.OTP_GENERE_SANS_ENVOI;
-    }
 
     private static boolean estUnNumeroJoignable(String numero) {
         return estRenseigne(numero) && !numero.startsWith(AppConstants.TEMP_PHONE_PREFIX);

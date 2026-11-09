@@ -84,19 +84,37 @@ public final class AppConstants {
      * <p>La formulation est au conditionnel pour rester exacte dans les deux
      * cas — annoncer un envoi qui n'a pas eu lieu serait un autre mensonge.
      */
-    /** Envoi actif : le code est bien parti par SMS. */
+    /** Le code est bien parti par SMS. */
     public static final String OTP_ENVOYE_PAR_SMS = "Code OTP envoyé par SMS";
 
+    /** Le code est bien parti par courriel. */
+    public static final String OTP_ENVOYE_PAR_COURRIEL = "Code OTP envoyé par email";
+
     /**
-     * Envoi coupé : le code existe, mais aucun SMS n'est parti.
+     * Le code existe, mais RIEN n'est parti.
      *
-     * <p>{@code sendSms} se termine par un {@code Mono} vide quand
-     * {@code sms.enabled} est faux — un succès, indistinguable d'un envoi
-     * réussi. La réponse annonçait donc un SMS qui ne partait pas, et
-     * l'utilisateur l'attendait.
+     * <h2>Pourquoi le texte a été généralisé</h2>
+     *
+     * Il disait « l'envoi de SMS est désactivé sur cet environnement », et c'est
+     * devenu faux de deux façons :
+     *
+     * <ul>
+     *   <li>il nomme le SMS, alors que ce repli sert aussi au courriel — les
+     *       inscriptions par adresse seule annonçaient « envoyé par email »
+     *       quoi qu'il arrive ;</li>
+     *   <li>il nomme la DÉSACTIVATION, qui n'est qu'une des quatre raisons de
+     *       ne rien envoyer. Les trois autres — numéro hors liste autorisée,
+     *       plafond journalier atteint, fournisseur mal configuré — ne sont pas
+     *       des choix d'environnement, et les présenter comme tels enverrait
+     *       l'exploitant chercher un interrupteur déjà au bon état.</li>
+     * </ul>
+     *
+     * <p>Le texte ne nomme donc plus de cause, et il dit ce que la personne peut
+     * FAIRE. Le motif précis, lui, est journalisé côté notification-service, qui
+     * est seul à le connaître.
      */
     public static final String OTP_GENERE_SANS_ENVOI =
-            "Code OTP généré, mais l'envoi de SMS est désactivé sur cet environnement";
+            "Code OTP généré, mais il n'a pas pu être envoyé. Demandez un nouveau code.";
 
     public static final String FORGOT_PASSWORD_NEUTRAL_MESSAGE =
             "Si ce compte existe, un code de réinitialisation vient d'être envoyé.";

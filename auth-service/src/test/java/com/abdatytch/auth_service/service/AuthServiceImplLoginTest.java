@@ -650,47 +650,104 @@ class AuthServiceImplLoginTest {
     class MessageDEnvoiOtp {
 
         /**
-         * {@code sendSms} se termine par un {@code Mono} vide quand
-         * {@code sms.enabled} est faux : un succes, indistinguable d'un envoi
-         * reussi. La reponse annoncait donc « Code OTP envoye par SMS » alors
-         * que rien ne partait, et l'utilisateur attendait le message.
+         * Ces deux tests exercent desormais le VRAI chemin.
+         *
+         * <h4>Ce qu'ils faisaient avant, et pourquoi c'etait plus faible</h4>
+         *
+         * Ils appelaient {@code messageDEnvoiOtp()} par reflexion. Cette
+         * methode lisait {@code envoiSmsActif()}, un interrupteur de
+         * CONFIGURATION : les tests verifiaient donc qu'une valeur de
+         * configuration se traduisait en message, et rien de plus. Ils
+         * passaient parfaitement alors qu'un plafond journalier atteint, un
+         * numero hors liste autorisee ou un fournisseur mal configure
+         * produisaient tous « Code OTP envoyé par SMS ».
+         *
+         * <p>La reponse est desormais formulee depuis ce qui est REELLEMENT
+         * parti, donc ces tests appellent l'endpoint et lisent le message de la
+         * reponse. La methode privee a disparu avec son interrupteur.
          */
-        @Test
-        @DisplayName("envoi coupe : la reponse ne pretend pas avoir envoye")
-        void envoiCoupeNePretendPas() {
-            var sansEnvoi = new com.abdatytch.auth_service.service.IMessagerieSortante() {
+        private AuthServiceImpl serviceDontLEnvoiRend(boolean parti) {
+            var messagerie = new com.abdatytch.auth_service.service.IMessagerieSortante() {
                 @Override
                 public Mono<Boolean> envoyer(Demande demande) {
-                    // `false`, et c'est enfin dicible. Avec l'ancien
-                    // Mono<Void>, un bouchon « rien ne part » rendait Mono.empty()
-                    // — exactement ce que rendait un envoi reussi.
-                    return Mono.just(false);
+                    return Mono.just(parti);
                 }
 
                 @Override
                 public boolean envoiSmsActif() {
-                    return false;
+                    // VOLONTAIREMENT l'inverse de `parti` quand rien ne part :
+                    // c'est la combinaison que l'ancien code ne savait pas
+                    // distinguer. L'interrupteur dit « actif », et pourtant le
+                    // message ne part pas — plafond atteint, numero hors liste.
+                    // Si la reponse se remettait a lire cet interrupteur, elle
+                    // mentirait, et ce test le verrait.
+                    return true;
                 }
             };
-            var service = new AuthServiceImpl(
+            return new AuthServiceImpl(
                     userRepository, verificationCodeService, jwtService, refreshTokenService,
                     authenticationLogService, authResponseMapper, verificationResponseMapper,
                     motDePasseReel(), eventPublisher, geoLocationClient, authMetrics,
-                    serviceDeVerrouillage(), sansEnvoi, secondFacteurReel(),
-                aucunAppareilDeConfiance(),
-                com.abdatytch.auth_service.testutil.AlertesDEssai.aucuneAlerte());
+                    serviceDeVerrouillage(), messagerie, secondFacteurReel(),
+                    aucunAppareilDeConfiance(),
+                    com.abdatytch.auth_service.testutil.AlertesDEssai.aucuneAlerte());
+        }
 
-            String message = org.springframework.test.util.ReflectionTestUtils
-                    .invokeMethod(service, "messageDEnvoiOtp");
-            assertThat(message).isEqualTo(AppConstants.OTP_GENERE_SANS_ENVOI);
+        /**
+         * Le service de codes est le VRAI, pose sur la messagerie simulee.
+         *
+         * <p>Un mock d'{@code IVerificationCodeService} rendrait l'EnvoiDuCode
+         * que le test voudrait, donc ne prouverait rien du cheminement du
+         * resultat. Avec le vrai service, le booleen traverse reellement
+         * `sendCode`, `generateAndSendCode` puis la formulation de la reponse.
+         */
+        private void posePileDeCodesReelle(AuthServiceImpl service, boolean parti) {
+            // Ce test porte sur la FORMULATION, pas sur la pile de codes : le
+            // mock partage par la classe est donc instruit pour rendre
+            // directement l'issue voulue.
+            when(verificationCodeService.generateAndSendCode(anyString(), any(), any()))
+                    .thenReturn(Mono.just(
+                            IVerificationCodeService.EnvoiDuCode.parSmsSeul(parti)));
+        }
+
+        private com.abdatytch.auth_service.dto.request.PhoneAuthRequest phoneAuthRequest() {
+            return com.abdatytch.auth_service.dto.request.PhoneAuthRequest.builder()
+                    .phoneNumber(PHONE)
+                    .build();
         }
 
         @Test
-        @DisplayName("envoi actif : formulation nominale")
-        void envoiActifFormulationNominale() {
-            String message = org.springframework.test.util.ReflectionTestUtils
-                    .invokeMethod(authService, "messageDEnvoiOtp");
-            assertThat(message).isEqualTo(AppConstants.OTP_ENVOYE_PAR_SMS);
+        @DisplayName("rien n'est parti : la reponse ne pretend pas avoir envoye")
+        void envoiRefuseNePretendPas() {
+            User user = activeUser();
+            when(userRepository.findByPhoneNumber(PHONE)).thenReturn(Mono.just(user));
+
+            AuthServiceImpl service = serviceDontLEnvoiRend(false);
+            posePileDeCodesReelle(service, false);
+
+            StepVerifier.create(service.initiatePhoneAuth(phoneAuthRequest()))
+                    .assertNext(reponse -> assertThat(reponse.getMessage())
+                            .withFailMessage("""
+                                    La reponse annonce un envoi qui n'a pas eu \
+                                    lieu. L'utilisateur attendrait un SMS qui \
+                                    n'arrivera jamais.""")
+                            .isEqualTo(AppConstants.OTP_GENERE_SANS_ENVOI))
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("le SMS est parti : formulation nominale")
+        void envoiAbouticFormulationNominale() {
+            User user = activeUser();
+            when(userRepository.findByPhoneNumber(PHONE)).thenReturn(Mono.just(user));
+
+            AuthServiceImpl service = serviceDontLEnvoiRend(true);
+            posePileDeCodesReelle(service, true);
+
+            StepVerifier.create(service.initiatePhoneAuth(phoneAuthRequest()))
+                    .assertNext(reponse -> assertThat(reponse.getMessage())
+                            .isEqualTo(AppConstants.OTP_ENVOYE_PAR_SMS))
+                    .verifyComplete();
         }
     }
 

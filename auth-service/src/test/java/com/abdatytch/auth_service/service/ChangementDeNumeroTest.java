@@ -106,7 +106,12 @@ class ChangementDeNumeroTest {
         when(codes.generateAndSendCode(anyString(), any(), any()))
                 .thenAnswer(appel -> {
                     demandes.add(new Demande(appel.getArgument(0), appel.getArgument(2)));
-                    return Mono.just(new VerificationCode());
+                    // Le service rend desormais CE QUI EST PARTI, et non
+                    // l'entite enregistree. Ce bouchon simule un SMS accepte :
+                    // ces tests portent sur le changement de numero, pas sur
+                    // l'envoi.
+                    return Mono.just(
+                            IVerificationCodeService.EnvoiDuCode.parSmsSeul(true));
                 });
         when(codes.validateCode(anyString(), anyString(), any()))
                 .thenAnswer(appel -> CODE.equals(appel.getArgument(1))
