@@ -254,7 +254,56 @@ notification:
   #
   # L'etat du canal est desormais celui de l'expediteur, par envoiActif().
   push:
-    enabled: false
+    # Interrupteur d'EXPLOITATION, distinct de la présence des identifiants.
+    #
+    # Les deux conditions sont nécessaires, et elles disent des choses
+    # différentes : `enabled` est un CHOIX — couper le push sur un
+    # environnement — et le compte de service présent est un FAIT. Un seul
+    # réglage pour les deux empêcherait de distinguer « on ne veut pas » de
+    # « on ne peut pas », et ce dépôt a déjà payé deux interrupteurs pour une
+    # même question du côté SMS.
+    #
+    # Faux par défaut : un canal qui répond « remis » sans rien envoyer est un
+    # faux succès.
+    enabled: ${NOTIFICATION_PUSH_ENABLED:false}
+
+    firebase:
+      # Le chemin du compte de service Firebase. HORS DU DÉPÔT.
+      #
+      # POURQUOI UN CHEMIN ET NON LE CONTENU. Ce fichier JSON porte une CLÉ
+      # PRIVÉE RSA qui autorise à pousser vers TOUS les appareils de
+      # l'application et à signer pour l'ensemble du projet Google. C'est un
+      # secret du même ordre que la clé de signature des JWT.
+      #
+      # Une variable d'environnement portant le JSON entier finirait dans un
+      # vidage mémoire, dans la sortie de `/actuator/env` et dans tout
+      # diagnostic de configuration. Un fichier commité, même chiffré, finirait
+      # dans l'historique. Un chemin, lui, ne révèle rien par lui-même.
+      #
+      # VIDE PAR DÉFAUT, et le démarrage n'est PAS bloqué — politique du dépôt.
+      # Sans valeur, ConfigurationFirebase journalise ce qui manque et le canal
+      # PUSH se déclare inactif.
+      #
+      # Emplacement recommandé, hors de l'arborescence du dépôt :
+      #   ~/.restart/firebase-service-account.json   (droits 600)
+      credentials-path: ${FIREBASE_CREDENTIALS_PATH:}
+
+    # Retrait des appareils qui ne se manifestent plus.
+    #
+    # FCM ne signale un jeton mort qu'à l'ENVOI : une personne qui ne reçoit
+    # aucune notification garderait son jeton périmé indéfiniment.
+    #
+    # Six mois, et c'est délibérément généreux. Purger trop tôt couperait les
+    # alertes de sécurité de quelqu'un qui ouvre son application tous les deux
+    # mois ; purger trop tard ne coûte qu'une ligne en base. Le jeton est de
+    # toute façon réenregistré dès la première ouverture suivante.
+    purge-apres-jours: ${NOTIFICATION_PUSH_PURGE_JOURS:180}
+
+    # fixedDelay : l'intervalle court après la FIN de la passe précédente, donc
+    # deux passes ne peuvent pas se chevaucher. Une fois par jour.
+    purge-intervalle-ms: ${NOTIFICATION_PUSH_PURGE_INTERVALLE_MS:86400000}
+    # Laisse le temps au service de finir de démarrer avant la première passe.
+    purge-delai-initial-ms: ${NOTIFICATION_PUSH_PURGE_DELAI_INITIAL_MS:120000}
 
 # ==========================================
 # OBSERVABILITE

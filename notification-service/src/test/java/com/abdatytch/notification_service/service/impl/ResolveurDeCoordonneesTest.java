@@ -168,8 +168,22 @@ class ResolveurDeCoordonneesTest {
             return resolveur.contactsPour(demande).block();
         }
 
+        /**
+         * PUSH A QUITTE CE TEST, et c'est la correction d'un defaut.
+         *
+         * <p>Il y figurait avec le NUMERO DE TELEPHONE comme coordonnee
+         * attendue — ce que le resolveur admettait en commentaire : « PUSH
+         * utilise le numero faute de jeton d'appareil ; le canal refusera, et
+         * c'est exact ». Ce test figeait donc un comportement qui ne pouvait
+         * pas aboutir.
+         *
+         * <p>Les jetons d'appareil vivent desormais dans la table
+         * jeton_d_appareil de ce service, et CanalPush les lit lui-meme. PUSH
+         * est passe dans SANS_COORDONNEE : voir
+         * {@code ResolveurPushSansCoordonneeTest}.
+         */
         @Test
-        @DisplayName("COURRIEL prend l'adresse, SMS et PUSH prennent le numéro")
+        @DisplayName("COURRIEL prend l'adresse, SMS prend le numéro")
         void champParCanal() {
             var coordonnees = coordonneesCompletes();
             var demande = demande(List.of(CanalDeNotification.COURRIEL), null);
@@ -177,8 +191,6 @@ class ResolveurDeCoordonneesTest {
             assertThat(resolveur.pour(demande, CanalDeNotification.COURRIEL, coordonnees))
                     .isEqualTo(COURRIEL);
             assertThat(resolveur.pour(demande, CanalDeNotification.SMS, coordonnees))
-                    .isEqualTo(TELEPHONE);
-            assertThat(resolveur.pour(demande, CanalDeNotification.PUSH, coordonnees))
                     .isEqualTo(TELEPHONE);
         }
 
@@ -229,13 +241,23 @@ class ResolveurDeCoordonneesTest {
          * boite de reception — un canal qui ne depend de personne. Le defaut a
          * ete attrape a l'ecriture, et ce test l'empeche de revenir.
          */
+        /**
+         * PUSH est passe du cote de ceux qui n'en ont PAS besoin.
+         *
+         * <p>Un jeton d'appareil n'est pas une coordonnee de profil : il
+         * appartient a un telephone, le systeme le renouvelle sans que le
+         * compte change, et il vit dans la base de CE service. Le declarer
+         * « a coordonnee » faisait marquer ECHOUE tout push emis pendant une
+         * panne de user-service, pour une valeur que le canal ne pouvait de
+         * toute facon pas utiliser.
+         */
         @Test
-        @DisplayName("seuls COURRIEL, SMS et PUSH en ont besoin")
+        @DisplayName("seuls COURRIEL et SMS en ont besoin")
         void seulsLesCanauxACoordonnee() {
             assertThat(resolveur.aBesoinDUneCoordonnee(CanalDeNotification.COURRIEL)).isTrue();
             assertThat(resolveur.aBesoinDUneCoordonnee(CanalDeNotification.SMS)).isTrue();
-            assertThat(resolveur.aBesoinDUneCoordonnee(CanalDeNotification.PUSH)).isTrue();
 
+            assertThat(resolveur.aBesoinDUneCoordonnee(CanalDeNotification.PUSH)).isFalse();
             assertThat(resolveur.aBesoinDUneCoordonnee(CanalDeNotification.IN_APP)).isFalse();
             assertThat(resolveur.aBesoinDUneCoordonnee(CanalDeNotification.WEBSOCKET)).isFalse();
         }

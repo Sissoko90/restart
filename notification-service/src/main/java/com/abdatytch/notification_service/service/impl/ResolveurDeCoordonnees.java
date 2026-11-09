@@ -104,7 +104,25 @@ public class ResolveurDeCoordonnees {
      * notification en boite de reception aboutit toujours.
      */
     private static final List<CanalDeNotification> SANS_COORDONNEE =
-            List.of(CanalDeNotification.IN_APP, CanalDeNotification.WEBSOCKET);
+            List.of(CanalDeNotification.IN_APP,
+                    CanalDeNotification.WEBSOCKET,
+                    // PUSH a REJOINT cette liste, et ce n'est pas un relachement.
+                    //
+                    // Un jeton d'appareil n'est pas une coordonnee de profil :
+                    // il appartient a un telephone et non a une personne, le
+                    // systeme le renouvelle sans que le compte change, et une
+                    // meme personne en a autant qu'elle possede d'appareils.
+                    // Ces jetons vivent donc dans la table jeton_d_appareil de
+                    // CE service, et CanalPush les lit lui-meme.
+                    //
+                    // Avant, ce resolveur lui passait le NUMERO DE TELEPHONE
+                    // faute de mieux — le commentaire de `pour` l'admettait —
+                    // donc chaque push payait un appel a user-service pour une
+                    // valeur que le canal ne pouvait pas utiliser, et refusait.
+                    //
+                    // Consequence : un push n'echoue plus parce que
+                    // user-service est indisponible.
+                    CanalDeNotification.PUSH);
 
     private final ClientContactsUtilisateur contacts;
     private final ClientPreferencesUtilisateur preferences;
@@ -190,9 +208,28 @@ public class ResolveurDeCoordonnees {
      * autre service, ni lui couter une requete.
      */
     public Mono<Coordonnees> contactsPour(DemandeDeNotification demande) {
+        // DEUX questions distinctes, et les confondre est un defaut que
+        // l'arrivee du push a rendu visible.
+        //
+        // « Faut-il une coordonnee ? » decide de l'appel a user-service.
+        // « Faut-il le consentement ? » decide de l'appel a setting-service.
+        //
+        // Elles coincidaient tant que les canaux a consentement etaient
+        // exactement les canaux a coordonnee. PUSH les separe : il demande le
+        // consentement de la personne — c'est un canal qui fait sonner un
+        // telephone — et n'a besoin d'aucune coordonnee de profil.
+        //
+        // Avec la condition unique d'avant, une notification purement PUSH
+        // aurait pris le court-circuit ci-dessous et recu une carte de
+        // preferences VIDE : le consentement serait retombe sur la politique
+        // par defaut au lieu du choix de la personne. Un refus exprime aurait
+        // ete ignore, en silence.
         boolean coordonneeNecessaire = demande.canaux().stream()
                 .anyMatch(canal -> !SANS_COORDONNEE.contains(canal));
-        if (!coordonneeNecessaire) {
+        boolean consentementNecessaire = demande.canaux().stream()
+                .anyMatch(ConsentementDeNotification::demandeUnConsentement);
+
+        if (!coordonneeNecessaire && !consentementNecessaire) {
             // Boite de reception seule : ni coordonnee ni consentement a lire.
             // Aucun appel sortant, donc aucune dependance a un autre service.
             return Mono.just(Coordonnees.de(ClientContactsUtilisateur.AUCUN, Map.of()));
@@ -207,6 +244,16 @@ public class ResolveurDeCoordonnees {
             // chemin sert les confirmations d'inscription et les invitations,
             // ou l'adresse vient de la personne elle-meme, a l'instant.
             return Mono.just(Coordonnees.de(null, Map.of()));
+        }
+
+        if (!coordonneeNecessaire) {
+            // PUSH seul : le consentement se lit, le profil non.
+            //
+            // Un seul appel sortant au lieu de deux, et surtout : ce chemin ne
+            // depend plus de user-service. Une panne de ce service n'empeche
+            // donc plus un push d'aboutir.
+            return preferences.pour(demande.destinataireId())
+                    .map(lues -> Coordonnees.de(ClientContactsUtilisateur.AUCUN, lues));
         }
 
         // Les deux lectures en PARALLELE, et non l'une apres l'autre.
@@ -255,12 +302,12 @@ public class ResolveurDeCoordonnees {
             return null;
         }
 
+        // PUSH n'apparait plus ici : il est dans SANS_COORDONNEE, donc traite
+        // par le retour anticipe en tete de methode. Il lisait le numero de
+        // telephone faute de jeton d'appareil, ce qui ne pouvait aboutir.
         return switch (canal) {
             case COURRIEL -> valeurOuNull(coordonnees.contacts().email());
-            // PUSH utilise le numero faute de jeton d'appareil : ce module n'en
-            // detient aucun. Le canal refusera, et c'est exact — mieux vaut un
-            // refus visible qu'une adresse inventee.
-            case SMS, PUSH -> valeurOuNull(coordonnees.contacts().phoneNumber());
+            case SMS -> valeurOuNull(coordonnees.contacts().phoneNumber());
             default -> null;
         };
     }

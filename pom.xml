@@ -147,6 +147,17 @@
 		  plutot que de suivre le code de module en module.
 		-->
 		<twilio.version>10.6.3</twilio.version>
+
+		<!--
+		  SDK Firebase Admin, pour les notifications push (FCM).
+		  Seul consommateur : notification-service. Meme raison que Twilio de
+		  declarer la version ici plutot que dans le module.
+
+		  9.9.0 et non la plus ancienne qui marcherait : elle est publiee
+		  depuis mai 2026, donc rodee, et c'est la derniere. Date relevee sur
+		  le depot central, pas supposee.
+		-->
+		<firebase-admin.version>9.9.0</firebase-admin.version>
 		<jacoco.version>0.8.12</jacoco.version>
 
 		<!--
@@ -442,6 +453,31 @@
 				<groupId>com.twilio.sdk</groupId>
 				<artifactId>twilio</artifactId>
 				<version>${twilio.version}</version>
+			</dependency>
+			<!--
+			  SDK Firebase Admin, pour le push FCM. Seul consommateur :
+			  notification-service.
+
+			  POURQUOI LE SDK OFFICIEL plutot qu'un appel direct a l'API HTTP v1.
+
+			  Un envoi FCM demande un jeton d'acces obtenu en signant une
+			  assertion JWT avec la cle privee du compte de service, puis en
+			  l'echangeant chez Google. Reimplementer ce flux — audience, portee,
+			  duree, cache, derive d'horloge — est une roue sensible a la
+			  securite, et ce depot a assez de surfaces d'authentification a
+			  tenir sans en ajouter une.
+
+			  Le SDK rend en outre les codes d'erreur PAR JETON (UNREGISTERED,
+			  INVALID_ARGUMENT), seul moyen de purger les appareils disparus.
+			  Sans cela on pousse indefiniment vers des telephones effaces.
+
+			  Il est BLOQUANT : il est donc isole sur boundedElastic, exactement
+			  comme JavaMailSender dans CanalCourriel.
+			-->
+			<dependency>
+				<groupId>com.google.firebase</groupId>
+				<artifactId>firebase-admin</artifactId>
+				<version>${firebase-admin.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>io.github.resilience4j</groupId>

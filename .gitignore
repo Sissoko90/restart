@@ -32,6 +32,30 @@ secrets/
 # Secrets OAuth2 téléchargés depuis les consoles fournisseurs
 client_secret*.json
 
+# Comptes de service Google et Firebase.
+#
+# Le fichier téléchargé depuis la console Firebase porte une CLÉ PRIVÉE RSA qui
+# autorise à pousser vers TOUS les appareils de l'application et à signer pour
+# l'ensemble du projet Google. C'est un secret du même ordre que la clé de
+# signature des JWT.
+#
+# Les trois motifs couvrent les noms réellement produits :
+#   - Firebase nomme son export <projet>-firebase-adminsdk-<hash>.json
+#   - Google Cloud nomme le sien <projet>-<hash>.json, souvent renommé
+#     service-account.json
+#   - le nom recommandé par notification-service-dev.yml
+#
+# `client_secret*.json` ci-dessus n'en couvrait AUCUN : il ne vise que les
+# secrets OAuth2 clients, qui sont d'un autre ordre — un secret client ne
+# permet pas de signer au nom du projet.
+#
+# L'emplacement recommandé est de toute façon HORS du dépôt
+# (~/.restart/firebase-service-account.json, droits 600) ; ces motifs sont le
+# filet au cas où quelqu'un le dépose ici par commodité.
+*firebase-adminsdk*.json
+*service-account*.json
+firebase-service-account.json
+
 # Scripts d'insertion de secrets dans Vault.
 #
 # scripts/vault-secrets-complete.sh portait les VRAIES valeurs de ~25

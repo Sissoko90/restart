@@ -1,40 +1,68 @@
 package com.abdatytch.notification_service.service.impl;
 
 import com.abdatytch.commons.notification.CanalDeNotification;
+import com.abdatytch.notification_service.entities.JetonDAppareil;
+import com.abdatytch.notification_service.repositories.JetonDAppareilRepository;
 import com.abdatytch.notification_service.service.CanalDeRemise;
+import com.abdatytch.notification_service.service.push.IClientPush;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.util.List;
 
 /**
  * Remise par notification push, via Firebase Cloud Messaging.
  *
- * <h2>DESACTIVE par defaut, et il REFUSE</h2>
+ * <h2>Ce canal lit ses propres coordonnees, et c'est le changement de fond</h2>
  *
- * Meme raison que le canal SMS : la configuration precedente posait une
- * {@code FCM_SERVER_KEY} et un {@code sender-id: dev-sender-id} sans
- * implementation derriere. Un canal qui repond « remis » sans rien envoyer est
- * un faux succes, et c'est exactement le motif que ce depot passe son temps a
- * retirer.
+ * Les autres canaux a coordonnee recoivent une adresse ou un numero resolu chez
+ * user-service. Le push, non : un <b>jeton d'appareil</b> n'est pas une
+ * coordonnee de profil. Il appartient a un telephone, pas a une personne ; il
+ * est renouvele par le systeme sans que le compte change ; et une meme personne
+ * en a autant qu'elle possede d'appareils.
  *
- * <h2>Ce qui manque, et ce n'est pas qu'une cle</h2>
+ * <p>Les jetons vivent donc dans la table {@code jeton_d_appareil} de CE
+ * service, et ce canal les lit lui-meme par l'identifiant du porteur.
  *
- * Un push a besoin d'un <b>jeton d'appareil</b>, pas d'une adresse : un meme
- * porteur en a autant que d'appareils, ils expirent, et FCM les invalide. Il
- * faut donc une table de jetons par porteur, un endpoint pour que le client
- * enregistre le sien, et le traitement des reponses d'invalidation de FCM —
- * sans quoi on pousse indefiniment vers des appareils disparus.
+ * <p>Jusqu'ici, {@code ResolveurDeCoordonnees} lui passait le NUMERO DE
+ * TELEPHONE faute de mieux — ce que son propre commentaire admettait : « PUSH
+ * utilise le numero faute de jeton d'appareil ; le canal refusera, et c'est
+ * exact ». Le canal refusait donc toujours, et chaque push payait un appel a
+ * user-service pour rien.
  *
- * <p>Rien de cela n'existe encore, et l'inventer a moitie serait pire que de
- * l'annoncer absent. {@code estActif} rend donc faux, et le compte rendu le dit
- * a chaque demande.
+ * <p>PUSH a par consequent rejoint {@code SANS_COORDONNEE} dans le resolveur.
+ * Consequence heureuse : <b>un push n'echoue plus parce que user-service est
+ * indisponible</b>.
  *
- * <p>Note de securite : la cle serveur FCM autorise a pousser vers TOUS les
- * appareils de l'application. Elle ne doit jamais atteindre un client, ni un
- * journal, ni un message du bus.
+ * <h2>Les jetons morts sont SUPPRIMES, pas reessayes</h2>
+ *
+ * FCM distingue deux familles d'echec, et les confondre coute cher dans les
+ * deux sens :
+ *
+ * <ul>
+ *   <li>{@code UNREGISTERED} et {@code INVALID_ARGUMENT} sont DEFINITIFS —
+ *       application desinstallee, jeton remplace. Les reessayer pousse
+ *       indefiniment vers un appareil disparu : un appel reseau par
+ *       notification, et un echec perpetuel dans chaque compte rendu ;</li>
+ *   <li>{@code UNAVAILABLE}, {@code INTERNAL}, {@code QUOTA_EXCEEDED} sont
+ *       PASSAGERS. Les traiter comme definitifs effacerait la base d'appareils
+ *       de toute la plateforme sur une panne FCM d'une minute.</li>
+ * </ul>
+ *
+ * <p>Le tri est fait par {@code ClientPushFcm}, qui seul voit les codes. Ce
+ * canal se contente de retirer ce qu'on lui designe comme mort.
+ *
+ * <h2>Un seul appareil joint suffit a dire REMIS</h2>
+ *
+ * Et non « tous ». Une personne qui a trois telephones dont un efface doit
+ * etre consideree comme prevenue : exiger l'unanimite ferait rejouer la
+ * notification sur ses appareils vivants, donc la lui montrer plusieurs fois,
+ * pour un appareil qu'elle a jete.
  */
 @Component
 @RefreshScope
@@ -42,14 +70,42 @@ public class CanalPush implements CanalDeRemise {
 
     private static final Logger log = LoggerFactory.getLogger(CanalPush.class);
 
+    private final JetonDAppareilRepository appareils;
+    private final IClientPush client;
+
+    /**
+     * Interrupteur d'exploitation, distinct de la presence des identifiants.
+     *
+     * <p>Les deux conditions sont necessaires et disent des choses differentes :
+     * {@code enabled} est un CHOIX — couper le push sur un environnement — et
+     * le client configure est un FAIT. Un seul reglage pour les deux rendrait
+     * impossible de distinguer « on ne veut pas » de « on ne peut pas », et le
+     * depot a deja paye deux interrupteurs pour une meme question du cote SMS.
+     */
     @Value("${notification.push.enabled:false}")
     private boolean actif;
 
+    public CanalPush(JetonDAppareilRepository appareils, IClientPush client) {
+        this.appareils = appareils;
+        this.client = client;
+    }
+
     @jakarta.annotation.PostConstruct
     void annoncerLEtat() {
-        log.info("Canal PUSH : {}", actif
-                ? "ACTIF"
-                : "desactive — toute demande de push sera refusee, et comptee");
+        if (!actif) {
+            log.info("Canal PUSH : desactive par notification.push.enabled — "
+                    + "toute demande sera refusee, et comptee");
+            return;
+        }
+        if (!client.estConfigure()) {
+            // ERROR : le canal est VOULU actif, et il ne peut pas servir. C'est
+            // une erreur de deploiement, pas un choix.
+            log.error("Canal PUSH active mais client FCM non configure : toute "
+                    + "demande sera refusee. Renseigner "
+                    + "FIREBASE_CREDENTIALS_PATH.");
+            return;
+        }
+        log.info("Canal PUSH : ACTIF");
     }
 
     @Override
@@ -59,21 +115,72 @@ public class CanalPush implements CanalDeRemise {
 
     @Override
     public boolean estActif() {
-        return actif;
+        return actif && client.estConfigure();
     }
 
     @Override
     public Mono<Resultat> remettre(MessageARemettre message) {
-        if (!actif) {
+        if (!estActif()) {
             return Mono.just(Resultat.refuse("canal PUSH non configure"));
         }
-        if (message.coordonnee() == null || message.coordonnee().isBlank()) {
-            // Pour ce canal, la coordonnee est un JETON D'APPAREIL. Son absence
-            // est le cas NORMAL aujourd'hui : aucune table ne les enregistre.
-            return Mono.just(Resultat.refuse("aucun jeton d'appareil enregistre"));
+        if (message.destinataireId() == null || message.destinataireId().isBlank()) {
+            // Sans identifiant de porteur, aucun jeton a retrouver. C'est le cas
+            // d'un message transactionnel direct : /internal/message refuse
+            // d'ailleurs le canal PUSH en amont, par sa liste blanche.
+            return Mono.just(Resultat.refuse("aucun destinataire pour retrouver "
+                    + "ses appareils"));
         }
 
-        log.error("Canal PUSH active sans client FCM implemente : remise refusee");
-        return Mono.just(Resultat.refuse("aucun client FCM implemente"));
+        return appareils.parDestinataire(message.destinataireId())
+                .map(JetonDAppareil::getJeton)
+                .collectList()
+                .flatMap(jetons -> jetons.isEmpty()
+                        // REFUSE et non ECHOUE : aucun appareil enregistre ne se
+                        // repare en reessayant. Un ECHOUE ferait rejouer ce
+                        // push toutes les trois minutes pour une personne qui
+                        // n'a simplement pas installe l'application.
+                        ? Mono.just(Resultat.refuse("aucun appareil enregistre"))
+                        : pousserPuisPurger(jetons, message))
+                .onErrorResume(panne -> {
+                    // La lecture des jetons a echoue : c'est la BASE, pas FCM.
+                    // ECHOUE, donc reessayable.
+                    log.warn("Lecture des appareils impossible : {}",
+                            panne.getClass().getSimpleName());
+                    return Mono.just(Resultat.echoue(panne.getClass().getSimpleName()));
+                });
+    }
+
+    private Mono<Resultat> pousserPuisPurger(List<String> jetons,
+                                             MessageARemettre message) {
+        return client.pousser(jetons, message.sujet(), message.corps())
+                .flatMap(resultat -> purger(resultat.jetonsInvalides())
+                        .thenReturn(resultat))
+                .map(resultat -> resultat.aAbouti()
+                        ? Resultat.remis()
+                        // ECHOUE et non REFUSE : les codes passagers de FCM —
+                        // indisponibilite, quota — valent d'etre reessayes, et
+                        // les jetons definitivement morts viennent d'etre
+                        // retires, donc la reprise ne les reverra pas.
+                        : Resultat.echoue(resultat.motif()));
+    }
+
+    /**
+     * Retire les jetons que FCM declare injoignables.
+     *
+     * <p>La purge ne doit JAMAIS faire echouer la remise : les autres appareils
+     * ont peut-etre recu le message, et un echec de nettoyage n'annule pas un
+     * envoi reussi. L'erreur est donc avalee — mais journalisee, parce qu'une
+     * purge qui ne passe plus laisse grossir la table sans borne.
+     */
+    private Mono<Void> purger(List<String> morts) {
+        if (morts.isEmpty()) {
+            return Mono.empty();
+        }
+        return Flux.fromIterable(morts)
+                .concatMap(appareils::retirerJetonInvalide)
+                .onErrorContinue((erreur, jeton) -> log.warn(
+                        "Retrait d'un jeton invalide impossible : {}",
+                        erreur.getClass().getSimpleName()))
+                .then();
     }
 }

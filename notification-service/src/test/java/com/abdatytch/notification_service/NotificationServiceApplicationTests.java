@@ -2,6 +2,7 @@ package com.abdatytch.notification_service;
 
 import com.abdatytch.notification_service.repositories.NotificationRepository;
 import com.abdatytch.notification_service.repositories.RemiseParCanalRepository;
+import com.abdatytch.notification_service.repositories.JetonDAppareilRepository;
 import com.abdatytch.notification_service.repositories.SurchargeDeModeleRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -72,6 +73,18 @@ class NotificationServiceApplicationTests {
 	 */
 	@MockitoBean
 	private SurchargeDeModeleRepository surchargeDeModeleRepository;
+
+	/**
+	 * Le depot des jetons d'appareil, exige par {@code CanalPush}.
+	 *
+	 * <p>Quatrieme depot simule, pour la meme raison que les trois autres :
+	 * {@code application-test} exclut {@code R2dbcRepositoriesAutoConfiguration},
+	 * donc aucun bean de depot n'existe. Sans cette declaration, le contexte
+	 * echoue sur « No qualifying bean of type JetonDAppareilRepository » —
+	 * message exact rencontre a l'ajout du canal push.
+	 */
+	@MockitoBean
+	private JetonDAppareilRepository jetonDAppareilRepository;
 
 	@Test
 	@DisplayName("le cablage Spring tient")

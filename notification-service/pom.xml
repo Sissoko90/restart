@@ -116,6 +116,22 @@
 		</dependency>
 
 		<!--
+			Firebase Admin, pour les notifications push.
+
+			Version epinglee dans le POM racine, comme Twilio : voir son
+			dependencyManagement pour le choix du SDK officiel plutot que d'un
+			appel direct a l'API HTTP v1 de FCM.
+
+			AUCUN IDENTIFIANT ICI NI DANS LE DEPOT. Le compte de service est un
+			fichier JSON porteur d'une CLE PRIVEE, designe par un chemin dans la
+			configuration et jamais embarque. Voir ConfigurationFirebase.
+		-->
+		<dependency>
+			<groupId>com.google.firebase</groupId>
+			<artifactId>firebase-admin</artifactId>
+		</dependency>
+
+		<!--
 		  Envoi de courriel. JavaMailSender n'a PAS d'API reactive : chaque envoi
 		  doit etre pousse sur boundedElastic, comme le font deja les deux
 		  EmailServiceImpl existants.
