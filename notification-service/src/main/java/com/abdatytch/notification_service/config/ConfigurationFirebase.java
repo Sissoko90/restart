@@ -1,6 +1,7 @@
 package com.abdatytch.notification_service.config;
 
 import com.google.auth.oauth2.GoogleCredentials;
+import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
 import com.google.firebase.messaging.FirebaseMessaging;
@@ -105,11 +106,43 @@ public class ConfigurationFirebase {
         }
 
         try (InputStream flux = Files.newInputStream(fichier)) {
-            GoogleCredentials identifiants =
-                    GoogleCredentials.fromStream(flux).createScoped(PORTEES);
+            GoogleCredentials brutes = GoogleCredentials.fromStream(flux);
+
+            // LE PROJET EST LU AVANT LA REDUCTION DE PORTEE, et il est
+            // OBLIGATOIRE.
+            //
+            // Defaut constate au premier demarrage reel : sans `setProjectId`,
+            // FirebaseOptions.getProjectId() rendait null, le journal annoncait
+            // « initialise pour le projet null », et le canal se declarait
+            // ACTIF. Or FCM construit son URL sur
+            // /v1/projects/{projectId}/messages:send : le premier envoi aurait
+            // echoue.
+            //
+            // C'est exactement le faux succes que cette conception combat
+            // ailleurs — un canal qui annonce etre pret et refuse a la premiere
+            // tentative. D'ou un refus au DEMARRAGE, bruyant, plutot qu'une
+            // panne silencieuse a la premiere notification.
+            //
+            // Lu avant `createScoped` parce que la reduction de portee rend un
+            // objet qui n'est plus forcement un ServiceAccountCredentials : le
+            // project_id y serait alors introuvable.
+            String projet = brutes instanceof ServiceAccountCredentials compte
+                    ? compte.getProjectId()
+                    : null;
+
+            if (projet == null || projet.isBlank()) {
+                log.error("Le compte de service Firebase de {} ne porte pas de "
+                        + "project_id exploitable : le canal PUSH refusera toute "
+                        + "remise. Verifier qu'il s'agit bien d'un fichier de "
+                        + "COMPTE DE SERVICE (type: service_account), telecharge "
+                        + "depuis Parametres du projet > Comptes de service.",
+                        fichier);
+                return null;
+            }
 
             FirebaseOptions options = FirebaseOptions.builder()
-                    .setCredentials(identifiants)
+                    .setCredentials(brutes.createScoped(PORTEES))
+                    .setProjectId(projet)
                     .build();
 
             FirebaseApp instance = instanceExistante();
