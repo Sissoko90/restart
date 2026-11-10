@@ -180,108 +180,36 @@ class RoutageCoherentTest {
      * pouvait exister sans que le mode maintenance sache quel service elle
      * atteint — exactement la divergence que ce test est charge d'empecher.
      *
-     * <h3>Limitee a la surface {@code /api/v1}, deliberement</h3>
+     * <h3>Limitee aux surfaces que {@code CheminCible} decrit</h3>
      *
-     * {@code CheminCible.servicesParPrefixe()} ne decrit que cette surface.
-     * {@code /.well-known/jwks.json} reste donc hors champ, et c'est a signaler
-     * plutot qu'a masquer : cette route pointe sur <b>auth-service</b>, alors
-     * que le seul detenteur du JWKS est
-     * {@code interface-service.DevKeyManagementController}. Question ouverte et
-     * distincte — la corriger deplacerait la decouverte des cles de signature
-     * de toute la plateforme.
+     * {@code /api/v1} et {@code /dev}. La seconde a ete ajoutee en routant
+     * brievement {@code /dev/.well-known/jwks.json} : l'extraction ne
+     * connaissait que {@code /api/v1}, elle ignorait donc cette route, et
+     * {@code aucunPrefixeFantome} accusait un prefixe pourtant servi. Un
+     * garde-fou qui se trompe de sens est aussi nuisible qu'un garde-fou
+     * aveugle — il fait corriger du code correct.
+     *
+     * <p>Cette route a ete retiree depuis, le chemin canonique suffisant. La
+     * surface {@code /dev} reste reconnue ici pour que la prochaine route de ce
+     * genre ne soit pas invisible : c'est le cout d'une ligne, contre un angle
+     * mort qui vient d'en couter six.
+     * {@code /.well-known/jwks.json} reste donc hors champ de la comparaison.
+     *
+     * <p>Ce javadoc affirmait que cette route pointe sur <b>auth-service</b>,
+     * et presentait la chose comme une question ouverte. Elle ne l'est plus :
+     * la route a ete corrigee vers interface-service, seul detenteur des cles
+     * privees, et {@code CheminCible} ramene le chemin standard sur
+     * {@code /dev/.well-known/jwks.json}, celui que le controleur sert
+     * reellement. Le commentaire decrivait un defaut deja ferme — et une
+     * documentation qui signale un faux probleme envoie chercher au mauvais
+     * endroit, ce qui coute plus cher qu'un silence.
      */
-    /**
-     * Les routes declarees en YAML : {@code Path=...} et {@code uri: lb://...}.
-     *
-     * <p>Lecture ligne a ligne et non par expression reguliere sur tout le
-     * fichier : les deux informations sont dans des cles distinctes d'un meme
-     * bloc, et un motif global apparierait le {@code Path} d'une route avec
-     * l'{@code uri} de la suivante.
-     *
-     * <p>Les lignes de commentaire sont ignorees : ce fichier explique
-     * longuement pourquoi certaines routes vivent ici et d'autres dans le
-     * {@code RouterFunction}, et ces explications citent forcement des chemins.
-     * Un garde-fou qui interdit de documenter ce qu'il garde finit par etre
-     * desactive — ce depot l'a appris trois fois.
-     */
-    private static Map<String, String> routesYaml() throws IOException {
-        Map<String, String> declare = new LinkedHashMap<>();
-        if (!Files.isRegularFile(ROUTES_YAML)) {
-            return declare;
-        }
-
-        java.util.Set<String> duReacteur = modulesDuReacteur();
-
-        String prefixes = null;
-        String service = null;
-        for (String ligne : Files.readAllLines(ROUTES_YAML)) {
-            String nue = ligne.trim();
-            if (nue.startsWith("#")) {
-                continue;
-            }
-            // Un nouveau bloc de route remet les deux a zero : sans cela, une
-            // route sans Path heriterait de celui de la precedente.
-            if (nue.startsWith("- id:")) {
-                prefixes = null;
-                service = null;
-            }
-            if (nue.startsWith("- Path=")) {
-                prefixes = nue.substring("- Path=".length()).trim();
-            }
-            if (nue.startsWith("uri: lb://")) {
-                service = nue.substring("uri: lb://".length()).trim();
-            }
-            if (prefixes != null && service != null) {
-                // SEULS les services du reacteur sont retenus.
-                //
-                // Le YAML declare aussi des routes vers geo-service et
-                // payment-service, qui sont encore des squelettes hors
-                // reacteur. Exiger que CheminCible les connaisse reviendrait a
-                // lui faire declarer des services qui ne peuvent pas repondre,
-                // et le mode maintenance couvrirait des chemins vides.
-                //
-                // Ces routes fantomes sont un defaut A PART : une requete vers
-                // /api/v1/geo/** echoue a la resolution Consul, donc en 503 ou
-                // en 500, et non en 404 propre. Elles subsistent parce que les
-                // deux modules sont prevus.
-                if (duReacteur.contains(service)) {
-                    // Un predicat peut porter PLUSIEURS chemins separes par des
-                    // virgules : Path=/api/v1/developers,/api/v1/projects. Les
-                    // traiter comme une seule chaine produirait un prefixe qui
-                    // ne correspond a rien.
-                    for (String prefixe : prefixes.split(",")) {
-                        String propre = prefixe.replace("/**", "").trim();
-                        if (!propre.isEmpty()) {
-                            declare.put(propre, service);
-                        }
-                    }
-                }
-                prefixes = null;
-                service = null;
-            }
-        }
-        return declare;
-    }
-
-    /** Les modules reellement construits, lus dans le POM racine. */
-    private static java.util.Set<String> modulesDuReacteur() throws IOException {
-        Path racine = Path.of("../pom.xml");
-        if (!Files.isRegularFile(racine)) {
-            return java.util.Set.of();
-        }
-        java.util.Set<String> modules = new java.util.LinkedHashSet<>();
-        Matcher m = Pattern.compile("<module>([^<]+)</module>")
-                .matcher(Files.readString(racine));
-        while (m.find()) {
-            modules.add(m.group(1).trim());
-        }
-        return modules;
-    }
 
     private static Map<String, String> routesDirectes(String source) {
         Map<String, String> declare = new LinkedHashMap<>();
         Matcher m = Pattern.compile(
-                "\\.(?:GET|POST|PUT|DELETE)\\(\"(/api/v1/[^\"]+)\"[^;]*?\"([a-z-]+-service)\"")
+                "\\.(?:GET|POST|PUT|DELETE)\\(\"((?:/api/v1|/dev)/[^\"]+)\""
+                        + "[^;]*?\"([a-z-]+-service)\"")
                 .matcher(source);
         while (m.find()) {
             declare.put(m.group(1).replace("/**", ""), m.group(2));
@@ -303,8 +231,22 @@ class RoutageCoherentTest {
     private static Map<String, String> routageDeclare() throws IOException {
         String source = sansCommentaires(Files.readString(CONFIG_DES_ROUTES));
 
+        // LE YAML N'EST PLUS LU COMME UNE SOURCE DE ROUTAGE.
+        //
+        // Il ne l'a jamais ete en verite : gateway-service ne declare pas
+        // spring-cloud-starter-gateway, donc aucun moteur ne lisait ses routes.
+        // Elles etaient en outre indentees sous `geolocation:`. Ce test les
+        // comptait pourtant comme reelles, en cherchant des chaines ligne par
+        // ligne — une lecture de TEXTE ne peut voir ni l'indentation d'une
+        // clef, ni l'absence du moteur qui la lirait.
+        //
+        // Consequence : six prefixes declares par CheminCible et servis par
+        // aucune route passaient pour routes. Cinq ont rejoint le
+        // RouterFunction ; le sixieme est dans PrefixesSansRoutage.
+        //
+        // Le YAML est desormais verifie par aucuneRouteEnYaml() : il ne doit
+        // plus declarer de route du tout.
         Map<String, String> declare = new LinkedHashMap<>(routesDirectes(source));
-        declare.putAll(routesYaml());
         String[] blocs = source.split("\\.nest\\(path\\(\"");
 
         for (int i = 1; i < blocs.length; i++) {
@@ -366,6 +308,8 @@ class RoutageCoherentTest {
 
         List<String> fantomes = CheminCible.servicesParPrefixe().keySet().stream()
                 .filter(prefixe -> !declare.containsKey(prefixe))
+                // Les exceptions assumees, motivees dans PrefixesSansRoutage.
+                .filter(prefixe -> !PrefixesSansRoutage.contient(prefixe))
                 .toList();
 
         assertThat(fantomes)
@@ -376,6 +320,120 @@ class RoutageCoherentTest {
                         Un prefixe fantome fait croire qu'une maintenance protege un \
                         chemin qui n'existe pas, et masque le fait que le vrai chemin \
                         n'est pas couvert.""", fantomes)
+                .isEmpty();
+    }
+
+    /**
+     * Le fichier de configuration ne declare plus AUCUNE route.
+     *
+     * <h2>Ce que ce test empeche de revenir</h2>
+     *
+     * {@code config-repo/dev/gateway-service-dev.yml} portait onze routes
+     * {@code spring.cloud.gateway}, avec predicats, retraits de prefixe,
+     * coupe-circuits et chemins de repli. Aucune n'a jamais rien route :
+     * gateway-service ne declare pas {@code spring-cloud-starter-gateway}, et
+     * le bloc etait de surcroit indente sous la clef {@code geolocation:}.
+     *
+     * <p>Six prefixes n'existaient que la : la boite de reception de
+     * notification-service et ses endpoints d'appareil — donc les
+     * notifications push mobiles —, la surface developpeur d'interface-service,
+     * ses deux chemins {@code /dev}, et le flux temps reel.
+     *
+     * <p>Ce test refuse qu'une route y soit reecrite. Elle serait inerte, et
+     * surtout elle redonnerait a croire qu'un chemin est servi.
+     *
+     * <h2>Pourquoi les motifs ne sont pas cites en clair</h2>
+     *
+     * Ils sont assembles a l'execution. Ecrire {@code "uri: lb://"} dans ce
+     * fichier de test y mettrait la chaine cherchee — et ce depot s'est deja
+     * fait prendre deux fois par un garde-fou que sa propre documentation
+     * satisfaisait : un commentaire de POM qui contenait le nom de l'artefact
+     * exige, et une javadoc ou le test trouvait sa correspondance.
+     */
+    @Test
+    @DisplayName("la configuration YAML ne declare aucune route")
+    void aucuneRouteEnYaml() throws IOException {
+        assertThat(ROUTES_YAML)
+                .withFailMessage("%s est introuvable : ce test ne verifie rien",
+                        ROUTES_YAML)
+                .isRegularFile();
+
+        String motifDeChemin = "Path" + "=";
+        String adresseEquilibree = "uri:" + " lb" + "://";
+
+        List<String> declarations = Files.readAllLines(ROUTES_YAML).stream()
+                .map(String::trim)
+                .filter(ligne -> !ligne.startsWith("#"))
+                .filter(ligne -> ligne.contains(motifDeChemin)
+                        || ligne.contains(adresseEquilibree))
+                .toList();
+
+        assertThat(declarations)
+                .withFailMessage("""
+                        Des routes ont ete declarees dans %s :
+
+                        %s
+
+                        Elles seraient INERTES : gateway-service ne declare pas \
+                        spring-cloud-starter-gateway, donc aucun moteur ne les \
+                        lirait. Onze routes y ont vecu ainsi, et six prefixes \
+                        n'existaient que la — dont la boite de reception de \
+                        notification-service et ses endpoints d'appareil.
+
+                        Une route de cette passerelle s'ecrit dans \
+                        GatewayRoutesConfig.""",
+                        ROUTES_YAML, String.join("\n", declarations))
+                .isEmpty();
+    }
+
+    /**
+     * Les exceptions assumees sont exactement celles qui le sont.
+     *
+     * <h2>Pourquoi pincer cette liste</h2>
+     *
+     * {@link PrefixesSansRoutage} est la porte de sortie de
+     * {@link #aucunPrefixeFantome()}. Une porte de sortie sans serrure finit
+     * par accueillir tout ce qui derange : il suffirait d'y inscrire un
+     * prefixe pour faire taire le test qui signale qu'il n'est pas route.
+     *
+     * <p>Ce test exige donc que chaque entree soit vraiment un prefixe connu de
+     * {@code CheminCible}, qu'elle soit vraiment non routee — une entree
+     * devenue inutile est un mensonge au meme titre — et il fige le nombre.
+     * Grandir demande de modifier ce test, donc de le decider.
+     */
+    @Test
+    @DisplayName("PrefixesSansRoutage ne contient que des exceptions reelles")
+    void exceptionsReellesEtPincees() throws IOException {
+        Map<String, String> declare = routageDeclare();
+        Map<String, String> connu = CheminCible.servicesParPrefixe();
+
+        assertThat(PrefixesSansRoutage.motifs())
+                .withFailMessage("""
+                        La liste des prefixes non routes a change de taille.
+
+                        Elle ne doit contenir que le flux WebSocket, que \
+                        WebClient ne sait pas proxifier. Tout autre prefixe non \
+                        route est un defaut a corriger dans \
+                        GatewayRoutesConfig, pas une exception a inscrire.""")
+                .hasSize(1);
+
+        List<String> incoherentes = new ArrayList<>();
+        PrefixesSansRoutage.motifs().forEach((prefixe, motif) -> {
+            if (!connu.containsKey(prefixe)) {
+                incoherentes.add(prefixe + " est inconnu de CheminCible : "
+                        + "une exception a un prefixe qui n'existe pas");
+            }
+            if (declare.containsKey(prefixe)) {
+                incoherentes.add(prefixe + " EST route par GatewayRoutesConfig : "
+                        + "l'exception n'a plus de raison d'etre, la retirer");
+            }
+            if (motif == null || motif.isBlank()) {
+                incoherentes.add(prefixe + " n'a pas de motif");
+            }
+        });
+
+        assertThat(incoherentes)
+                .withFailMessage("%s", String.join("\n", incoherentes))
                 .isEmpty();
     }
 

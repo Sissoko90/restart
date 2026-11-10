@@ -305,25 +305,96 @@ public class GatewayRoutesConfig {
                 .PUT("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "security-service", defaultCircuitBreaker))
                 .DELETE("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "security-service", defaultCircuitBreaker))
             )
-            // notification-service N'EST PAS route ici, et c'est delibere.
+            // La boite de reception de notification-service, ET les appareils.
             //
-            // J'avais ajoute une route /api/v1/notifications/** a cet endroit,
-            // sans voir qu'une route YAML pour le MEME chemin existait deja
-            // (config-repo/dev/gateway-service-dev.yml, id: notification-service).
-            // Comme le RouterFunctionMapping de Spring a une priorite plus
-            // forte que le RoutePredicateHandlerMapping de Spring Cloud
-            // Gateway, la mienne masquait la sienne : deux declarations pour un
-            // chemin, dont une seule agissait.
+            // CETTE ROUTE A ETE ECARTEE D'ICI SUR UNE PREMISSE FAUSSE.
             //
-            // Les deux routes de ce service vivent donc en YAML :
-            //   /api/v1/notifications/**    la boite de reception (REST)
-            //   /api/v1/notifications-flux  le flux temps reel (WebSocket)
+            // Le commentaire qu'elle remplace disait : « une route YAML pour le
+            // MEME chemin existe deja, et le RouterFunctionMapping la
+            // masquerait ; les deux routes de ce service vivent donc en YAML ».
+            // Les deux affirmations etaient fausses.
             //
-            // Et le flux DOIT y rester : ce RouterFunction proxifie avec
-            // WebClient, qui ne sait pas effectuer une montee en protocole.
+            // Ce module ne declare PAS spring-cloud-starter-gateway. Il n'y a
+            // donc aucun RoutePredicateHandlerMapping, aucun second mecanisme
+            // de routage, et rien a masquer : ce RouterFunction est le SEUL
+            // routage de la passerelle. Les onze routes ecrites en YAML etaient
+            // inertes — pour deux raisons independantes, d'ailleurs, puisque le
+            // bloc etait de surcroit ecrit sous la clef `geolocation:` et non
+            // sous `spring:`.
+            //
+            // Consequence mesuree le 2026-11-10 : /api/v1/notifications/**
+            // n'etait route NULLE PART. La boite de reception, et les quatre
+            // endpoints d'enregistrement d'appareil qui portent les
+            // notifications push mobiles, etaient injoignables a travers la
+            // passerelle — c'est-a-dire par le seul chemin qu'un client a.
+            //
+            // Trois garde-fous lisaient pourtant ces routes comme reelles, en
+            // analysant le YAML ligne par ligne : une lecture de TEXTE ne peut
+            // pas voir qu'une clef est au mauvais endroit, ni qu'aucun moteur
+            // ne la lira.
+            .nest(path("/api/v1/notifications/**"), builder -> builder
+                .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
+                .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
+                .PUT("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
+                .DELETE("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
+            )
+            // Le flux temps reel N'EST PAS ici, et ne peut pas l'etre.
+            //
+            // `/api/v1/notifications-flux` est une montee en protocole
+            // WebSocket, et ce RouterFunction proxifie avec WebClient, qui ne
+            // sait pas la faire. Il est servi par RelaisWebSocket, un
+            // HandlerMapping dedie de ce module, dont l'ordre precede celui du
+            // RouterFunctionMapping.
+            //
             // Son chemin porte un tiret et non un segment sous
-            // /notifications/, pour qu'aucune route de ce fichier ne puisse le
-            // capter un jour.
+            // `/notifications/`, pour que la route ci-dessus ne puisse pas le
+            // capter.
+            // La surface developpeur d'interface-service, qui n'etait routee
+            // nulle part.
+            //
+            // Deux prefixes declares par CheminCible, declares en YAML inerte,
+            // et servis par aucune route. Le commentaire de la route
+            // `/.well-known/jwks.json` ci-dessus affirmait d'ailleurs que le
+            // chemin explicite « fonctionnait par une route YAML » : il ne
+            // fonctionnait pas, et personne ne s'en plaignait parce que les
+            // services demandent le JWKS en direct, de service a service.
+            .nest(path("/api/v1/developers/**"), builder -> builder
+                .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "interface-service", defaultCircuitBreaker))
+                .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "interface-service", defaultCircuitBreaker))
+                .PUT("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "interface-service", defaultCircuitBreaker))
+                .DELETE("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "interface-service", defaultCircuitBreaker))
+            )
+            .nest(path("/api/v1/projects/**"), builder -> builder
+                .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "interface-service", defaultCircuitBreaker))
+                .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "interface-service", defaultCircuitBreaker))
+                .PUT("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "interface-service", defaultCircuitBreaker))
+                .DELETE("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "interface-service", defaultCircuitBreaker))
+            )
+            // LES DEUX CHEMINS /dev NE SONT PAS ROUTES, ET C'EST VERIFIE.
+            //
+            // Je les avais ajoutes ici avec les trois precedents, puisque
+            // CheminCible les declarait et que le YAML inerte pretendait les
+            // servir. Les avoir routes a permis de mesurer ce qu'ils valent,
+            // et la reponse est : rien.
+            //
+            // `/dev/auth/**` NE CORRESPOND A AUCUN CONTROLEUR. interface-service
+            // n'a que deux surfaces sous /dev — DevKeyManagementController
+            // (@RequestMapping("/dev")) et DeveloperErasureController
+            // ("/dev/erasure"). Sa chaine de securite ouvre pourtant six
+            // chemins /dev/auth/* en permitAll : six regles qui protegent des
+            // chemins inexistants. La route YAML visait la meme surface vide.
+            //
+            // `/dev/.well-known/jwks.json` existe, lui, mais il est DEJA
+            // joignable : la route `/.well-known/jwks.json` ci-dessus est
+            // ouverte par la passerelle, et CheminCible la ramene precisement
+            // sur ce chemin. Mesure a travers la passerelle : 200, une cle
+            // publiee. Router le chemin explicite en plus ajouterait un SECOND
+            // chemin public vers le meme document, pour aucun gain.
+            //
+            // Les deux prefixes sont donc retires de CheminCible plutot que
+            // routes. Un prefixe qui ne designe rien fait croire qu'une
+            // maintenance protege un chemin, et masque le fait que le vrai
+            // chemin n'est pas couvert.
             // Surfaces d'administration de quotas-service et setting-service.
             //
             // Elles n'etaient routees nulle part, et /api/v1/admin/** les

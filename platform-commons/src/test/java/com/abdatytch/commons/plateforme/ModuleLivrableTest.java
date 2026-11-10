@@ -188,20 +188,26 @@ class ModuleLivrableTest {
     void chaqueServiceEstJoignable() throws IOException {
         Path racine = racineDuDepot();
 
-        // Les DEUX mecanismes de routage sont lus.
+        // IL N'Y A QU'UN SEUL MECANISME DE ROUTAGE, et ce test en lisait trois.
         //
-        // Ce depot en porte deux — le RouterFunction en Java et les routes
-        // Spring Cloud Gateway en YAML — et n'en lire qu'un rendrait ce
-        // garde-fou faux dans les deux sens : il accuserait des services
-        // routes par l'autre, et finirait desactive.
+        // Sa version precedente acceptait trois preuves : une mention dans le
+        // RouterFunction, une adresse d'equilibrage dans le YAML, ou une
+        // mention dans CheminCible. Les deux dernieres ne prouvaient rien.
+        //
+        // Le YAML : gateway-service ne declare pas
+        // spring-cloud-starter-gateway, donc aucun moteur ne lisait ses onze
+        // routes — qui etaient de surcroit indentees sous la clef
+        // `geolocation:` et non sous `spring:`. Elles sont retirees.
+        //
+        // CheminCible : il dit vers QUEL service un prefixe doit aller, ce qui
+        // sert au mode maintenance et a la signature. Il ne route rien. Un
+        // prefixe peut y figurer sans qu'aucune route ne le serve — et six
+        // l'etaient.
+        //
+        // Ne reste donc que la seule preuve qui en soit une.
         String routeur = Files.readString(racine.resolve(
                 "gateway-service/src/main/java/com/abdatytch/gateway_service/"
                         + "config/GatewayRoutesConfig.java"));
-        String yaml = Files.readString(
-                racine.resolve("config-repo/dev/gateway-service-dev.yml"));
-        String cheminCible = Files.readString(racine.resolve(
-                "gateway-service/src/main/java/com/abdatytch/gateway_service/"
-                        + "routing/CheminCible.java"));
 
         List<String> injoignables = new ArrayList<>();
         for (String module : modulesDuReacteur(racine)) {
@@ -212,17 +218,15 @@ class ModuleLivrableTest {
             if (!Files.exists(sources) || !aDesControleurs(sources)) {
                 continue;
             }
-            boolean route = routeur.contains("\"" + module + "\"")
-                    || yaml.contains("lb://" + module)
-                    || cheminCible.contains("\"" + module + "\"");
+            boolean route = routeur.contains("\"" + module + "\"");
             if (!route) {
                 injoignables.add(module);
             }
         }
 
         assertThat(injoignables)
-                .as("services exposant des endpoints et routes par AUCUN des deux "
-                        + "mecanismes de la passerelle. Leurs endpoints existent, "
+                .as("services exposant des endpoints et routes par AUCUNE route "
+                        + "de la passerelle. Leurs endpoints existent, "
                         + "sont testes, et rendent 404 depuis l'exterieur — "
                         + "indistinguable d'un chemin inexistant. C'est arrive a "
                         + "security-service, complet et configure, dont les sept "

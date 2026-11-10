@@ -89,175 +89,48 @@ geolocation:
   database:
     path: /opt/geoip/GeoLite2-Country.mmdb  # Chemin vers la base GeoIP2
   
-  cloud:
-    consul:
-      discovery:
-        health-check-path: /actuator/health
-    gateway:
-      discovery:
-        locator:
-          enabled: true
-          lower-case-service-id: true
-      
-      routes:
-        # Interface Service Routes (Développeurs - Public + Protected)
-        - id: interface-service
-          uri: lb://interface-service
-          predicates:
-            - Path=/api/v1/auth/**
-        
-        # User Service Routes (Protected)
-        - id: user-service
-          uri: lb://user-service
-          predicates:
-            - Path=/api/v1/users/**
-        
-        # Interface Service Admin Routes (Interface Admin Console)
-        - id: interface-admin
-          uri: lb://interface-service
-          predicates:
-            - Path=/api/v1/admin/**
-          filters:
-            - StripPrefix=2
-
-        # Flux temps reel des notifications (WebSocket)
-        #
-        # DECLARE ICI ET NON DANS LE RouterFunction, et c'est obligatoire : ce
-        # dernier proxifie avec WebClient, qui ne sait pas effectuer une montee
-        # en protocole WebSocket. Spring Cloud Gateway, lui, la gere nativement.
-        #
-        # Le chemin porte un TIRET — /api/v1/notifications-flux — et non un
-        # segment sous /api/v1/notifications/. Raison : le RouterFunction route
-        # /api/v1/notifications/** vers ce meme service pour la boite de
-        # reception, et le RouterFunctionMapping de Spring a une priorite plus
-        # forte que le RoutePredicateHandlerMapping de Spring Cloud Gateway. Un
-        # chemin de flux sous /notifications/ serait donc capte par le
-        # RouterFunction et la poignee de main echouerait avec une erreur
-        # parlant de HTTP, jamais de WebSocket.
-        #
-        # StripPrefix=2 : le service recoit /notifications-flux, ce que
-        # CheminCible calcule aussi — donc la signature HMAC concorde.
-        - id: notification-flux
-          uri: lb://notification-service
-          predicates:
-            - Path=/api/v1/notifications-flux
-          filters:
-            - StripPrefix=2
-        
-        # Les routes vers auth-service sont declarees dans le RouterFunction de
-        # GatewayRoutesConfig, et PAS ici.
-        #
-        # Deux mecanismes de routage coexistent dans ce service : le
-        # RouterFunction (Java) et ces routes Spring Cloud Gateway (YAML). Le
-        # RouterFunctionMapping de Spring a une priorite plus forte, donc une
-        # route YAML est silencieusement masquee des qu'un chemin du
-        # RouterFunction la recouvre.
-        #
-        # Les routes auth-admin et auth-user-roles etaient declarees ici SANS
-        # StripPrefix : auth-service recevait /api/v1/auth-admin/x alors que ses
-        # controleurs attendent /admin/x. Elles ne pouvaient rien servir. Le
-        # RouterFunction les remplace, avec la reecriture de chemin faite par
-        # CheminCible — la meme source que le filtre de signature HMAC.
-        
-        # Les routes /api/v1/admin/users/** sont declarees dans le
-        # RouterFunction de GatewayRoutesConfig, et PAS ici.
-        #
-        # Elles etaient ici, et ne pouvaient rien servir : la route
-        # /api/v1/admin/** du RouterFunction a une priorite plus forte et les
-        # masquait, envoyant toute l'administration des comptes a
-        # interface-service. Meme defaut que les routes auth-admin plus haut.
-        #
-        # /api/v1/admin/management/users/** a disparu avec le controleur qui le
-        # portait : lister, chercher, consulter, modifier et supprimer un compte
-        # existaient deux fois, sous deux prefixes, avec deux comportements.
-        # Tout est sous /api/v1/admin/users desormais.
-
-        # Geo Service Routes
-        - id: geo-service
-          uri: lb://geo-service
-          predicates:
-            - Path=/api/v1/geo/**
-          filters:
-            - StripPrefix=2
-            - name: CircuitBreaker
-              args:
-                name: geoCircuitBreaker
-                fallbackUri: forward:/fallback/geo
-        
-        # Payment Service Routes
-        - id: payment-service
-          uri: lb://payment-service
-          predicates:
-            - Path=/api/v1/payments/**
-          filters:
-            - StripPrefix=2
-            - name: CircuitBreaker
-              args:
-                name: paymentCircuitBreaker
-                fallbackUri: forward:/fallback/payments
-        
-        # Notification Service Routes
-        - id: notification-service
-          uri: lb://notification-service
-          predicates:
-            - Path=/api/v1/notifications/**
-          filters:
-            - StripPrefix=2
-            - name: CircuitBreaker
-              args:
-                name: notificationCircuitBreaker
-                fallbackUri: forward:/fallback/notifications
-        
-        # Interface Service Routes (Developer Console)
-        - id: interface-service
-          uri: lb://interface-service
-          predicates:
-            - Path=/api/v1/developers/**,/api/v1/projects/**
-          filters:
-            - StripPrefix=2
-            - name: CircuitBreaker
-              args:
-                name: interfaceCircuitBreaker
-                fallbackUri: forward:/fallback/interface
-        
-        # Interface Service - JWKS Endpoint (Public - pour validation JWT dev)
-        - id: interface-jwks
-          uri: lb://interface-service
-          predicates:
-            - Path=/dev/.well-known/jwks.json
-        
-        # Interface Service - Dev Auth Routes (Public)
-        - id: interface-dev-auth
-          uri: lb://interface-service
-          predicates:
-            - Path=/dev/auth/**
-        
-        # Media Service Routes
-        - id: media-service
-          uri: lb://media-service
-          predicates:
-            - Path=/api/v1/media/**
-          filters:
-            - StripPrefix=2
-            - name: CircuitBreaker
-              args:
-                name: mediaCircuitBreaker
-                fallbackUri: forward:/fallback/media
-        
-      
-      default-filters:
-        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
-        - AddRequestHeader=X-Secret-Key, ${GATEWAY_SECRET_KEY}
-        - name: Retry
-          args:
-            retries: 3
-            statuses: BAD_GATEWAY,GATEWAY_TIMEOUT
-            methods: GET,POST,PUT,DELETE
-            backoff:
-              firstBackoff: 50ms
-              maxBackoff: 500ms
-              factor: 2
-              basedOnPreviousValue: false
+# ==========================================
+# CE QUI SE TROUVAIT ICI : 11 ROUTES, ET AUCUNE N'ETAIT LUE
+# ==========================================
+# Ce fichier portait un bloc `spring.cloud.gateway` complet — onze routes avec
+# leurs predicats, leurs StripPrefix, leurs coupe-circuits et leurs chemins de
+# repli — ainsi qu'un `spring.cloud.consul.discovery`. Tout cela est retire.
+#
+# DEUX RAISONS INDEPENDANTES, et chacune suffisait.
+#
+# 1. LE MOTEUR N'EXISTE PAS. gateway-service ne declare PAS
+#    spring-cloud-starter-gateway. Il n'y a donc aucun
+#    RoutePredicateHandlerMapping pour lire ces routes. Le SEUL routage de
+#    cette passerelle est le RouterFunction de GatewayRoutesConfig.
+#
+# 2. LE BLOC ETAIT AU MAUVAIS ENDROIT. Il etait indente sous `geolocation:`,
+#    donc lu comme `geolocation.cloud.gateway.routes`. Meme avec Spring Cloud
+#    Gateway au chemin de classe, rien n'aurait ete lu : une clef inconnue est
+#    ignoree en silence.
+#
+# CE QUE CELA COUTAIT. Six prefixes etaient declares ICI et nulle part
+# ailleurs : la boite de reception de notification-service et ses endpoints
+# d'appareil — donc les notifications push mobiles —, la surface developpeur
+# d'interface-service, ses deux chemins /dev, et le flux temps reel. Aucun
+# n'etait joignable a travers la passerelle, c'est-a-dire par le seul chemin
+# qu'un client a. Cinq viennent d'etre ajoutes au RouterFunction ; le sixieme
+# est une montee en protocole WebSocket, et PrefixesSansRoutage dit pourquoi
+# il n'y est pas.
+#
+# ET TROIS GARDE-FOUS LES LISAIENT COMME REELLES. RoutageCoherentTest,
+# ModuleLivrableTest et la verification de coherence de CheminCible analysaient
+# ce fichier LIGNE PAR LIGNE, en cherchant le predicat de chemin et
+# l'adresse d'equilibrage — noms volontairement NON cites ici, pour qu'un
+# garde-fou qui lit du texte ne trouve pas sa correspondance dans ce
+# commentaire. Une
+# lecture de texte ne peut voir ni l'indentation d'une clef, ni l'absence du
+# moteur qui la lirait. Ils sont corriges : ce fichier ne declare plus de
+# routes, et un test refuse desormais qu'il en declare.
+#
+# LE CHEMIN DE SANTE CONSUL est retire sans remplacement : sa valeur etait
+# `/actuator/health`, exactement celle que application-dev.yml pose deja pour
+# tous les services. Une redeclaration identique n'ajoute rien et donne a
+# croire qu'un reglage particulier s'applique ici.
 
 # ==========================================
 # SECURITY - GATEWAY ACCESS
@@ -283,13 +156,11 @@ resilience4j:
         limitRefreshPeriod: 60s  # Par minute
         timeoutDuration: 0s
         registerHealthIndicator: true
-spring.cloud.gateway.filter.request-rate-limiter:
-  enabled: true
-
-# Timeout Configuration - DEV
-spring.cloud.gateway.httpclient:
-  connect-timeout: 10000
-  response-timeout: 60s
+# Deux reglages de Spring Cloud Gateway retires pour la meme raison que les
+# routes ci-dessus : le moteur n'est pas au chemin de classe. Ils etaient
+# ecrits en clefs POINTEES a la racine — une forme que Spring lit bien, celle-
+# la — ce qui les rendait d'autant plus credibles. Le delai d'attente reel de
+# la proxification vient du WebClient de NettyConfig.
 
 # ==========================================
 # CORS CONFIGURATION

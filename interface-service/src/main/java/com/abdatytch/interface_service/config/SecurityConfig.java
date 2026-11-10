@@ -19,6 +19,7 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
 import java.util.List;
+import com.abdatytch.commons.security.CheminsPublics;
 
 /**
  * Configuration de sécurité complète pour l'interface-service
@@ -93,7 +94,35 @@ public class SecurityConfig {
                         // en marche : /actuator/env en direct rendait 403.
                         //
                         // Compter sur l'autre couche n'est pas une politique.
-                        .pathMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
+                        // LES SONDES SONT LUES CHEZ LEUR SEUL DETENTEUR.
+                        //
+                        // Ce fichier portait la liste en dur : trois chemins
+                        // EXACTS. Or `/actuator/health` exact ne reconnait pas
+                        // `/actuator/health/liveness` — la sonde de groupe
+                        // tombait donc sous la regle suivante,
+                        // `hasRole("ADMIN")`, et rendait 401.
+                        //
+                        // MESURE SUR LA PLATEFORME EN MARCHE : Consul
+                        // interrogeait /actuator/health/liveness, recevait 401,
+                        // marquait le controle critique, et RETIRAIT
+                        // interface-service du catalogue au bout de 30 s. Le
+                        // service tournait, repondait en direct, et n'existait
+                        // plus pour la passerelle — qui rendait 503 sur la
+                        // connexion, interface-service etant l'autorite JWT.
+                        //
+                        // Le defaut etait masque parce que la clef
+                        // `health-check-path` de ce service etait ecrite sous
+                        // `gateway:` au lieu de `spring:`, donc inerte : Consul
+                        // utilisait le defaut `/actuator/health`, qui passe. La
+                        // correction de l'emplacement a rendu la regle visible.
+                        //
+                        // CheminsPublics porte deja les quatre motifs, dont
+                        // `/actuator/health/**`. Sept modules sur neuf
+                        // l'utilisent ; ce fichier et celui de l'autre module
+                        // tenaient les deux seules listes divergentes, et c'est
+                        // precisement ce que cette classe existe pour
+                        // supprimer.
+                        .pathMatchers(CheminsPublics.sondes().construire().motifsPermitAll()).permitAll()
                         .pathMatchers("/actuator/**").hasRole("ADMIN")
                         
                         // JWKS endpoint pour les développeurs (public)
