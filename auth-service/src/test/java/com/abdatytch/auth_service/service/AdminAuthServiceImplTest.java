@@ -34,6 +34,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 import static com.abdatytch.auth_service.testutil.RevocationDEssai.revocationQuiNeFaitRien;
 import static com.abdatytch.auth_service.testutil.ConfianceDEssai.aucunAppareilDeConfiance;
+import com.abdatytch.commons.notification.IMessagerieSortante;
 
 /**
  * Connexion des administrateurs de la plateforme.

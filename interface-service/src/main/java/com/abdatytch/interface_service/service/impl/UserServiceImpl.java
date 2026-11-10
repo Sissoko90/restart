@@ -305,7 +305,7 @@ public class UserServiceImpl implements UserService {
                                 // Générer un code OTP à 6 chiffres
                                 String otpCode = generateOtpCode();
                                 user.setEmailOtpCode(otpCode);
-                                user.setEmailOtpExpiresAt(LocalDateTime.now().plusMinutes(10)); // Expire après 10 minutes
+                                user.setEmailOtpExpiresAt(LocalDateTime.now().plusMinutes(ApplicationConstants.OTP_VALIDITE_MINUTES)); // Expire après 10 minutes
 
                                 return saveUserWithCache(user)
                                         .flatMap(savedUser ->
@@ -338,7 +338,7 @@ public class UserServiceImpl implements UserService {
                                 // Générer un code OTP à 6 chiffres
                                 String otpCode = generateOtpCode();
                                 user.setPhoneOtpCode(otpCode);
-                                user.setPhoneOtpExpiresAt(LocalDateTime.now().plusMinutes(10)); // Expire après 10 minutes
+                                user.setPhoneOtpExpiresAt(LocalDateTime.now().plusMinutes(ApplicationConstants.OTP_VALIDITE_MINUTES)); // Expire après 10 minutes
 
                                 return saveUserWithCache(user)
                                         .flatMap(savedUser ->
@@ -396,7 +396,7 @@ public class UserServiceImpl implements UserService {
                             .then(Mono.defer(() -> {
                                 String otpCode = generateOtpCode();
                                 user.setPasswordResetOtpCode(otpCode);
-                                user.setPasswordResetOtpExpiresAt(LocalDateTime.now().plusMinutes(10));
+                                user.setPasswordResetOtpExpiresAt(LocalDateTime.now().plusMinutes(ApplicationConstants.OTP_VALIDITE_MINUTES));
 
                                 return saveUserWithCache(user)
                                         .flatMap(savedUser ->
@@ -513,7 +513,7 @@ public class UserServiceImpl implements UserService {
         // Générer un code OTP pour l'email au lieu d'un token
         String otpCode = generateOtpCode();
         user.setEmailOtpCode(otpCode);
-        user.setEmailOtpExpiresAt(LocalDateTime.now().plusMinutes(10)); // Expire après 10 minutes
+        user.setEmailOtpExpiresAt(LocalDateTime.now().plusMinutes(ApplicationConstants.OTP_VALIDITE_MINUTES)); // Expire après 10 minutes
 
         return Mono.just(user);
     }

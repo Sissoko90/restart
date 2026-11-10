@@ -109,6 +109,7 @@ public class MessagerieDirecteImpl implements IMessagerieDirecte {
                 demande.destinataire(),
                 contenu.get().sujet(),
                 contenu.get().corps(),
+                contenu.get().corpsHtml(),
                 demande.urgence(),
                 null);
 

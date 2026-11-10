@@ -13,7 +13,7 @@ import com.abdatytch.auth_service.service.IAccountLockoutService;
 import com.abdatytch.auth_service.service.IAlerteDeSecuriteService;
 import com.abdatytch.auth_service.service.IConfirmationDeContactService;
 import com.abdatytch.auth_service.service.IMotDePasseService;
-import com.abdatytch.auth_service.service.IMessagerieSortante;
+import com.abdatytch.commons.notification.IMessagerieSortante;
 import com.abdatytch.auth_service.service.IVerificationCodeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

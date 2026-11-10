@@ -43,6 +43,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static com.abdatytch.auth_service.testutil.RevocationDEssai.revocationQuiNeFaitRien;
 import static com.abdatytch.auth_service.testutil.ConfianceDEssai.aucunAppareilDeConfiance;
+import com.abdatytch.commons.notification.IMessagerieSortante;
 
 /**
 
@@ -573,8 +574,8 @@ class AuthServiceImplLoginTest {
      * indistinguables. Avec {@code Mono<Boolean>}, un bouchon doit CHOISIR ce
      * qu'il simule, et celui-ci simule une remise reussie.
      */
-    private com.abdatytch.auth_service.service.IMessagerieSortante messagerieSimulee() {
-        return new com.abdatytch.auth_service.service.IMessagerieSortante() {
+    private com.abdatytch.commons.notification.IMessagerieSortante messagerieSimulee() {
+        return new com.abdatytch.commons.notification.IMessagerieSortante() {
             @Override
             public reactor.core.publisher.Mono<Boolean> envoyer(Demande demande) {
                 return reactor.core.publisher.Mono.just(true);
@@ -667,7 +668,7 @@ class AuthServiceImplLoginTest {
          * reponse. La methode privee a disparu avec son interrupteur.
          */
         private AuthServiceImpl serviceDontLEnvoiRend(boolean parti) {
-            var messagerie = new com.abdatytch.auth_service.service.IMessagerieSortante() {
+            var messagerie = new com.abdatytch.commons.notification.IMessagerieSortante() {
                 @Override
                 public Mono<Boolean> envoyer(Demande demande) {
                     return Mono.just(parti);

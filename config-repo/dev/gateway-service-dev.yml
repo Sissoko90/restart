@@ -114,8 +114,8 @@ geolocation:
 # d'interface-service, ses deux chemins /dev, et le flux temps reel. Aucun
 # n'etait joignable a travers la passerelle, c'est-a-dire par le seul chemin
 # qu'un client a. Cinq viennent d'etre ajoutes au RouterFunction ; le sixieme
-# est une montee en protocole WebSocket, et PrefixesSansRoutage dit pourquoi
-# il n'y est pas.
+# est une montee en protocole WebSocket : il est servi par RelaisWebSocket, un
+# WebFilter dedie, place en dernier dans la chaine externe.
 #
 # ET TROIS GARDE-FOUS LES LISAIENT COMME REELLES. RoutageCoherentTest,
 # ModuleLivrableTest et la verification de coherence de CheminCible analysaient

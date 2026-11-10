@@ -358,6 +358,10 @@ public class ServiceDeNotificationImpl implements IServiceDeNotification {
                 resolveur.pour(demande, canal, coordonnees),
                 contenu.get().sujet(),
                 contenu.get().corps(),
+                // La variante HTML, ou null. Seul CanalCourriel la lit ; les
+                // autres canaux recoivent le champ et l'ignorent, ce qui est
+                // preferable a une forme de message par canal.
+                contenu.get().corpsHtml(),
                 demande.urgence(),
                 enregistree.getId());
 

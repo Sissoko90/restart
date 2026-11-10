@@ -8,7 +8,7 @@ import com.abdatytch.auth_service.exception.AuthException;
 import com.abdatytch.auth_service.metrics.AuthMetrics;
 import com.abdatytch.auth_service.repository.UserRepository;
 import com.abdatytch.auth_service.service.IAlerteDeSecuriteService;
-import com.abdatytch.auth_service.service.IMessagerieSortante;
+import com.abdatytch.commons.notification.IMessagerieSortante;
 import com.abdatytch.commons.notification.CanalDeNotification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

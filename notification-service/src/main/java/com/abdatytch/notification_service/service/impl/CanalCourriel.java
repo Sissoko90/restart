@@ -6,7 +6,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
+import org.springframework.core.io.DefaultResourceLoader;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import com.abdatytch.commons.notification.DemandeDeNotification;
 import org.springframework.beans.factory.annotation.Qualifier;
 import com.abdatytch.commons.resilience.IDisjoncteurSortant;
@@ -54,6 +58,30 @@ public class CanalCourriel implements CanalDeRemise {
      */
     @Value("${notification.email.from:}")
     private String adresseExpediteur;
+
+    /**
+     * Le logo integre au corps HTML, s'il est configure.
+     *
+     * <h3>Un CHEMIN DE RESSOURCE SPRING, et facultatif</h3>
+     *
+     * La valeur passe par {@code ResourceLoader}, donc les deux formes servent
+     * sans second mecanisme : {@code classpath:assets/logo.png} pour l'image
+     * livree avec le service, ou un chemin absolu pour la remplacer sans
+     * reconstruire. C'est le protocole de ressources de Spring qui tranche, pas
+     * un test sur la chaine.
+     *
+     * <p>Facultatif, et l'absence ne bloque RIEN : le courriel part sans logo,
+     * l'image manquante s'affichant comme telle. Refuser l'envoi pour une
+     * image serait disproportionne — c'est un code de verification qui est dans
+     * le message.
+     *
+     * <p>Le gabarit HTML y fait reference par {@code cid:logo}. Si le gabarit
+     * ne le cite pas, la piece jointe n'est pas ajoutee : un courriel qui
+     * transporte une image que personne n'affiche grossit pour rien et attire
+     * les filtres anti-indesirables.
+     */
+    @Value("${notification.email.logo-integre:}")
+    private String cheminDuLogo;
 
     @Value("${notification.email.reply-to:}")
     private String adresseReponse;
@@ -158,6 +186,121 @@ public class CanalCourriel implements CanalDeRemise {
         return message.urgence() == DemandeDeNotification.Urgence.CRITIQUE;
     }
 
+    /**
+     * Un courriel de texte brut.
+     *
+     * <p>{@code SimpleMailMessage} suffit et reste le chemin de la grande
+     * majorite des modeles. Il est conserve plutot que de tout faire passer par
+     * {@code MimeMessageHelper} : moins de pieces a assembler sur le chemin le
+     * plus emprunte.
+     */
+    private void envoyerTexteSeul(MessageARemettre message) {
+        SimpleMailMessage courriel = new SimpleMailMessage();
+        courriel.setFrom(adresseExpediteur);
+        if (adresseReponse != null && !adresseReponse.isBlank()) {
+            courriel.setReplyTo(adresseReponse);
+        }
+        courriel.setTo(message.coordonnee());
+        courriel.setSubject(message.sujet());
+        courriel.setText(message.corps());
+        expediteurPour(message).send(courriel);
+    }
+
+    /**
+     * Un courriel multipart : texte brut ET variante HTML.
+     *
+     * <h3>Les DEUX variantes, et dans cet ordre</h3>
+     *
+     * {@code setText(texte, html)} produit un {@code multipart/alternative} ou
+     * le texte precede l'HTML. L'ordre est impose par la norme MIME : le client
+     * affiche la DERNIERE variante qu'il sait lire, donc l'HTML quand il le
+     * peut, et le texte sinon.
+     *
+     * <p>Envoyer l'HTML seul serait plus simple et nettement moins bon : un
+     * message sans variante texte est un signal reconnu des filtres
+     * anti-indesirables, et le modele est de toute façon oblige de declarer
+     * {@code corps} — {@code rendre} refuse un modele sans texte brut.
+     *
+     * <h3>{@code multipart = true}, impose par le logo</h3>
+     *
+     * Une image integree demande un {@code multipart/related} autour de
+     * l'alternative. {@code MimeMessageHelper} le construit a condition d'etre
+     * cree en mode multipart, et il faut le decider a la construction : le
+     * passer a {@code false} ferait echouer {@code addInline} plus bas, sur une
+     * exception qui ne nomme pas la cause.
+     */
+    private void envoyerAvecVarianteHtml(MessageARemettre message) throws Exception {
+        var mime = expediteurPour(message).createMimeMessage();
+        var assistant = new MimeMessageHelper(mime, true, "UTF-8");
+
+        assistant.setFrom(adresseExpediteur);
+        if (adresseReponse != null && !adresseReponse.isBlank()) {
+            assistant.setReplyTo(adresseReponse);
+        }
+        assistant.setTo(message.coordonnee());
+        assistant.setSubject(message.sujet());
+        assistant.setText(message.corps(), message.corpsHtml());
+
+        integrerLeLogo(assistant, message.corpsHtml());
+        expediteurPour(message).send(mime);
+    }
+
+    /**
+     * Ajoute le logo SI le gabarit le cite et SI le fichier existe.
+     *
+     * <p>Les deux conditions, et aucune n'empeche l'envoi :
+     *
+     * <ul>
+     *   <li>le gabarit ne cite pas {@code cid:logo} : la piece jointe ferait
+     *       grossir le message pour rien, et un courriel inutilement lourd
+     *       attire les filtres ;</li>
+     *   <li>le fichier manque ou n'est pas lisible : le courriel part sans
+     *       logo. Refuser l'envoi d'un code de verification parce qu'une image
+     *       manque serait hors de proportion.</li>
+     * </ul>
+     *
+     * <p>L'echec est journalise en WARN et non avale en silence : une image
+     * absente sur tous les courriels se remarque tard, et le journal est le
+     * seul endroit qui dira pourquoi.
+     */
+    private void integrerLeLogo(MimeMessageHelper assistant, String corpsHtml) {
+        if (cheminDuLogo == null || cheminDuLogo.isBlank()
+                || !corpsHtml.contains("cid:" + IDENTIFIANT_DU_LOGO)) {
+            return;
+        }
+        Resource fichier = CHARGEUR.getResource(cheminDuLogo);
+        if (!fichier.exists() || !fichier.isReadable()) {
+            log.warn("Logo integre illisible a {} : le courriel part sans image",
+                    cheminDuLogo);
+            return;
+        }
+        try {
+            assistant.addInline(IDENTIFIANT_DU_LOGO, fichier);
+        } catch (jakarta.mail.MessagingException refus) {
+            log.warn("Logo integre non ajoute ({}) : le courriel part sans image",
+                    refus.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * L'identifiant de contenu du logo, cite par les gabarits.
+     *
+     * <p>Nomme une fois : le gabarit ecrit {@code cid:logo} et ce code cherche
+     * la meme chaine. Les deux divergeraient au premier renommage, et le
+     * symptome serait une image cassee dans tous les courriels.
+     */
+    private static final String IDENTIFIANT_DU_LOGO = "logo";
+
+    /**
+     * Le chargeur de ressources, sans etat et partage.
+     *
+     * <p>{@code DefaultResourceLoader} resout {@code classpath:},
+     * {@code file:} et un chemin nu. L'instancier ici plutot que d'injecter
+     * {@code ResourceLoader} evite d'ajouter une dependance au constructeur
+     * pour un objet qui n'a ni etat ni configuration.
+     */
+    private static final ResourceLoader CHARGEUR = new DefaultResourceLoader();
+
     @jakarta.annotation.PostConstruct
     void annoncerLEtat() {
         if (!estActif()) {
@@ -188,15 +331,11 @@ public class CanalCourriel implements CanalDeRemise {
 
         return disjoncteur.proteger(disjoncteurPour(message), Mono.fromCallable(() -> {
                     // TOUT est construit ici, dans le scope boundedElastic.
-                    SimpleMailMessage courriel = new SimpleMailMessage();
-                    courriel.setFrom(adresseExpediteur);
-                    if (adresseReponse != null && !adresseReponse.isBlank()) {
-                        courriel.setReplyTo(adresseReponse);
+                    if (message.corpsHtml() == null) {
+                        envoyerTexteSeul(message);
+                    } else {
+                        envoyerAvecVarianteHtml(message);
                     }
-                    courriel.setTo(message.coordonnee());
-                    courriel.setSubject(message.sujet());
-                    courriel.setText(message.corps());
-                    expediteurPour(message).send(courriel);
                     return Resultat.remis();
                 })
                 .subscribeOn(Schedulers.boundedElastic()))

@@ -10,6 +10,23 @@ public final class ApplicationConstants {
     }
 
     // Cache Keys
+    /**
+     * Validite d'un code a usage unique, en minutes.
+     *
+     * <h3>Pourquoi cette constante existe</h3>
+     *
+     * {@code LocalDateTime.now().plusMinutes(10)} etait ecrit QUATRE fois dans
+     * {@code UserServiceImpl} — verification d'adresse, verification de numero,
+     * reinitialisation de mot de passe, et renvoi du code. Le courriel qui
+     * annonce l'echeance en est un cinquieme usage.
+     *
+     * <p>Cinq copies d'une duree, c'est la garantie qu'un jour le message dira
+     * dix minutes alors que le code expirera en cinq — et la personne
+     * conclurait que le service est casse, ce qu'elle ne pourrait pas
+     * distinguer d'un vrai defaut.
+     */
+    public static final long OTP_VALIDITE_MINUTES = 10;
+
     public static final String CACHE_USER_PREFIX = "user:";
     public static final String CACHE_PROJECT_PREFIX = "project:";
     public static final String CACHE_USER_PROJECTS_PREFIX = "user_projects:";

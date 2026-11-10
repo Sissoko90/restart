@@ -1,11 +1,9 @@
-package com.abdatytch.auth_service.client;
+package com.abdatytch.commons.notification;
 
-import com.abdatytch.auth_service.service.IMessagerieSortante;
 import com.abdatytch.commons.resilience.IDisjoncteurSortant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -70,7 +68,6 @@ import java.util.concurrent.TimeoutException;
  * fournisseur » de « refuse par un garde-fou de depense », et le journalise avec
  * le MOTIF. Un plafond journalier atteint se lisait jusqu'ici comme un succes.
  */
-@Component
 public class ClientMessagerieNotification implements IMessagerieSortante {
 
     private static final Logger log =

@@ -32,6 +32,7 @@ import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import com.abdatytch.commons.notification.IMessagerieSortante;
 
 /**
  * Tests des codes de vérification à usage unique (OTP).

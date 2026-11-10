@@ -171,6 +171,30 @@ public class MoteurDeModeles {
     private final AtomicReference<java.time.Instant> derniereLecture =
             new AtomicReference<>(null);
 
+    /**
+     * Le repertoire des corps HTML, dans le meme socle versionne.
+     *
+     * <h3>Pourquoi des fichiers et non des valeurs du .properties</h3>
+     *
+     * Un corps HTML de courriel fait cent soixante lignes. Le loger dans une
+     * valeur de {@code .properties} demanderait une continuation par
+     * antislash a chaque ligne, et personne ne relirait plus ce fichier.
+     *
+     * <h3>Ce n'est PAS une troisieme couche</h3>
+     *
+     * Ces fichiers PEUPLENT le socle, exactement comme le {@code .properties} :
+     * {@code modeles-html/securite.x.html} devient la clef
+     * {@code securite.x.corps-html}. Tout ce qui suit — resolution par canal,
+     * repli, surcharge en base, API d'administration, substitution — fonctionne
+     * ensuite sans rien savoir de leur origine.
+     *
+     * <p>La stratification reste donc celle de toujours : un socle versionne,
+     * et des surcharges en base par-dessus. Une correction a chaud d'un corps
+     * HTML passe par {@code PUT /admin/modeles} sur la clef
+     * {@code ....corps-html}, comme n'importe quelle autre.
+     */
+    private static final String MOTIF_DES_CORPS_HTML = "classpath*:modeles-html/*.html";
+
     public MoteurDeModeles(@Value("classpath:modeles-notification.properties") Resource fichier,
                            SurchargeDeModeleRepository surcharges) {
         this.surcharges = surcharges;
@@ -185,6 +209,47 @@ public class MoteurDeModeles {
                     + "notification ne pourra etre rendue, sauf celles dont la "
                     + "cle est surchargee en base ({})", absent.getMessage());
         }
+        chargerLesCorpsHtml();
+    }
+
+    /**
+     * Charge les corps HTML du socle, s'il y en a.
+     *
+     * <p>Le nom du fichier porte le prefixe de clef, et la partie
+     * {@code corps-html} est implicite : {@code securite.x.html} devient
+     * {@code securite.x.corps-html}. Un fichier {@code securite.x.courriel.html}
+     * devient {@code securite.x.courriel.corps-html}, et la resolution par
+     * canal le trouve comme n'importe quelle autre clef.
+     *
+     * <p>Aucune erreur n'est fatale : un corps HTML absent ou illisible fait
+     * partir le courriel en texte brut, ce que tout modele declare de toute
+     * façon. Refuser le demarrage pour une variante serait disproportionne.
+     */
+    private void chargerLesCorpsHtml() {
+        var resolveur = new org.springframework.core.io.support
+                .PathMatchingResourcePatternResolver();
+        try {
+            Resource[] fichiers = resolveur.getResources(MOTIF_DES_CORPS_HTML);
+            int charges = 0;
+            for (Resource html : fichiers) {
+                String nom = html.getFilename();
+                if (nom == null || !nom.endsWith(".html")) {
+                    continue;
+                }
+                String prefixe = nom.substring(0, nom.length() - ".html".length());
+                try (var lecteur = html.getInputStream()) {
+                    socle.setProperty(prefixe + "." + CleDeModele.CORPS_HTML,
+                            new String(lecteur.readAllBytes(), StandardCharsets.UTF_8));
+                    charges++;
+                }
+            }
+            if (charges > 0) {
+                log.info("{} corps HTML charges depuis {}", charges, MOTIF_DES_CORPS_HTML);
+            }
+        } catch (IOException illisible) {
+            log.warn("Corps HTML illisibles ({}) : les courriels partiront en texte "
+                    + "brut", illisible.getMessage());
+        }
     }
 
     /** Le contenu rendu pour un canal, ou vide si le modele est introuvable. */
@@ -196,9 +261,26 @@ public class MoteurDeModeles {
             return Optional.empty();
         }
         String sujet = valeur(modele, canal, "sujet");
+
+        // La variante HTML est OPTIONNELLE, et ses variables sont ECHAPPEES.
+        //
+        // Le defaut que cela ferme vivait dans interface-service : deux
+        // courriels d'OTP lisaient un gabarit HTML et y inseraient le prenom
+        // par un simple `replace`. Un prenom est fourni a l'inscription, donc
+        // par l'appelant : du balisage y entrait tel quel dans le corps du
+        // message. Les clients de messagerie neutralisent les scripts, mais pas
+        // un lien ni une mise en forme — c'est-a-dire exactement ce qu'il faut
+        // pour faire passer un courriel legitime pour autre chose.
+        //
+        // L'echappement est donc porte par le RENDU et non par l'appelant :
+        // demander a chaque emetteur de penser a echapper est la forme la plus
+        // sure d'oublier une fois.
+        String corpsHtml = valeur(modele, canal, CleDeModele.CORPS_HTML);
+
         return Optional.of(new Contenu(
                 substituer(sujet == null ? "" : sujet, variables),
-                substituer(corps, variables)));
+                substituer(corps, variables),
+                corpsHtml == null ? null : substituer(corpsHtml, variables, true)));
     }
 
     /**
@@ -387,6 +469,23 @@ public class MoteurDeModeles {
      * diagnostique, un texte ou l'on lit « null » se devine.
      */
     private String substituer(String gabarit, Map<String, String> variables) {
+        return substituer(gabarit, variables, false);
+    }
+
+    /**
+     * La substitution, avec echappement HTML facultatif.
+     *
+     * <p>{@code echapper} vaut vrai pour la seule partie {@code corps-html}. Le
+     * texte brut n'est PAS echappe : y mettre {@code &amp;amp;} ferait lire
+     * « &amp;amp; » a la personne.
+     *
+     * <p>Seuls les CINQ caracteres qui changent le sens du balisage sont
+     * traduits. Une liste blanche de caracteres autorises serait plus stricte
+     * et refuserait les accents, les apostrophes typographiques et les noms non
+     * latins — donc une partie des personnes.
+     */
+    private String substituer(String gabarit, Map<String, String> variables,
+                              boolean echapper) {
         if (variables == null || variables.isEmpty()) {
             return gabarit;
         }
@@ -406,13 +505,46 @@ public class MoteurDeModeles {
             rendu.append(gabarit, i, debut);
             String cle = gabarit.substring(debut + 1, fin);
             String valeur = variables.get(cle);
-            rendu.append(valeur != null ? valeur : gabarit.substring(debut, fin + 1));
+            if (valeur == null) {
+                // Le marqueur reste en place plutot que « null » : un texte ou
+                // l'on voit {nomDuProjet} se diagnostique.
+                rendu.append(gabarit, debut, fin + 1);
+            } else {
+                rendu.append(echapper ? echapperHtml(valeur) : valeur);
+            }
             i = fin + 1;
         }
         return rendu.toString();
     }
 
-    /** Sujet et corps rendus pour un canal donne. */
-    public record Contenu(String sujet, String corps) {
+    /**
+     * Les cinq caracteres qui changent le sens du balisage.
+     *
+     * <p>{@code &} en premier, obligatoirement : le traduire apres les autres
+     * reecrirait les {@code &} que l'on vient d'introduire, et
+     * {@code &lt;} deviendrait {@code &amp;lt;}.
+     */
+    private static String echapperHtml(String valeur) {
+        return valeur
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
+    }
+
+    /**
+     * Sujet et corps rendus pour un canal donne.
+     *
+     * @param corps     le texte brut, toujours present
+     * @param corpsHtml la variante HTML, ou {@code null} si le modele n'en
+     *                  declare pas. Ses variables sont deja echappees.
+     */
+    public record Contenu(String sujet, String corps, String corpsHtml) {
+
+        /** Sans variante HTML : la forme de la grande majorite des modeles. */
+        public Contenu(String sujet, String corps) {
+            this(sujet, corps, null);
+        }
     }
 }

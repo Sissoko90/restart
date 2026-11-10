@@ -249,6 +249,18 @@ notification:
     rechargement-ms: ${NOTIFICATION_MODELES_RECHARGEMENT_MS:60000}
 
   email:
+    # Le logo integre au corps HTML des courriels.
+    #
+    # Les gabarits de modeles-html/ y font reference par `cid:logo`. Si cette
+    # valeur est vide, ou si la ressource est illisible, le courriel part SANS
+    # image : refuser l'envoi d'un code de verification pour un logo serait
+    # disproportionne. L'echec est journalise en WARN, parce qu'une image
+    # absente sur tous les courriels se remarque tard.
+    #
+    # Le protocole de ressources de Spring tranche : `classpath:` pour l'image
+    # livree avec le service, un chemin absolu pour la remplacer sans
+    # reconstruire.
+    logo-integre: ${NOTIFICATION_EMAIL_LOGO:classpath:assets/logo.png}
     # --- Second compte SMTP, pour les notifications CRITIQUES ---
     #
     # Alertes de securite et codes de verification. Un compte dedie garde leur

@@ -1,4 +1,4 @@
-package com.abdatytch.auth_service.service;
+package com.abdatytch.commons.notification;
 
 import com.abdatytch.commons.notification.CanalDeNotification;
 import com.abdatytch.commons.notification.DemandeDeNotification;

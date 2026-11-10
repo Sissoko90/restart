@@ -273,3 +273,28 @@ jwt:
       # Poste de developpement uniquement. Une paire ephemere change a
       # chaque redemarrage et differe d'une instance a l'autre.
       allow-ephemeral: ${JWT_DEV_KEY_ALLOW_EPHEMERAL:false}
+
+# ==========================================
+# NOTIFICATION-SERVICE — les deux courriels d'OTP
+# ==========================================
+# Ce service composait lui-meme ses deux courriels de code a usage unique : il
+# lisait un gabarit HTML, y inserait le prenom par un remplacement de chaine
+# SANS echappement, attachait le logo et envoyait. C'etait un second moteur de
+# modeles sur la plateforme.
+#
+# Il appelle desormais POST /internal/message de notification-service, par le
+# client partage de platform-commons — le MEME que celui d'auth-service.
+#
+# `security.internal-secret` n'est pas redeclare ici : il vit dans
+# application-dev.yml, et notification-service l'applique a l'entree. Deux
+# declarations d'une meme valeur finissent par diverger.
+#
+# Le delai est aligne sur celui d'auth-service, et pour la meme raison : il doit
+# depasser celui du fournisseur SMS chez notification-service, faute de quoi le
+# client abandonne la reponse alors que l'envoi est en cours — et son resultat
+# ne dit plus rien de ce qui s'est passe. La valeur est donc la MEME que celle
+# d'auth-service : deux clients du meme endpoint, avec le meme fournisseur en
+# aval, n'ont aucune raison d'abandonner a des instants differents.
+notification-service:
+  url: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
+  timeout-seconds: ${NOTIFICATION_SERVICE_TIMEOUT_SECONDS:12}

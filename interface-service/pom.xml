@@ -145,6 +145,32 @@
 			<scope>runtime</scope>
 		</dependency>
 		
+		<!--
+			LE REGISTRE DES DISJONCTEURS, requis depuis la migration des courriels d'OTP.
+
+			platform-commons apporte le MECANISME — DisjoncteurSortant et
+			IDisjoncteurSortant — mais pas le bean CircuitBreakerRegistry : celui-la
+			vient de l'auto-configuration que ce starter amene, exactement comme dans
+			auth-service et notification-service.
+
+			Ce module en a besoin depuis que ses deux courriels de code a usage
+			unique passent par ClientMessagerieNotification, lui-meme protege par un
+			disjoncteur. Sans ce starter, le CONTEXTE NE DEMARRE PAS :
+			« No qualifying bean of type CircuitBreakerRegistry ». Mesure faite par
+			le test de contexte au premier chargement apres la migration — aucun
+			test unitaire ne pouvait le voir.
+
+			Ce starter amene resilience4j-spring-boot3 en 2.3.0, transitivement,
+			donc SANS le verificateur de 2.4.0 qui refuse Spring Boot 4. C'est la
+			meme voie que les deux autres modules, et la raison pour laquelle le
+			retrait documente ci-dessous reste vrai : ce qui a ete retire est la
+			DECLARATION DIRECTE de resilience4j-spring-boot3, pas ce starter.
+		-->
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+		</dependency>
+
 		<!-- Resilience4j -->
 		<!--
 			resilience4j-spring-boot3 a ete RETIRE, et ce n'est pas un choix de

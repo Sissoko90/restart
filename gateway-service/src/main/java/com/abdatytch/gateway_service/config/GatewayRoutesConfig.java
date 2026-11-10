@@ -12,7 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.cloud.client.discovery.ReactiveDiscoveryClient;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
@@ -89,50 +88,36 @@ public class GatewayRoutesConfig {
     private String gatewaySecretKey;
 
     private final ClientIpResolver clientIpResolver;
-    private final ReactiveDiscoveryClient discoveryClient;
 
     /**
-     * Choix de l'instance aval : <b>equilibre</b>, et il ne l'etait pas.
+     * Le choix de l'instance aval, PARTAGE avec le relais WebSocket.
      *
-     * <h3>Le defaut</h3>
+     * <h3>Pourquoi il a quitte cette classe</h3>
      *
-     * La proxification resolvait l'instance par
-     * {@code discoveryClient.getInstances(nom).next()} — c'est-a-dire la
-     * <b>premiere</b> que Consul renvoie. Avec plusieurs instances d'un service,
-     * <b>une seule recevait tout le trafic</b> ; les autres restaient inactives
-     * tout en etant saines et enregistrees.
+     * C'etait une methode privee d'ici. La passerelle a desormais deux chemins
+     * qui proxifient : ce {@code RouterFunction} pour l'HTTP, et
+     * {@code RelaisWebSocket} pour la montee en protocole, que
+     * {@code WebClient} ne sait pas faire. Deux copies auraient donne deux
+     * politiques d'equilibrage pour une seule passerelle.
      *
-     * <p>Et le defaut etait masque : les routes declarees en YAML utilisent bien
-     * {@code uri: lb://...}, donc un equilibrage correct. Mais ce
-     * {@code RouterFunction} a l'ordre -1 et Spring Cloud Gateway l'ordre 1 :
-     * pour les douze groupes de chemins declares ici — auth, admin, media,
-     * quotas, settings — c'est ce code qui tranche, et les {@code lb://}
-     * correspondants ne sont jamais atteints. En lisant la configuration, on
-     * concluait a un equilibrage qui n'avait pas lieu.
-     *
-     * <h3>Pourquoi le Factory et non un @LoadBalanced WebClient</h3>
-     *
-     * Le {@code WebClient} de ce Gateway est celui de {@code NettyConfig},
-     * partage et deliberement non decore. L'annoter changerait le comportement
-     * de tous ses usages ; passer par le Factory ne change que le choix de
-     * l'instance, ici, visiblement.
+     * <p>{@link com.abdatytch.gateway_service.routing.ChoixDInstance} porte le
+     * raisonnement : l'equilibrage round-robin, le repli journalise quand aucun
+     * equilibreur n'existe, et le defaut d'origine qu'il corrige — la
+     * resolution par {@code getInstances(nom).next()}, qui envoyait tout le
+     * trafic a une seule instance.
      */
-    private final org.springframework.cloud.loadbalancer.support.LoadBalancerClientFactory
-            fabriqueDEquilibrage;
+    private final com.abdatytch.gateway_service.routing.ChoixDInstance choixDInstance;
     private final CircuitBreaker authServiceCircuitBreaker;
     private final CircuitBreaker userServiceCircuitBreaker;
     private final CircuitBreaker defaultCircuitBreaker;
 
     public GatewayRoutesConfig(
-            ReactiveDiscoveryClient discoveryClient,
-            org.springframework.cloud.loadbalancer.support.LoadBalancerClientFactory
-                    fabriqueDEquilibrage,
+            com.abdatytch.gateway_service.routing.ChoixDInstance choixDInstance,
             ClientIpResolver clientIpResolver,
             @Qualifier("authServiceCircuitBreaker") CircuitBreaker authServiceCircuitBreaker,
             @Qualifier("userServiceCircuitBreaker") CircuitBreaker userServiceCircuitBreaker,
             @Qualifier("defaultCircuitBreaker") CircuitBreaker defaultCircuitBreaker) {
-        this.discoveryClient = discoveryClient;
-        this.fabriqueDEquilibrage = fabriqueDEquilibrage;
+        this.choixDInstance = choixDInstance;
         this.clientIpResolver = clientIpResolver;
         this.authServiceCircuitBreaker = authServiceCircuitBreaker;
         this.userServiceCircuitBreaker = userServiceCircuitBreaker;
@@ -342,9 +327,9 @@ public class GatewayRoutesConfig {
             //
             // `/api/v1/notifications-flux` est une montee en protocole
             // WebSocket, et ce RouterFunction proxifie avec WebClient, qui ne
-            // sait pas la faire. Il est servi par RelaisWebSocket, un
-            // HandlerMapping dedie de ce module, dont l'ordre precede celui du
-            // RouterFunctionMapping.
+            // sait pas la faire. Il est servi par RelaisWebSocket, un WebFilter
+            // dedie de ce module, place en dernier dans la chaine externe pour
+            // disposer des claims valides et de la signature deja posee.
             //
             // Son chemin porte un tiret et non un segment sous
             // `/notifications/`, pour que la route ci-dessus ne puisse pas le
@@ -628,39 +613,6 @@ public class GatewayRoutesConfig {
             });
     }
 
-    /**
-     * Choisit une instance du service, en repartissant la charge.
-     *
-     * <p>{@code RoundRobinLoadBalancer} par defaut dans Spring Cloud
-     * LoadBalancer : chaque requete va a l'instance suivante. Le
-     * {@code ReactiveDiscoveryClient} reste injecte comme <b>repli</b> pour le
-     * cas ou aucun equilibreur n'est configure pour ce service — et ce repli
-     * journalise, pour qu'un retour silencieux au comportement « premiere
-     * instance » ne passe pas inaperçu.
-     *
-     * <p>Une absence d'instance est une erreur explicite et non un
-     * {@code Mono} vide : vide, la chaine se terminerait sans reponse et le
-     * client attendrait son propre delai d'expiration, ce qui ne designe rien.
-     */
-    private Mono<org.springframework.cloud.client.ServiceInstance> choisirInstance(
-            String serviceName) {
-        var equilibreur = fabriqueDEquilibrage.getInstance(serviceName);
-        if (equilibreur == null) {
-            log.warn("Aucun equilibreur pour {} : repli sur la premiere instance, "
-                    + "le trafic n'est PAS reparti", serviceName);
-            return discoveryClient.getInstances(serviceName).next()
-                    .switchIfEmpty(Mono.error(new IllegalStateException(
-                            "Aucune instance disponible pour " + serviceName)));
-        }
-        return Mono.from(equilibreur.choose())
-                .flatMap(reponse -> reponse.hasServer()
-                        ? Mono.just((org.springframework.cloud.client.ServiceInstance)
-                                reponse.getServer())
-                        : Mono.error(new IllegalStateException(
-                                "Aucune instance disponible pour " + serviceName)))
-                .switchIfEmpty(Mono.error(new IllegalStateException(
-                        "Aucune instance disponible pour " + serviceName)));
-    }
 
     /**
 
@@ -711,7 +663,7 @@ public class GatewayRoutesConfig {
         log.debug(" Content-Type: {}, isMultipart: {}", contentType, isMultipart);
 
         // Résoudre l'instance du service via Consul Discovery
-        return choisirInstance(serviceName)
+        return choixDInstance.pour(serviceName)
             .flatMap(instance -> {
                 // Construire l'URI complète avec l'instance résolue
                 String fullUri = instance.getUri().toString() + targetPath + queryString;

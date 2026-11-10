@@ -7,7 +7,7 @@ import com.abdatytch.auth_service.entities.User;
 import com.abdatytch.auth_service.exception.AuthException;
 import com.abdatytch.auth_service.constants.AppConstants;
 import com.abdatytch.auth_service.metrics.AuthMetrics;
-import com.abdatytch.auth_service.service.IMessagerieSortante;
+import com.abdatytch.commons.notification.IMessagerieSortante;
 import com.abdatytch.commons.notification.CanalDeNotification;
 import com.abdatytch.auth_service.repository.UserRepository;
 import com.abdatytch.auth_service.service.impl.AlerteDeSecuriteServiceImpl;

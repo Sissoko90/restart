@@ -79,9 +79,24 @@ public interface CanalDeRemise {
             String coordonnee,
             String sujet,
             String corps,
+            String corpsHtml,
             DemandeDeNotification.Urgence urgence,
             java.util.UUID notificationId
     ) {
+
+        /**
+         * Sans variante HTML.
+         *
+         * <p>La forme de tous les canaux sauf le courriel : un SMS, une boite
+         * de reception et un flux WebSocket ne lisent que {@code corps}. Ce
+         * constructeur existe pour que l'ajout de {@code corpsHtml} n'oblige
+         * pas chaque appelant a passer un {@code null} qui n'apprend rien.
+         */
+        public MessageARemettre(String destinataireId, String coordonnee, String sujet,
+                                String corps, DemandeDeNotification.Urgence urgence,
+                                java.util.UUID notificationId) {
+            this(destinataireId, coordonnee, sujet, corps, null, urgence, notificationId);
+        }
     }
 
     /**

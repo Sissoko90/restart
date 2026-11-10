@@ -16,6 +16,10 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import jakarta.mail.internet.MimeMessage;
+import com.abdatytch.commons.notification.CanalDeNotification;
+import com.abdatytch.commons.notification.IMessagerieSortante;
+import com.abdatytch.interface_service.constants.ApplicationConstants;
+import java.util.Map;
 
 /**
  * Implémentation du service d'envoi d'emails
@@ -23,6 +27,28 @@ import jakarta.mail.internet.MimeMessage;
  */
 @Service
 public class EmailServiceImpl implements EmailService {
+
+    /**
+     * Les deux modeles employes, nommes une fois.
+     *
+     * <p>Les clefs vivent dans {@code modeles-notification.properties} de
+     * notification-service, et leur variante HTML dans {@code modeles-html/}.
+     * Une faute de frappe ici produirait un refus « modele introuvable » que le
+     * journal signalerait — et non un courriel vide.
+     */
+    private static final String MODELE_CODE_DE_VERIFICATION = "securite.code-de-verification";
+
+    private static final String MODELE_REINITIALISATION =
+            "securite.reinitialisation-mot-de-passe";
+
+    /**
+     * La messagerie sortante, PARTAGEE avec auth-service.
+     *
+     * <p>{@code ClientMessagerieNotification} vit dans platform-commons et est
+     * enregistre par {@code MessagerieSortanteConfig}. Un client propre a ce
+     * service aurait fait deux implementations d'un meme protocole interne.
+     */
+    private final IMessagerieSortante messagerie;
 
     private static final Logger log = LoggerFactory.getLogger(EmailServiceImpl.class);
 
@@ -66,8 +92,10 @@ public class EmailServiceImpl implements EmailService {
     @Value("${admin.critical.mail.from}")
     private String criticalFrom;
 
-    public EmailServiceImpl(@Qualifier("mailSender") JavaMailSender mailSender) {
+    public EmailServiceImpl(@Qualifier("mailSender") JavaMailSender mailSender,
+                            IMessagerieSortante messagerie) {
         this.mailSender = mailSender;
+        this.messagerie = messagerie;
     }
 
     /**
@@ -92,82 +120,88 @@ public class EmailServiceImpl implements EmailService {
 
 
 
+    /**
+     * Le code de verification par courriel : DELEGUE a notification-service.
+     *
+     * <h3>Ce que cette methode faisait</h3>
+     *
+     * Elle lisait {@code templates/otp-email.html}, y inserait le prenom et le
+     * code par un {@code String.replace}, attachait le logo et envoyait le
+     * message elle-meme. C'etait un SECOND moteur de modeles sur la plateforme,
+     * avec trois consequences mesurees :
+     *
+     * <ul>
+     *   <li><b>aucun echappement</b>. Un prenom est fourni a l'inscription :
+     *       du balisage y entrait tel quel dans le corps du courriel. Le moteur
+     *       de notification-service echappe desormais toute variable d'un corps
+     *       HTML ;</li>
+     *   <li><b>le gabarit etait en anglais</b> alors que le reste de la
+     *       plateforme ecrit en francais ;</li>
+     *   <li><b>deux boutons morts</b>, « Verify my account » et « Click here »,
+     *       tous deux en {@code href="#"}. Un bouton qui ne mene nulle part dans
+     *       un courriel de securite apprend a cliquer dans ce genre de
+     *       message.</li>
+     * </ul>
+     *
+     * <h3>Ce que la delegation apporte</h3>
+     *
+     * Le texte vit dans {@code modeles-notification.properties} et
+     * {@code modeles-html/securite.code-de-verification.html}, corrigeable a
+     * chaud par {@code PUT /api/v1/admin/modeles}. La variante texte part avec
+     * l'HTML, le consentement s'applique, et la remise est tracee et comptee
+     * comme toutes les autres.
+     *
+     * <h3>La signature ne change PAS</h3>
+     *
+     * Les trois appelants de {@code UserServiceImpl} ne sont pas touches : ce
+     * qui change est l'interieur. Le {@code Mono<Void>} reste, et une
+     * non-remise ne fait pas echouer l'inscription — c'etait deja le cas, et
+     * {@code OTP_GENERE_SANS_ENVOI} existe cote auth-service pour la meme
+     * raison.
+     */
     @Override
     public Mono<Void> sendEmailOtp(String email, String otpCode, String firstName) {
-        log.info("Envoi de code OTP par email à: {}", email);
-
-        return Mono.fromRunnable(() -> {
-            try {
-                MimeMessage message = mailSender.createMimeMessage();
-                MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-                helper.setFrom(fromEmail);
-                helper.setTo(email);
-                helper.setSubject("Code de vérification - Abdabase");
-
-                // Lire le template HTML
-                ClassPathResource templateResource = new ClassPathResource("templates/otp-email.html");
-                String htmlContent = new String(templateResource.getInputStream().readAllBytes());
-
-                // Remplacer les placeholders
-                htmlContent = htmlContent.replace("{{firstName}}", firstName != null ? firstName : "");
-                htmlContent = htmlContent.replace("{{otpCode}}", otpCode);
-
-                helper.setText(htmlContent, true);
-
-                // Attacher le logo en tant que ressource inline
-                ClassPathResource logoResource = new ClassPathResource("assets/logo.png");
-                helper.addInline("logo", logoResource);
-
-                mailSender.send(message);
-                log.info("Code OTP envoyé par email avec succès à: {}", email);
-
-            } catch (Exception e) {
-                log.error("Erreur lors de l'envoi du code OTP par email à: {} - {}", email, e.getMessage());
-                throw new RuntimeException("Erreur lors de l'envoi de l'email", e);
-            }
-        })
-        .subscribeOn(Schedulers.boundedElastic())
-        .then();
+        return envoyerUnCode(email, otpCode, firstName,
+                MODELE_CODE_DE_VERIFICATION);
     }
 
     @Override
     public Mono<Void> sendPasswordResetOtp(String email, String otpCode, String firstName) {
-        log.info("Envoi de code OTP de réinitialisation de mot de passe par email à: {}", email);
+        return envoyerUnCode(email, otpCode, firstName,
+                MODELE_REINITIALISATION);
+    }
 
-        return Mono.fromRunnable(() -> {
-            try {
-                MimeMessage message = mailSender.createMimeMessage();
-                MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-                helper.setFrom(fromEmail);
-                helper.setTo(email);
-                helper.setSubject("Code de réinitialisation de mot de passe - Abdabase");
-
-                // Lire le template HTML
-                ClassPathResource templateResource = new ClassPathResource("templates/reset-password-otp-email.html");
-                String htmlContent = new String(templateResource.getInputStream().readAllBytes());
-
-                // Remplacer les placeholders
-                htmlContent = htmlContent.replace("{{firstName}}", firstName != null ? firstName : "");
-                htmlContent = htmlContent.replace("{{otpCode}}", otpCode);
-
-                helper.setText(htmlContent, true);
-
-                // Attacher le logo en tant que ressource inline
-                ClassPathResource logoResource = new ClassPathResource("assets/logo.png");
-                helper.addInline("logo", logoResource);
-
-                mailSender.send(message);
-                log.info("Code OTP de réinitialisation envoyé par email avec succès à: {}", email);
-
-            } catch (Exception e) {
-                log.error("Erreur lors de l'envoi du code OTP de réinitialisation par email à: {} - {}", email, e.getMessage());
-                throw new RuntimeException("Erreur lors de l'envoi de l'email", e);
-            }
-        })
-        .subscribeOn(Schedulers.boundedElastic())
-        .then();
+    /**
+     * L'envoi, ecrit une seule fois pour les deux codes.
+     *
+     * <p>Les deux ne differaient que par leur gabarit et leur sujet, et ils
+     * portaient pourtant quarante lignes identiques chacun — lecture du
+     * fichier, substitution, piece jointe, gestion d'erreur. Le modele est
+     * desormais le seul parametre qui change.
+     *
+     * <p>{@code CRITIQUE} : un code de verification qui n'arrive pas est une
+     * impossibilite de se connecter. L'urgence decide du repli entre canaux,
+     * jamais du consentement.
+     */
+    private Mono<Void> envoyerUnCode(String email, String otpCode, String firstName,
+                                     String modele) {
+        return messagerie.envoyer(IMessagerieSortante.Demande.critique(
+                        CanalDeNotification.COURRIEL, email, modele,
+                        Map.of("code", otpCode,
+                                "prenom", firstName == null ? "" : firstName,
+                                "minutes", String.valueOf(
+                                        ApplicationConstants.OTP_VALIDITE_MINUTES))))
+                .doOnNext(remis -> {
+                    if (remis) {
+                        log.info("Code envoye par courriel (modele {})", modele);
+                    } else {
+                        // Journalise et NON leve : une non-remise ne doit pas
+                        // faire echouer l'inscription. L'appelant poursuit, et
+                        // la personne peut demander un nouveau code.
+                        log.warn("Code NON remis par courriel (modele {})", modele);
+                    }
+                })
+                .then();
     }
 
 

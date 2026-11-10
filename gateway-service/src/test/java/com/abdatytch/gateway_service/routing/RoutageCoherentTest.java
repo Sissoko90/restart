@@ -3,6 +3,8 @@ package com.abdatytch.gateway_service.routing;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.abdatytch.gateway_service.websocket.RelaisWebSocket;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -242,11 +244,26 @@ class RoutageCoherentTest {
         //
         // Consequence : six prefixes declares par CheminCible et servis par
         // aucune route passaient pour routes. Cinq ont rejoint le
-        // RouterFunction ; le sixieme est dans PrefixesSansRoutage.
+        // RouterFunction, et le sixieme — le flux temps reel — par le relais
+        // WebSocket ci-dessous.
         //
         // Le YAML est desormais verifie par aucuneRouteEnYaml() : il ne doit
         // plus declarer de route du tout.
         Map<String, String> declare = new LinkedHashMap<>(routesDirectes(source));
+
+        // LE RELAIS WEBSOCKET EST LA SECONDE SOURCE, ET ELLE EST LUE DANS LE CODE.
+        //
+        // Cette passerelle a desormais deux chemins qui proxifient : le
+        // RouterFunction pour l'HTTP, et RelaisWebSocket pour la montee en
+        // protocole, que WebClient ne sait pas faire.
+        //
+        // La constante est IMPORTEE, pas analysee. La version precedente de ce
+        // test comptait les routes YAML en cherchant des chaines ligne par
+        // ligne : elle ne pouvait voir ni leur indentation fautive, ni
+        // l'absence du moteur qui les aurait lues, et onze routes inertes
+        // passaient pour reelles. Un test du meme module peut importer la
+        // declaration ; il n'a aucune raison de la deviner.
+        declare.putAll(RelaisWebSocket.ROUTES);
         String[] blocs = source.split("\\.nest\\(path\\(\"");
 
         for (int i = 1; i < blocs.length; i++) {
@@ -308,8 +325,6 @@ class RoutageCoherentTest {
 
         List<String> fantomes = CheminCible.servicesParPrefixe().keySet().stream()
                 .filter(prefixe -> !declare.containsKey(prefixe))
-                // Les exceptions assumees, motivees dans PrefixesSansRoutage.
-                .filter(prefixe -> !PrefixesSansRoutage.contient(prefixe))
                 .toList();
 
         assertThat(fantomes)
@@ -387,53 +402,46 @@ class RoutageCoherentTest {
     }
 
     /**
-     * Les exceptions assumees sont exactement celles qui le sont.
+     * Il n'y a PLUS de prefixe non route, et plus de porte de sortie.
      *
-     * <h2>Pourquoi pincer cette liste</h2>
+     * <h2>Ce que cette place contenait</h2>
      *
-     * {@link PrefixesSansRoutage} est la porte de sortie de
-     * {@link #aucunPrefixeFantome()}. Une porte de sortie sans serrure finit
-     * par accueillir tout ce qui derange : il suffirait d'y inscrire un
-     * prefixe pour faire taire le test qui signale qu'il n'est pas route.
+     * {@code PrefixesSansRoutage} vivait ici : une liste — courte, nommee,
+     * motivee — des prefixes que {@code CheminCible} declarait et qu'aucune
+     * route ne servait. Elle n'avait qu'une entree, le flux temps reel, parce
+     * que {@code WebClient} ne sait pas effectuer une montee en protocole.
      *
-     * <p>Ce test exige donc que chaque entree soit vraiment un prefixe connu de
-     * {@code CheminCible}, qu'elle soit vraiment non routee — une entree
-     * devenue inutile est un mensonge au meme titre — et il fige le nombre.
-     * Grandir demande de modifier ce test, donc de le decider.
+     * <p>{@code RelaisWebSocket} le sert desormais. La liste est donc vide, et
+     * une liste vide a ete SUPPRIMEE plutot que gardee : une porte de sortie
+     * sans serrure finit par accueillir tout ce qui derange, et il suffirait
+     * d'y inscrire un prefixe pour faire taire {@link #aucunPrefixeFantome()}.
+     * Le jour ou une exception redevient necessaire, l'historique porte la
+     * forme qu'elle avait.
+     *
+     * <p>Ce test tient la place : il echoue si un prefixe cesse d'etre route,
+     * et le message dit ou chercher.
      */
     @Test
-    @DisplayName("PrefixesSansRoutage ne contient que des exceptions reelles")
-    void exceptionsReellesEtPincees() throws IOException {
+    @DisplayName("tout prefixe de CheminCible est servi par l'un des deux mecanismes")
+    void aucuneExceptionNEstNecessaire() throws IOException {
         Map<String, String> declare = routageDeclare();
-        Map<String, String> connu = CheminCible.servicesParPrefixe();
 
-        assertThat(PrefixesSansRoutage.motifs())
+        List<String> orphelins = CheminCible.servicesParPrefixe().keySet().stream()
+                .filter(prefixe -> !declare.containsKey(prefixe))
+                .toList();
+
+        assertThat(orphelins)
                 .withFailMessage("""
-                        La liste des prefixes non routes a change de taille.
+                        Ces prefixes ne sont servis par aucun des deux \
+                        mecanismes : %s
 
-                        Elle ne doit contenir que le flux WebSocket, que \
-                        WebClient ne sait pas proxifier. Tout autre prefixe non \
-                        route est un defaut a corriger dans \
-                        GatewayRoutesConfig, pas une exception a inscrire.""")
-                .hasSize(1);
-
-        List<String> incoherentes = new ArrayList<>();
-        PrefixesSansRoutage.motifs().forEach((prefixe, motif) -> {
-            if (!connu.containsKey(prefixe)) {
-                incoherentes.add(prefixe + " est inconnu de CheminCible : "
-                        + "une exception a un prefixe qui n'existe pas");
-            }
-            if (declare.containsKey(prefixe)) {
-                incoherentes.add(prefixe + " EST route par GatewayRoutesConfig : "
-                        + "l'exception n'a plus de raison d'etre, la retirer");
-            }
-            if (motif == null || motif.isBlank()) {
-                incoherentes.add(prefixe + " n'a pas de motif");
-            }
-        });
-
-        assertThat(incoherentes)
-                .withFailMessage("%s", String.join("\n", incoherentes))
+                        Les deux sont GatewayRoutesConfig, pour l'HTTP, et \
+                        RelaisWebSocket, pour la montee en protocole. Un \
+                        prefixe qui ne tient dans ni l'un ni l'autre demande \
+                        une decision, pas une liste d'exceptions : c'est ainsi \
+                        que six prefixes ont ete joignables nulle part pendant \
+                        des semaines, dont la boite de reception de \
+                        notification-service.""", orphelins)
                 .isEmpty();
     }
 

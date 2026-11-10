@@ -51,8 +51,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Gateway — la charge est repartie entre les instances")
 class RepartitionDeChargeTest {
 
+    /**
+     * Le choix d'instance, qui a QUITTE GatewayRoutesConfig.
+     *
+     * <h3>Pourquoi ce chemin a change</h3>
+     *
+     * La logique etait une methode privee de {@code GatewayRoutesConfig}. La
+     * passerelle a desormais deux chemins qui proxifient — ce
+     * {@code RouterFunction} pour l'HTTP, et {@code RelaisWebSocket} pour la
+     * montee en protocole, que {@code WebClient} ne sait pas faire — et deux
+     * copies auraient donne deux politiques d'equilibrage pour une seule
+     * passerelle.
+     *
+     * <p>Ce test a correctement echoue au deplacement : il ne trouvait plus ce
+     * qu'il garde. C'est exactement ce qu'un garde-fou doit faire quand son
+     * sujet bouge — se taire aurait ete le defaut.
+     */
     private static final Path SOURCE = Path.of(
-            "src/main/java/com/abdatytch/gateway_service/config/GatewayRoutesConfig.java");
+            "src/main/java/com/abdatytch/gateway_service/routing/ChoixDInstance.java");
 
     /** Le motif exact du defaut : prendre la premiere instance venue. */
     private static final Pattern PREMIERE_INSTANCE = Pattern.compile(
@@ -90,7 +106,7 @@ class RepartitionDeChargeTest {
             // l'utilise encore.
             List<String> occurrences = new ArrayList<>();
             // Commentaires NEUTRALISES avant comptage : la javadoc de
-            // `choisirInstance` cite le defaut corrige, et sans cela ce test
+            // ChoixDInstance cite le defaut corrige, et sans cela ce test
             // echouerait sur sa propre documentation. Ce depot a deja commis
             // cette erreur avec un garde-fou de journalisation.
             var trouve = PREMIERE_INSTANCE.matcher(neutraliserCommentaires(contenu));

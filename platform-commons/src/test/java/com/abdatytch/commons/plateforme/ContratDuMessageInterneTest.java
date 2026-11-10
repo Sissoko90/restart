@@ -19,7 +19,8 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Le contrat HTTP de {@code POST /internal/message}, entre auth-service et
+ * Le contrat HTTP de {@code POST /internal/message}, entre le client partage
+ * de platform-commons — employe par auth-service et interface-service — et
  * notification-service.
  *
  * <h2>Pourquoi ce garde-fou existe</h2>
@@ -68,9 +69,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("Contrat de /internal/message — client et controleur doivent concorder")
 class ContratDuMessageInterneTest {
 
+    /**
+     * Le client, qui vit desormais dans platform-commons.
+     *
+     * <p>Il etait dans auth-service. interface-service en a eu besoin pour ses
+     * deux courriels d'OTP, et le recopier aurait fait deux clients d'un meme
+     * protocole interne — avec deux manieres de lire la reponse et de traiter
+     * le refus. Ce test compare donc le client PARTAGE au controleur.
+     */
     private static final Path CLIENT = Path.of(
-            "auth-service/src/main/java/com/abdatytch/auth_service/"
-                    + "client/ClientMessagerieNotification.java");
+            "platform-commons/src/main/java/com/abdatytch/commons/"
+                    + "notification/ClientMessagerieNotification.java");
 
     private static final Path CONTROLEUR = Path.of(
             "notification-service/src/main/java/com/abdatytch/notification_service/"

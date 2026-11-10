@@ -57,7 +57,29 @@ import java.util.stream.Collectors;
 public final class CleDeModele {
 
     /** Les deux seules parties qu'un modele porte. */
-    public static final Set<String> PARTIES = Set.of("sujet", "corps");
+    /**
+     * La variante HTML du corps, OPTIONNELLE.
+     *
+     * <h3>Pourquoi une partie et non un modele separe</h3>
+     *
+     * {@code x.corps} et {@code x.corps-html} sont deux representations du MEME
+     * message. En faire deux modeles — {@code x} et {@code x-html} — demanderait
+     * de les tenir d'accord a la main, et ce depot sait ce que cela coute : les
+     * cinq types de l'ancien moteur melangeaient le canal et l'objet, et le
+     * meme texte existait en double pour le SMS et le courriel.
+     *
+     * <h3>Le texte brut reste OBLIGATOIRE</h3>
+     *
+     * {@code rendre} refuse un modele sans {@code corps}, meme si
+     * {@code corps-html} existe. Trois raisons : un client de messagerie peut
+     * refuser l'HTML, un message multipart doit porter les deux variantes pour
+     * ne pas etre classe en indesirable, et les autres canaux — SMS, boite de
+     * reception, WebSocket — ne savent lire que le texte.
+     */
+    public static final String CORPS_HTML = "corps-html";
+
+    public static final Set<String> PARTIES = Set.of("sujet", "corps", CORPS_HTML);
+
 
     /**
      * Les noms de canaux tels qu'ils apparaissent dans une cle : en minuscules.

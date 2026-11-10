@@ -40,6 +40,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static com.abdatytch.auth_service.testutil.RevocationDEssai.revocationQuiNeFaitRien;
 import static com.abdatytch.auth_service.testutil.ConfianceDEssai.aucunAppareilDeConfiance;
+import com.abdatytch.commons.notification.IMessagerieSortante;
 
 /**
  * Vérifie qu'aucun appel bloquant ne s'exécute sur un thread non bloquant.
@@ -273,8 +274,8 @@ class NoBlockingCallsTest {
      * indistinguables. Avec {@code Mono<Boolean>}, un bouchon doit CHOISIR ce
      * qu'il simule, et celui-ci simule une remise reussie.
      */
-    private com.abdatytch.auth_service.service.IMessagerieSortante messagerieSimulee() {
-        return new com.abdatytch.auth_service.service.IMessagerieSortante() {
+    private com.abdatytch.commons.notification.IMessagerieSortante messagerieSimulee() {
+        return new com.abdatytch.commons.notification.IMessagerieSortante() {
             @Override
             public reactor.core.publisher.Mono<Boolean> envoyer(Demande demande) {
                 return reactor.core.publisher.Mono.just(true);
