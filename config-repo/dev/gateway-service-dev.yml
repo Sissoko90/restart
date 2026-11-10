@@ -115,7 +115,9 @@ geolocation:
 # n'etait joignable a travers la passerelle, c'est-a-dire par le seul chemin
 # qu'un client a. Cinq viennent d'etre ajoutes au RouterFunction ; le sixieme
 # est une montee en protocole WebSocket : il est servi par RelaisWebSocket, un
-# WebFilter dedie, place en dernier dans la chaine externe.
+# WebFilter dedie, place en dernier dans la chaine externe. Un navigateur s'y
+# abonne par `new WebSocket(url, ["bearer", jeton])`, JetonDuSousProtocole
+# deplacant le jeton annonce vers l'en-tete Authorization.
 #
 # ET TROIS GARDE-FOUS LES LISAIENT COMME REELLES. RoutageCoherentTest,
 # ModuleLivrableTest et la verification de coherence de CheminCible analysaient

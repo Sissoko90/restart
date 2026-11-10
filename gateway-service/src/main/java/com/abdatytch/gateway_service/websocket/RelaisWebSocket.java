@@ -86,18 +86,28 @@ import java.util.Set;
  * sortant pose les SIENS : transmettre la clef du client amont ferait echouer
  * la negociation, les deux poignees de main etant independantes.
  *
- * <h2>Limite connue : un navigateur ne peut pas s'abonner</h2>
+ * <h2>Deux familles de clients, et un seul chemin</h2>
  *
- * L'API WebSocket des navigateurs <b>ne permet pas de poser un en-tete</b>, donc
- * pas d'{@code Authorization}. Ce relais sert les clients qui peuvent le faire
- * — les bibliotheques natives mobiles, OkHttp, Starscream, {@code dart:io}.
+ * <ul>
+ *   <li><b>les bibliotheques natives</b> — OkHttp, Starscream, {@code dart:io} —
+ *       posent un en-tete {@code Authorization} sur la poignee de main, comme
+ *       sur n'importe quelle requete HTTP ;</li>
+ *   <li><b>un navigateur</b> ne peut pas : son API {@code WebSocket} n'accepte
+ *       qu'une URL et une liste de sous-protocoles. Il annonce donc son jeton
+ *       par {@code new WebSocket(url, ["bearer", jeton])}, et
+ *       {@link JetonDuSousProtocole} le deplace vers {@code Authorization} en
+ *       amont de la chaine.</li>
+ * </ul>
  *
- * <p>Ouvrir le flux a un navigateur demanderait un autre porteur de jeton :
- * parametre de requete (interdit ici, les jetons ne vivent pas dans une URL),
- * cookie (cette plateforme est sans session), ou premier message apres
- * connexion (ce qui ferait accepter une commande par WebSocket, surface que
- * {@code GestionnaireWebSocket} refuse deliberement). C'est une decision
- * distincte, et elle n'est pas prise ici.
+ * <p>Les deux arrivent ici identiques, et {@code JwtWebFilter} les verifie de
+ * la meme facon. Les trois autres voies pour un navigateur ont ete ecartees et
+ * le javadoc de {@code JetonDuSousProtocole} dit pourquoi : jeton dans l'URL,
+ * cookie, ou premier message apres connexion.
+ *
+ * <p>Ce relais ANNONCE le sous-protocole {@code bearer} par
+ * {@code Pompe.getSubProtocols()}. Sans cela, le navigateur ne recevrait pas
+ * {@code Sec-WebSocket-Protocol} en reponse et fermerait la connexion lui-meme,
+ * sans message utilisable.
  *
  * <h2>Pourquoi un {@code WebFilter} de la chaine EXTERNE, et en dernier</h2>
  *
@@ -219,18 +229,64 @@ public class RelaisWebSocket implements WebFilter, Ordered {
 
         log.debug("Relais WebSocket {} -> {}", cheminPublic, cible);
 
-        return service.handleRequest(echange, amont ->
-                client.execute(cible, enTetes, aval ->
-                        // Les deux sens en parallele, et `retain` sur chacun :
-                        // les trames sont a comptage de references, et `send`
-                        // les relache. Sans `retain`, la trame serait liberee
-                        // avant d'etre ecrite.
-                        Mono.zip(
-                                        aval.send(amont.receive()
-                                                .doOnNext(WebSocketMessage::retain)),
-                                        amont.send(aval.receive()
-                                                .doOnNext(WebSocketMessage::retain)))
-                                .then()));
+        return service.handleRequest(echange, new Pompe(cible, enTetes));
+    }
+
+    /**
+     * Le gestionnaire de la session amont : il ouvre l'aval et pompe les trames.
+     *
+     * <h3>Pourquoi une CLASSE et non la lambda d'origine</h3>
+     *
+     * Pour pouvoir declarer {@link #getSubProtocols()}. Un navigateur ne peut
+     * pas poser d'en-tete {@code Authorization} ; il annonce son jeton dans
+     * {@code Sec-WebSocket-Protocol}, et {@link JetonDuSousProtocole} le
+     * deplace en amont de la chaine.
+     *
+     * <p>Mais la negociation n'aboutit que si le serveur REPOND un
+     * sous-protocole appartenant a la liste annoncee : un navigateur qui ne
+     * recoit pas {@code Sec-WebSocket-Protocol} en reponse <b>ferme la
+     * connexion lui-meme</b>, et l'erreur cote client ne nomme pas la cause.
+     * C'est le detail qui fait la difference entre « cela fonctionne » et
+     * « cela se ferme sans message ».
+     */
+    private final class Pompe implements org.springframework.web.reactive.socket.WebSocketHandler {
+
+        private final URI cible;
+        private final HttpHeaders enTetes;
+
+        private Pompe(URI cible, HttpHeaders enTetes) {
+            this.cible = cible;
+            this.enTetes = enTetes;
+        }
+
+        /**
+         * Le seul sous-protocole annonce : le marqueur du porteur.
+         *
+         * <p>Un client qui n'en annonce aucun — toute bibliotheque native, qui
+         * pose son {@code Authorization} directement — n'est pas affecte :
+         * sans intersection, Spring ne repond aucun sous-protocole, ce qui est
+         * le comportement attendu.
+         */
+        @Override
+        public java.util.List<String> getSubProtocols() {
+            return java.util.List.of(JetonDuSousProtocole.MARQUEUR);
+        }
+
+        @Override
+        public Mono<Void> handle(
+                org.springframework.web.reactive.socket.WebSocketSession amont) {
+            return client.execute(cible, enTetes, aval ->
+                    // Les deux sens en parallele, et `retain` sur chacun : les
+                    // trames sont a comptage de references, et `send` les
+                    // relache. Sans `retain`, la trame serait liberee avant
+                    // d'etre ecrite.
+                    Mono.zip(
+                                    aval.send(amont.receive()
+                                            .doOnNext(WebSocketMessage::retain)),
+                                    amont.send(aval.receive()
+                                            .doOnNext(WebSocketMessage::retain)))
+                            .then());
+        }
     }
 
     /**

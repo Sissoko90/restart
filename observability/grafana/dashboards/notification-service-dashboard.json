@@ -464,6 +464,58 @@
       "title": "Moteur de modeles : surcharges et age de la derniere lecture",
       "type": "timeseries",
       "description": "L'age est la mesure qui compte : le rechargement degrade en silence en conservant l'instantane precedent. -1 signifie qu'aucune lecture n'a jamais abouti."
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Chaque point est une notification CRITIQUE qui est partie du compte ORDINAIRE parce que le compte dedie a echoue. Le message arrive — c'est ce qui rend la panne invisible — mais depuis un compte dont la reputation d'expedition n'est pas protegee.",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "id": 12,
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "8.0.0",
+      "targets": [
+        {
+          "expr": "sum by (cause) (increase(notification_courriel_repli_total{application=\"notification-service\"}[1h]))",
+          "legendFormat": "{{cause}}",
+          "refId": "A"
+        }
+      ],
+      "title": "CRITIQUES reparties par le compte ordinaire (compte dedie en echec)",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

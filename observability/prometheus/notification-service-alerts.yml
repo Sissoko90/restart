@@ -244,3 +244,41 @@ groups:
             sont figees : une correction poussee par l'API ne sera pas vue.
             Verifier l'acces a la table surcharge_de_modele et la planification
             (@Scheduled exige @EnableScheduling).
+
+  # ==========================================================================
+  # Le compte d'expedition critique
+  # ==========================================================================
+  - name: notification-service-courriel
+    rules:
+      # ------------------------------------------------------------------
+      # Les CRITIQUES partent du mauvais compte
+      # ------------------------------------------------------------------
+      # Le repli SAUVE le message, et c'est exactement ce qui le rend invisible :
+      # l'appelant recoit « remis », la personne recoit son courriel, et le
+      # compte dedie reste casse indefiniment.
+      #
+      # Le cas est reel. Mesure du 2026-11-10 : le compte critique etait REFUSE
+      # par le serveur — identifiants invalides — pendant que le compte
+      # ordinaire s'authentifiait. Les SEULS messages concernes etaient donc les
+      # alertes de securite et les codes de verification, c'est-a-dire ce que le
+      # compte dedie existe pour proteger.
+      #
+      # `> 0` et non un seuil : le premier repli est deja l'information. Un
+      # second compte qui echoue une fois echouera a chaque fois — ses
+      # identifiants ne se reparent pas d'eux-memes.
+      - alert: CourrielCritiqueReplieSurLOrdinaire
+        expr: increase(notification_courriel_repli_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          service: notification-service
+        annotations:
+          summary: "Le compte d'expedition critique est indisponible ({{ $labels.cause }})"
+          description: >-
+            {{ $value | printf "%.0f" }} notification(s) CRITIQUE(S) sont
+            reparties par le compte ordinaire sur les 15 dernieres minutes, le
+            compte dedie ayant echoue avec {{ $labels.cause }}. Les messages
+            ARRIVENT, mais depuis un compte dont la reputation d'expedition
+            n'est pas protegee : un courriel marque indesirable parce que le
+            trafic ordinaire a sature ce compte est un code que personne ne
+            recoit. Verifier CRITICAL_MAIL_USERNAME et CRITICAL_MAIL_PASSWORD.

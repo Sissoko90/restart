@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import com.abdatytch.notification_service.metrics.NotificationMetrics;
 
 @DisplayName("Remise par courriel")
 class CanalCourrielTest {
@@ -39,7 +40,8 @@ class CanalCourrielTest {
      * {@code build()} et faisait passer deux tests pour la mauvaise raison.
      */
     private CanalCourriel canal(String adresseExpediteur) {
-        CanalCourriel canal = new CanalCourriel(ordinaire, critique, disjoncteurReel());
+        CanalCourriel canal = new CanalCourriel(ordinaire, critique, disjoncteurReel(),
+                new NotificationMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
         ReflectionTestUtils.setField(canal, "adresseExpediteur", adresseExpediteur);
         ReflectionTestUtils.setField(canal, "adresseReponse", "");
         return canal;

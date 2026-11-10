@@ -33,4 +33,22 @@ public class ConfigurationDuRelais {
                                            ClientIpResolver resolveurDIp) {
         return new RelaisWebSocket(choixDInstance, resolveurDIp);
     }
+
+    /**
+     * Le lecteur du jeton annonce dans le sous-protocole.
+     *
+     * <p>Il permet a un NAVIGATEUR de s'abonner au flux : l'API
+     * {@code WebSocket} des navigateurs ne permet pas de poser un en-tete
+     * {@code Authorization}, mais elle permet d'annoncer des sous-protocoles.
+     *
+     * <p>Meme regle que le relais : un seul enregistrement, par
+     * {@code @Bean}. Un filtre present dans la chaine externe ET dans celle de
+     * Spring Security s'executerait deux fois — et celui-ci muterait alors une
+     * requete deja mutee, ce qui est sans effet mais fait deux lectures de
+     * jeton par poignee de main.
+     */
+    @Bean
+    public JetonDuSousProtocole jetonDuSousProtocole() {
+        return new JetonDuSousProtocole();
+    }
 }

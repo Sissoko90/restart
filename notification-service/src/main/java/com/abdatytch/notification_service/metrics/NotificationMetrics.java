@@ -74,6 +74,26 @@ public class NotificationMetrics {
      */
     private static final String CANAL_ACTIF = "notification.canal.actif";
 
+    /**
+     * Une notification CRITIQUE a du repartir par le compte ordinaire.
+     *
+     * <h3>Pourquoi cette metrique existe</h3>
+     *
+     * Le repli SAUVE le message, et c'est precisement ce qui le rend invisible :
+     * l'appelant recoit « remis », la personne recoit son courriel, et le
+     * compte dedie reste casse indefiniment.
+     *
+     * <p>Le cas est reel. Mesure sur l'environnement de developpement le
+     * 2026-11-10 : le compte critique etait REFUSE par le serveur — identifiants
+     * invalides — pendant que le compte ordinaire s'authentifiait. Sans ce
+     * compteur, la seule trace serait une ligne de journal par message, dans un
+     * journal que personne ne lit quand tout fonctionne.
+     *
+     * <p>Une valeur non nulle signifie que les alertes de securite partent du
+     * compte dont la reputation d'expedition n'est PAS protegee.
+     */
+    private static final String COURRIEL_REPLI = "notification.courriel.repli.total";
+
     /** Surcharges de modeles en vigueur, lues en base. */
     private static final String MODELES_SURCHARGES = "notification.modeles.surcharges";
 
@@ -184,6 +204,23 @@ public class NotificationMetrics {
     public void plafondSmsAtteint() {
         Counter.builder(PLAFOND_SMS_ATTEINT)
                 .description("Envois de SMS refuses par le plafond journalier de depense")
+                .register(registre)
+                .increment();
+    }
+
+    /**
+     * Compte un repli du compte critique vers le compte ordinaire.
+     *
+     * <p>L'etiquette porte la CLASSE de l'erreur et non son message : un
+     * message d'exception SMTP peut citer une adresse, et une etiquette non
+     * bornee fait tomber la collecte entiere. Les classes d'exception de
+     * JavaMail sont en nombre fini.
+     */
+    public void repliDuCompteCritique(String classeDeLErreur) {
+        Counter.builder(COURRIEL_REPLI)
+                .tag("cause", classeDeLErreur == null ? "inconnue" : classeDeLErreur)
+                .description("Notifications CRITIQUES reparties par le compte ordinaire "
+                        + "parce que le compte dedie a echoue")
                 .register(registre)
                 .increment();
     }

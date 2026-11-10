@@ -1,6 +1,7 @@
 package com.abdatytch.notification_service.service.impl;
 
 import com.abdatytch.commons.notification.CanalDeNotification;
+import com.abdatytch.notification_service.metrics.NotificationMetrics;
 import com.abdatytch.notification_service.service.CanalDeRemise;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -138,13 +139,24 @@ public class CanalCourriel implements CanalDeRemise {
 
     private final IDisjoncteurSortant disjoncteur;
 
+    /**
+     * Les metriques, pour le SEUL repli.
+     *
+     * <p>Les remises elles-memes sont comptees par l'orchestrateur, qui les voit
+     * toutes. Ce canal ne compte qu'une chose que lui seul sait : qu'un message
+     * critique a change de compte.
+     */
+    private final NotificationMetrics metriques;
+
     public CanalCourriel(
             @Qualifier("expediteurOrdinaire") JavaMailSender expediteur,
             @Qualifier("expediteurCritique") JavaMailSender expediteurCritique,
-            IDisjoncteurSortant disjoncteur) {
+            IDisjoncteurSortant disjoncteur,
+            NotificationMetrics metriques) {
         this.expediteur = expediteur;
         this.expediteurCritique = expediteurCritique;
         this.disjoncteur = disjoncteur;
+        this.metriques = metriques;
         // Declares au demarrage, comme AfrikSmsProvider : sinon l'instance
         // n'existe qu'apres le premier envoi, donc invisible de la supervision
         // jusque-la — et c'est precisement avant le premier envoi qu'on veut
@@ -249,6 +261,10 @@ public class CanalCourriel implements CanalDeRemise {
         log.warn("Compte critique indisponible ({}) : la notification CRITIQUE "
                         + "repart par le compte ordinaire",
                 premierEchec.getClass().getSimpleName());
+        // COMPTE, et pas seulement journalise : le repli sauve le message, donc
+        // il rend la panne du compte dedie invisible. Une ligne de journal par
+        // message ne se remarque pas quand tout fonctionne par ailleurs.
+        metriques.repliDuCompteCritique(premierEchec.getClass().getSimpleName());
         return tenter(message, expediteur, DISJONCTEUR_ORDINAIRE);
     }
 
