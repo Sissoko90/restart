@@ -1,6 +1,7 @@
 package com.abdatytch.interface_service.filter;
 
 import com.abdatytch.commons.security.CheminInterne;
+import com.abdatytch.commons.security.CheminsPublics;
 import com.abdatytch.commons.security.GatewayClientIp;
 import com.abdatytch.commons.security.PrivateNetworks;
 import com.abdatytch.commons.security.SecretMasking;
@@ -49,11 +50,46 @@ public class GatewayAccessFilter implements WebFilter {
     // CheminInterne, de platform-commons : la comparaison par segment entier
     // etait ecrite trois fois, et user-service l'avait tout simplement oubliee.
 
-    // Endpoints publics autorisés sans Gateway (ULTRA RESTREINTS)
-    private static final List<String> PUBLIC_ENDPOINTS = List.of(
-        "/actuator/health",             // Health check seulement
-        "/dev/.well-known/jwks.json",   // JWKS pour validation JWT interne
-        "/.well-known/jwks.json"// JWKS endpoint standard
+    /**
+     * Les sondes, lues chez leur SEUL detenteur.
+     *
+     * <h3>Ce que la liste en dur coutait</h3>
+     *
+     * Elle ne nommait que {@code /actuator/health}, et la comparaison se
+     * faisait par {@code startsWith}. Consequences mesurees sur le service en
+     * marche, le 2026-11-10 :
+     *
+     * <ul>
+     *   <li>{@code /actuator/prometheus} et {@code /actuator/info} rendaient
+     *       <b>403 « Accès direct interdit »</b>. Prometheus ne passe pas par
+     *       la passerelle : il ne pouvait donc <b>pas collecter les metriques
+     *       de ce service</b>. La chaine Security les autorisait pourtant —
+     *       deux couches qui se contredisent, et c'est la plus stricte qui
+     *       gagne, en silence ;</li>
+     *   <li>{@code startsWith("/actuator/health")} acceptait en revanche
+     *       {@code /actuator/healthcheck} ou tout chemin commencant par ces
+     *       caracteres. Trop ferme d'un cote, trop ouvert de l'autre.</li>
+     * </ul>
+     *
+     * <p>{@code CheminsPublics.contient} repond exactement a la question de ce
+     * filtre — son javadoc le dit : « peut-il etre appele sans signature HMAC,
+     * donc en attaquant directement le port du service ? Seules les sondes le
+     * peuvent, parce que Consul et Prometheus ne passent pas par la
+     * passerelle. » Il borne de plus la correspondance par segment entier.
+     */
+    private static final CheminsPublics SONDES = CheminsPublics.sondes().construire();
+
+    /**
+     * Les deux chemins du JWKS, publics par nature.
+     *
+     * <p>Egalite STRICTE et non plus {@code startsWith} : un jeu de cles
+     * publiques est un document unique, et rien ne vit en dessous de ce
+     * chemin. L'ancienne comparaison acceptait
+     * {@code /.well-known/jwks.json.bak}.
+     */
+    private static final List<String> JWKS = List.of(
+        "/dev/.well-known/jwks.json",
+        "/.well-known/jwks.json"
     );
 
     @Override
@@ -131,7 +167,7 @@ public class GatewayAccessFilter implements WebFilter {
     }
 
     private boolean isPublicEndpoint(String path) {
-        return PUBLIC_ENDPOINTS.stream().anyMatch(path::startsWith);
+        return SONDES.contient(path) || JWKS.contains(path);
     }
 
     /**

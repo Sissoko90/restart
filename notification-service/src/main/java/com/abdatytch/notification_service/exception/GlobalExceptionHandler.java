@@ -44,6 +44,19 @@ import java.util.Map;
  * raisons : les causes d'un refus d'authentification ne doivent pas etre
  * distinguables, et un message interne nomme des classes, des tables, parfois
  * des adresses. Le motif reel va au journal.
+ *
+ * <h2>Une seule exception, et elle est declaree par un TYPE</h2>
+ *
+ * {@link RefusExplique} rend son motif a l'appelant. Il existe parce que la
+ * regle ci-dessus s'appliquait aussi aux motifs REDIGES pour l'appelant, qui
+ * sont d'une autre nature : {@code AdminModeleController} refusait une clef de
+ * modele invalide avec un texte disant exactement ce qui n'allait pas, et
+ * l'exploitant recevait « Bad Request ». Un motif precis que personne ne lit
+ * revient a ne pas l'ecrire.
+ *
+ * <p>Un TYPE et non un drapeau : ce gestionnaire ne peut pas deviner si un
+ * {@code getReason()} a ete redige pour l'appelant ou recopie d'une cause
+ * interne — Spring lui-meme en pose dans ses propres refus.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -57,6 +70,30 @@ public class GlobalExceptionHandler {
      * ce n'est pas l'ordre qui decide : Spring choisit le gestionnaire dont le
      * type est le plus specifique.
      */
+    /**
+     * Un refus dont le motif a ete REDIGE pour l'appelant.
+     *
+     * <p>Le motif est rendu TEL QUEL. C'est l'exception a la regle de cette
+     * classe, et elle est bornee par le type lui-meme : le constructeur de
+     * {@link RefusExplique} refuse 401, 403 et tout statut 5xx. Ce qui passe
+     * par ici a donc ete ecrit pour etre lu par celui qui a fait la demande.
+     *
+     * <p>Declare avant le gestionnaire de {@code ResponseStatusException} dont
+     * {@code RefusExplique} herite. Spring choisit de toute façon le
+     * gestionnaire du type le plus specifique ; l'ordre de lecture ici dit
+     * l'intention.
+     */
+    @ExceptionHandler(RefusExplique.class)
+    public Mono<ResponseEntity<Map<String, Object>>> refusExplique(RefusExplique ex) {
+        HttpStatus statut = HttpStatus.resolve(ex.getStatusCode().value());
+        if (statut == null) {
+            statut = HttpStatus.BAD_REQUEST;
+        }
+        log.warn("Refus {} : {}", statut.value(), ex.getReason());
+        return Mono.just(ResponseEntity.status(statut)
+                .body(corps(statut.name(), ex.getReason(), statut)));
+    }
+
     @ExceptionHandler(ResponseStatusException.class)
     public Mono<ResponseEntity<Map<String, Object>>> refusAvecStatut(
             ResponseStatusException ex) {

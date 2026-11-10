@@ -2,6 +2,7 @@ package com.abdatytch.notification_service.service.impl;
 
 import com.abdatytch.commons.notification.CanalDeNotification;
 import com.abdatytch.notification_service.entities.JetonDAppareil;
+import com.abdatytch.commons.resilience.IDisjoncteurSortant;
 import com.abdatytch.notification_service.repositories.JetonDAppareilRepository;
 import com.abdatytch.notification_service.service.CanalDeRemise;
 import com.abdatytch.notification_service.service.push.IClientPush;
@@ -85,9 +86,33 @@ public class CanalPush implements CanalDeRemise {
     @Value("${notification.push.enabled:false}")
     private boolean actif;
 
-    public CanalPush(JetonDAppareilRepository appareils, IClientPush client) {
+    /**
+     * Le disjoncteur de FCM.
+     *
+     * <h3>Ce qu'il protege</h3>
+     *
+     * {@code sendEachForMulticast} part vers l'API de Google. Si elle est
+     * injoignable, l'appel n'echoue pas vite : il expire. Un lot de 500 jetons
+     * par notification, multiplie par les demandes en attente, et le service
+     * passe son temps a attendre un service mort.
+     *
+     * <h3>Pourquoi il ne remplace pas le tri des codes d'erreur</h3>
+     *
+     * {@code ClientPushFcm.depouiller} distingue deja un jeton MORT d'une panne
+     * PASSAGERE, et c'est une autre question : elle decide s'il faut effacer le
+     * jeton. Le disjoncteur, lui, decide s'il faut encore appeler. Confondre
+     * les deux effacerait la base d'appareils a la premiere panne de Google.
+     */
+    static final String DISJONCTEUR = "fcm";
+
+    private final IDisjoncteurSortant disjoncteur;
+
+    public CanalPush(JetonDAppareilRepository appareils, IClientPush client,
+                     IDisjoncteurSortant disjoncteur) {
         this.appareils = appareils;
         this.client = client;
+        this.disjoncteur = disjoncteur;
+        disjoncteur.declarer(DISJONCTEUR);
     }
 
     @jakarta.annotation.PostConstruct
@@ -152,7 +177,8 @@ public class CanalPush implements CanalDeRemise {
 
     private Mono<Resultat> pousserPuisPurger(List<String> jetons,
                                              MessageARemettre message) {
-        return client.pousser(jetons, message.sujet(), message.corps())
+        return disjoncteur.proteger(DISJONCTEUR,
+                        client.pousser(jetons, message.sujet(), message.corps()))
                 .flatMap(resultat -> purger(resultat.jetonsInvalides())
                         .thenReturn(resultat))
                 .map(resultat -> resultat.aAbouti()
@@ -161,7 +187,20 @@ public class CanalPush implements CanalDeRemise {
                         // indisponibilite, quota — valent d'etre reessayes, et
                         // les jetons definitivement morts viennent d'etre
                         // retires, donc la reprise ne les reverra pas.
-                        : Resultat.echoue(resultat.motif()));
+                        : Resultat.echoue(resultat.motif()))
+                // Le refus du disjoncteur est rattrape ICI, et non par le
+                // gestionnaire de `remettre`.
+                //
+                // Celui-la journalise « Lecture des appareils impossible » :
+                // il parle de la BASE. Laisser une ouverture de disjoncteur
+                // remonter jusqu'a lui ferait chercher une panne de base de
+                // donnees pour une panne de FCM — exactement le genre de
+                // journal qui coute une heure.
+                .onErrorResume(panne -> {
+                    log.warn("Envoi push impossible : {}", panne.getClass().getSimpleName());
+                    return Mono.just(Resultat.echoue(
+                            "FCM : " + panne.getClass().getSimpleName()));
+                });
     }
 
     /**

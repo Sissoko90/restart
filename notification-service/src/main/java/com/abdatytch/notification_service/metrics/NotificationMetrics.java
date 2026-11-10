@@ -58,6 +58,35 @@ public class NotificationMetrics {
     /** Sessions WebSocket ouvertes a cet instant. */
     private static final String SESSIONS = "notification.websocket.sessions";
 
+    /**
+     * Un canal est-il en mesure de remettre ? 1 ou 0, par canal.
+     *
+     * <h3>Pourquoi une metrique et pas seulement un indicateur de sante</h3>
+     *
+     * {@code /actuator/health} repond a qui le demande ; Prometheus ne le
+     * demande pas. Sans cette jauge, « le canal PUSH est tombe » n'existe que
+     * dans un journal et dans une reponse HTTP que personne n'interroge — donc
+     * ni panneau, ni alerte, ni historique.
+     *
+     * <p>Le defaut que cela ferme a ete constate en vrai : le canal PUSH s'est
+     * declare ACTIF sans pouvoir envoyer, et seul le journal de demarrage le
+     * disait. Une jauge aurait montre la bascule a la seconde.
+     */
+    private static final String CANAL_ACTIF = "notification.canal.actif";
+
+    /** Surcharges de modeles en vigueur, lues en base. */
+    private static final String MODELES_SURCHARGES = "notification.modeles.surcharges";
+
+    /**
+     * Age de la derniere lecture REUSSIE des surcharges, en secondes.
+     *
+     * <p>{@code -1} tant qu'aucune lecture n'a abouti. La distinction compte :
+     * « jamais lu » signifie que les corrections a chaud n'ont jamais
+     * fonctionne, « lu il y a 40 minutes » que le rechargement s'est arrete.
+     */
+    private static final String MODELES_AGE_LECTURE =
+            "notification.modeles.derniere.lecture.secondes";
+
     private final MeterRegistry registre;
 
     /**
@@ -180,5 +209,56 @@ public class NotificationMetrics {
     /** Pour les tests : l'etat courant de la jauge. */
     public int sessionsOuvertes() {
         return sessionsOuvertes.get();
+    }
+
+    /**
+     * Publie l'etat de chaque canal en jauge.
+     *
+     * <h3>Pourquoi les canaux ne sont pas injectes dans cette classe</h3>
+     *
+     * Ils le seraient volontiers, et ce serait un cycle : un canal peut avoir
+     * besoin des metriques. L'appel vient donc de
+     * {@code SurveillanceDesCanauxConfig}, qui detient les deux.
+     *
+     * <p>La jauge lit {@code estActif()} a chaque collecte — la MEME methode
+     * que le pipeline de remise. Aucune seconde source de verite : si le canal
+     * mentait, il mentirait identiquement aux deux.
+     *
+     * @param canaux tous les canaux declares, injectes par Spring
+     */
+    public void suivreCanaux(java.util.List<com.abdatytch.notification_service.service.CanalDeRemise> canaux) {
+        for (var canal : canaux) {
+            io.micrometer.core.instrument.Gauge
+                    .builder(CANAL_ACTIF, canal, c -> c.estActif() ? 1d : 0d)
+                    .tag("canal", canal.canal().name())
+                    .description("1 si ce canal peut remettre, 0 sinon")
+                    .register(registre);
+        }
+    }
+
+    /**
+     * Publie l'etat du moteur de modeles en deux jauges.
+     *
+     * <p>Le nombre de surcharges et l'age de la derniere lecture reussie. La
+     * seconde est celle qui compte : le rechargement degrade en silence, en
+     * conservant l'instantane precedent. Sans elle, une base injoignable
+     * ressemble a une base ou rien n'a change.
+     */
+    public void suivreMoteurDeModeles(
+            com.abdatytch.notification_service.service.impl.MoteurDeModeles moteur) {
+        io.micrometer.core.instrument.Gauge
+                .builder(MODELES_SURCHARGES, moteur, m -> m.surchargesEnVigueur().size())
+                .description("Surcharges de modeles en vigueur, lues en base")
+                .register(registre);
+
+        io.micrometer.core.instrument.Gauge
+                .builder(MODELES_AGE_LECTURE, moteur, m -> {
+                    java.time.Instant lue = m.derniereLectureReussie();
+                    return lue == null
+                            ? -1d
+                            : java.time.Duration.between(lue, java.time.Instant.now()).toSeconds();
+                })
+                .description("Secondes depuis la derniere lecture reussie des surcharges, -1 si jamais")
+                .register(registre);
     }
 }

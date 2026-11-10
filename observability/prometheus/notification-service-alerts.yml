@@ -104,3 +104,143 @@ groups:
             Plus de 0,2 rejet par seconde depuis 10 minutes. Un service emetteur
             publie des demandes que notification-service refuse avant
             traitement — verifier le motif porte par l'etiquette `motif`.
+
+  # ==========================================================================
+  # Etat des canaux et des dependances sortantes
+  # ==========================================================================
+  - name: notification-service-canaux
+    rules:
+      # ------------------------------------------------------------------
+      # Un canal qui FONCTIONNAIT ne fonctionne plus
+      # ------------------------------------------------------------------
+      # L'expression compare l'etat courant a celui d'il y a une heure, et
+      # c'est tout l'interet.
+      #
+      # Une alerte sur `notification_canal_actif == 0` serait inutilisable : le
+      # SMS est coupe en developpement, le push attend son fichier Firebase.
+      # Elle se declencherait en permanence sur une CONFIGURATION, donc elle
+      # serait mise en sourdine, et le jour ou un canal tomberait vraiment
+      # personne ne le verrait.
+      #
+      # Ici, seule la BASCULE declenche. Un canal volontairement coupe reste a
+      # zero des deux cotes de la comparaison et ne dit rien.
+      #
+      # Le cas reel que cela couvre : le canal PUSH s'est declare ACTIF sans
+      # pouvoir envoyer — `FirebaseOptions` sans `projectId` — et seul le
+      # journal de demarrage le disait. Une fois corrige, un fichier
+      # d'identifiants retire ou expire produirait exactement cette bascule.
+      - alert: CanalDeNotificationTombe
+        expr: notification_canal_actif == 0 and notification_canal_actif offset 1h == 1
+        for: 5m
+        labels:
+          severity: critical
+          service: notification-service
+        annotations:
+          summary: "Le canal {{ $labels.canal }} ne peut plus remettre"
+          description: >-
+            Le canal {{ $labels.canal }} etait en mesure de remettre il y a une
+            heure et ne l'est plus depuis au moins 5 minutes. Les demandes qui
+            l'empruntent sont REFUSEES, pas mises en attente. Verifier la
+            configuration du canal dans /actuator/health, section
+            canauxDeRemise.
+
+      # ------------------------------------------------------------------
+      # Aucun canal ne peut plus remettre
+      # ------------------------------------------------------------------
+      # Sans condition de bascule, celle-la : zero canal actif n'est jamais une
+      # configuration voulue. Le service repondrait 200 a chaque demande et ne
+      # remettrait rien.
+      - alert: AucunCanalDeNotificationActif
+        expr: sum(notification_canal_actif) == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: notification-service
+        annotations:
+          summary: "Aucun canal de notification n'est actif"
+          description: >-
+            Les quatre canaux sont inactifs. Aucune notification ne peut partir,
+            quel que soit le canal demande : ni code de verification, ni alerte
+            de securite. Cet etat est aussi rendu par /actuator/health, qui
+            passe DOWN sur l'indicateur canauxDeRemise.
+
+      # ------------------------------------------------------------------
+      # Un disjoncteur sortant est ouvert
+      # ------------------------------------------------------------------
+      # Ouvert signifie que l'appel n'est PLUS TENTE : le fournisseur a echoue
+      # au-dela du seuil et le disjoncteur refuse vite pour ne pas occuper les
+      # threads de boundedElastic — qui portent aussi les OTP.
+      #
+      # `for: 2m` et non 0 : le disjoncteur passe par un etat semi-ouvert et se
+      # referme seul si le fournisseur revient. Alerter a la seconde produirait
+      # du bruit sur un hoquet.
+      - alert: DisjoncteurSortantOuvert
+        expr: >-
+          resilience4j_circuitbreaker_state{state="open",
+          name=~"afriksms|smtp-ordinaire|smtp-critique|fcm"} == 1
+        for: 2m
+        labels:
+          severity: warning
+          service: notification-service
+        annotations:
+          summary: "Disjoncteur {{ $labels.name }} ouvert"
+          description: >-
+            Les appels vers {{ $labels.name }} ne sont plus tentes depuis au
+            moins 2 minutes. Les remises par ce chemin sont comptees en ECHOUE
+            et seront reessayees par la reprise. Si le disjoncteur est
+            smtp-critique, les alertes de securite ne partent plus.
+
+  # ==========================================================================
+  # Le moteur de modeles
+  # ==========================================================================
+  - name: notification-service-modeles
+    rules:
+      # ------------------------------------------------------------------
+      # Les surcharges n'ont JAMAIS ete lues
+      # ------------------------------------------------------------------
+      # Distinct de « lues il y a longtemps », et la distinction porte une
+      # cause differente : la tache part a initialDelay = 0, donc pendant
+      # l'initialisation du contexte — le moment ou la base a le plus de
+      # chances de ne pas etre prete.
+      #
+      # Consequence : les corrections poussees par PUT /api/v1/admin/modeles ne
+      # s'appliquent pas, et le fichier versionne sert seul. Le service remet
+      # normalement, ce qui rend la panne invisible sans cette regle.
+      - alert: SurchargesDeModelesJamaisLues
+        expr: notification_modeles_derniere_lecture_secondes == -1
+        for: 5m
+        labels:
+          severity: warning
+          service: notification-service
+        annotations:
+          summary: "Les surcharges de modeles n'ont jamais ete lues"
+          description: >-
+            Aucune lecture des surcharges n'a abouti depuis le demarrage de
+            cette instance. Les corrections de texte poussees par
+            PUT /api/v1/admin/modeles ne s'appliquent pas : seul le fichier
+            modeles-notification.properties sert.
+
+      # ------------------------------------------------------------------
+      # Le rechargement s'est arrete
+      # ------------------------------------------------------------------
+      # Le rechargement degrade EN SILENCE : si la base refuse, l'instantane
+      # precedent reste en vigueur et la methode rend sa taille comme si de
+      # rien n'etait. Le nombre de surcharges ne bouge donc pas — exactement
+      # comme quand personne n'a rien modifie.
+      #
+      # 300 s = cinq fois l'intervalle par defaut de 60 s. Le meme multiple que
+      # l'indicateur de sante, pour que les deux ne se contredisent pas.
+      - alert: SurchargesDeModelesFigees
+        expr: notification_modeles_derniere_lecture_secondes > 300
+        for: 5m
+        labels:
+          severity: warning
+          service: notification-service
+        annotations:
+          summary: "Le rechargement des surcharges de modeles est arrete"
+          description: >-
+            La derniere lecture reussie date de
+            {{ $value | printf "%.0f" }} secondes. Les surcharges en vigueur
+            sont figees : une correction poussee par l'API ne sera pas vue.
+            Verifier l'acces a la table surcharge_de_modele et la planification
+            (@Scheduled exige @EnableScheduling).

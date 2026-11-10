@@ -334,13 +334,47 @@ class ChaineReelleTest {
             appel(HttpMethod.POST, chemin, null, true).expectStatus().isOk();
         }
 
+        /**
+         * {@code /dev/auth/*} N'EST PLUS PUBLIC, parce que cette surface
+         * n'existe pas.
+         *
+         * <h3>Ce que ce test affirmait, et pourquoi c'etait faux</h3>
+         *
+         * Il attendait {@code 200} sur six chemins {@code /dev/auth/*}, et il
+         * passait — mais il ne prouvait pas ce qu'il semblait prouver. Le
+         * harnais de cette suite installe un routeur ATTRAPE-TOUT
+         * ({@code RequestPredicates.all()} vers {@code 200 "ok"}), donc
+         * {@code isOk()} ne dit qu'une chose : la chaine Security a laisse
+         * passer. Elle ne dit rien de l'existence d'un controleur.
+         *
+         * <h3>La mesure</h3>
+         *
+         * Les controleurs de ce service sous {@code /dev} sont
+         * {@code DevKeyManagementController} ({@code @RequestMapping("/dev")},
+         * qui sert {@code /dev/.well-known/jwks.json} et
+         * {@code /dev/admin/keys/*}) et {@code DeveloperErasureController}
+         * ({@code /dev/erasure}). AUCUN ne sert {@code /dev/auth}. Les six
+         * endroits reels vivent sous {@code /auth}, verifies par le test
+         * precedent.
+         *
+         * <p>Les six regles {@code permitAll} ouvraient donc des chemins
+         * inexistants. Ce n'est pas inoffensif : une route
+         * {@code /dev/auth/**} a vecu dans la configuration de la passerelle en
+         * visant ce vide, precisement parce que la chaine Security donnait
+         * toutes les apparences d'une surface publique assumee.
+         *
+         * <p>Ce test epingle donc le retrait. En production ces chemins rendent
+         * {@code 404} ; ici le {@code 401} vient de
+         * {@code anyExchange().authenticated()}, le routeur attrape-tout
+         * empechant de constater le 404.
+         */
         @ParameterizedTest(name = "{0}")
         @ValueSource(strings = {
                 "/dev/auth/register", "/dev/auth/login", "/dev/auth/refresh",
                 "/dev/auth/verify-email", "/dev/auth/forgot-password", "/dev/auth/reset-password"})
-        @DisplayName("La surface developpeur aussi")
-        void authentificationDeveloppeurSansJeton(String chemin) {
-            appel(HttpMethod.POST, chemin, null, true).expectStatus().isOk();
+        @DisplayName("La surface /dev/auth n'existe pas, et n'est plus ouverte")
+        void surfaceDeveloppeurInexistanteNestPasPublique(String chemin) {
+            appel(HttpMethod.POST, chemin, null, true).expectStatus().isUnauthorized();
         }
 
         /**

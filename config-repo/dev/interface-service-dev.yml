@@ -49,7 +49,31 @@ spring:
     consul:
       discovery:
         health-check-path: /actuator/health/liveness
-        health-check-critical-timeout: 30s
+
+        # `health-check-critical-timeout: 30s` A ETE RETIRE D'ICI.
+        #
+        # Cette clef porte le `DeregisterCriticalServiceAfter` de Consul :
+        # passe ce delai en etat critique, Consul SUPPRIME l'enregistrement.
+        # Elle etait inerte tant que le bloc vivait sous `gateway:` ; la
+        # corriger d'emplacement l'a activee, et l'effet a ete mesure le
+        # 2026-11-10.
+        #
+        # Ce qui s'est passe : la sonde de groupe rendait 401 — un defaut reel,
+        # corrige par ailleurs — le controle est devenu critique, et au bout de
+        # 30 secondes interface-service a DISPARU du catalogue. Le processus
+        # tournait, repondait en direct, et n'existait plus pour la passerelle,
+        # qui rendait 503 a la connexion puisque ce service est l'autorite JWT.
+        #
+        # Et il ne revenait pas tout seul : avec des controles HTTP et sans
+        # battement de coeur, un service desinscrit ne se reinscrit qu'au
+        # demarrage. Un hoquet de 30 secondes exigeait donc un redemarrage
+        # manuel.
+        #
+        # Rester `critical` est strictement meilleur : avec `query-passing:
+        # true` ci-dessus, l'instance cesse d'etre routee, et elle le redevient
+        # d'elle-meme des que la sonde repasse. Le defaut du cadre est de 30
+        # minutes, ce qui laisse a un exploitant le temps de voir la panne
+        # avant que la trace ne disparaisse.
 
   # Flyway : les neuf migrations de ce module n'etaient lues par personne.
   #

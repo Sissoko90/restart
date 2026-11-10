@@ -230,6 +230,16 @@ public final class CheminCible {
         // RoutageCoherentTest.aucuneRouteEnYaml refuse qu'elles y reviennent.
         SERVICES_PAR_PREFIXE.put("/api/v1/developers", "interface-service");
         SERVICES_PAR_PREFIXE.put("/api/v1/projects", "interface-service");
+        // L'effacement RGPD des developpeurs.
+        //
+        // Il n'etait declare NULLE PART — ni ici, ni dans le routeur, ni meme
+        // dans le YAML inerte. Un developpeur ne pouvait pas demander
+        // l'effacement de son compte a travers la passerelle.
+        //
+        // Le prefixe est le chemin complet du controleur, sans /api/v1 : cette
+        // surface n'a jamais porte ce prefixe, et lui en donner un demanderait
+        // une reecriture de plus pour aucun gain.
+        SERVICES_PAR_PREFIXE.put("/dev/erasure", "interface-service");
         // DEUX PREFIXES /dev ONT ETE RETIRES D'ICI.
         //
         // Ils y figuraient parce que le YAML inerte pretendait les servir. Les
@@ -295,6 +305,10 @@ public final class CheminCible {
         // maintenance d'interface-service les couperait, puisque le prefixe
         // serait retombe sur /api/v1/admin declare un peu plus bas.
         SERVICES_PAR_PREFIXE.put("/api/v1/admin/modeles", "notification-service");
+        // L'envoi administrateur, egalement avant /api/v1/admin : sans cette
+        // entree, une maintenance d'interface-service couperait l'envoi de
+        // notifications — c'est-a-dire le moyen d'annoncer la maintenance.
+        SERVICES_PAR_PREFIXE.put("/api/v1/admin/notifications", "notification-service");
         // EN DERNIER : capturerait les trois precedents sinon.
         SERVICES_PAR_PREFIXE.put("/api/v1/admin", "interface-service");
     }

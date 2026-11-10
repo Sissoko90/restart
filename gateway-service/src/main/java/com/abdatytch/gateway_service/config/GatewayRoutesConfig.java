@@ -370,6 +370,30 @@ public class GatewayRoutesConfig {
                 .PUT("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "interface-service", defaultCircuitBreaker))
                 .DELETE("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "interface-service", defaultCircuitBreaker))
             )
+            // L'EFFACEMENT RGPD DES DEVELOPPEURS, ROUTE PAR RIEN.
+            //
+            // DeveloperErasureController sert POST /dev/erasure/me, sous
+            // isAuthenticated(). Il n'etait declare ni dans le RouterFunction,
+            // ni dans CheminCible, ni meme dans le YAML inerte : un developpeur
+            // n'avait AUCUN moyen de demander l'effacement de son compte a
+            // travers la passerelle, et la passerelle rend 404 — indistinguable
+            // d'un chemin inexistant.
+            //
+            // Ce n'est pas une surface comme une autre. L'article 17 du RGPD
+            // fait de l'effacement un droit exercable par la personne ; un
+            // endpoint injoignable rend ce droit inexistant en pratique, et
+            // l'ecart etait deja releve dans le constat de conformite du depot.
+            //
+            // POST SEULEMENT, parce que c'est la seule methode du controleur.
+            // Ouvrir GET, PUT ou DELETE ici n'ajouterait aucune fonction et
+            // offrirait une surface vers un chemin que personne ne surveille —
+            // meme raisonnement que pour la documentation OpenAPI.
+            //
+            // Aucune reecriture : le chemin public est identique au chemin
+            // interne, et CheminCible ne retire /api/v1 que s'il est present.
+            .nest(path("/dev/erasure/**"), builder -> builder
+                .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "interface-service", defaultCircuitBreaker))
+            )
             // LES DEUX CHEMINS /dev NE SONT PAS ROUTES, ET C'EST VERIFIE.
             //
             // Je les avais ajoutes ici avec les trois precedents, puisque
@@ -453,6 +477,20 @@ public class GatewayRoutesConfig {
                 .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
                 .PUT("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
                 .DELETE("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
+            )
+            // L'envoi de notifications depuis l'administration.
+            //
+            // AVANT /api/v1/admin/**, comme la route des modeles juste
+            // au-dessus et pour la meme raison : la route generale envoie
+            // /api/v1/admin/** a interface-service, qui ne porte pas cette
+            // surface. Declarer la route APRES la rendrait 404 — indistinguable
+            // d'un endpoint inexistant.
+            //
+            // POST SEULEMENT : les deux endpoints de AdminEnvoiController
+            // envoient. Ouvrir GET ou DELETE ici offrirait une surface vers des
+            // chemins que personne ne sert.
+            .nest(path("/api/v1/admin/notifications/**"), builder -> builder
+                .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "notification-service", defaultCircuitBreaker))
             )
             // Route: /api/v1/files/** user-service (photos de profil)
             //

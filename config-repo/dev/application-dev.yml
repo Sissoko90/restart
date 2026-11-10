@@ -125,6 +125,25 @@ spring:
         instance-id: ${spring.application.name}:${random.value}
         register: true
         fail-fast: false
+
+        # N'ANNONCER QUE LES INSTANCES QUE CONSUL JUGE SAINES.
+        #
+        # Cette clef n'etait declaree nulle part, donc le comportement venait
+        # du defaut du cadre et non d'une decision. Spring Cloud Consul
+        # interroge alors le catalogue SANS le filtre `passing` : une instance
+        # dont le controle de sante echoue continue d'etre rendue a
+        # l'equilibreur de charge.
+        #
+        # Constat du 2026-11-10 : setting-service etait `critical` — son port
+        # 8090 en IPv4 etait pris par un autre processus, donc le controle
+        # recevait 404. Consul rendait 0 instance avec `passing=true`, et 1
+        # sans filtre. Surveiller la sante d'un service sans s'en servir pour
+        # router est une surveillance decorative.
+        #
+        # `true` est de plus la bonne forme de degradation : l'instance cesse
+        # d'etre annoncee, puis le redevient d'elle-meme des que le controle
+        # repasse. Aucune intervention, contrairement a une desinscription.
+        query-passing: true
   
   # ==========================================
   # REDIS CONFIGURATION

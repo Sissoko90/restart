@@ -147,6 +147,30 @@ public class MoteurDeModeles {
     private final AtomicReference<Map<String, String>> instantane =
             new AtomicReference<>(Map.of());
 
+    /**
+     * L'instant de la derniere lecture REUSSIE des surcharges.
+     *
+     * <h3>Pourquoi cet horodatage existe</h3>
+     *
+     * {@code rechargerMaintenant} degrade en silence : si la base est
+     * injoignable, l'instantane precedent reste en vigueur et la methode rend
+     * sa taille comme si de rien n'etait. C'est la bonne degradation — le
+     * service continue de rendre des notifications — mais elle rend la panne
+     * INVISIBLE de l'exterieur : le nombre de surcharges ne bouge pas, et
+     * aucune metrique ne distingue « rien n'a change » de « plus rien ne se
+     * lit ».
+     *
+     * <p>Consequence concrete : une correction de texte poussee par
+     * {@code PUT /admin/modeles} n'arriverait jamais, et l'exploitant qui l'a
+     * poussee verrait sa valeur dans la base sans comprendre pourquoi les
+     * messages ne changent pas.
+     *
+     * <p>{@code null} tant qu'aucune lecture n'a abouti : c'est distinct de
+     * « lu il y a longtemps », et les deux meritent une alerte differente.
+     */
+    private final AtomicReference<java.time.Instant> derniereLecture =
+            new AtomicReference<>(null);
+
     public MoteurDeModeles(@Value("classpath:modeles-notification.properties") Resource fichier,
                            SurchargeDeModeleRepository surcharges) {
         this.surcharges = surcharges;
@@ -276,6 +300,7 @@ public class MoteurDeModeles {
                         SurchargeDeModele::getCle, SurchargeDeModele::getValeur))
                 .doOnNext(lues -> {
                     instantane.set(lues);
+                    derniereLecture.set(java.time.Instant.now());
                     log.debug("{} surcharges de modeles en vigueur", lues.size());
                 })
                 .map(Map::size)
@@ -310,6 +335,17 @@ public class MoteurDeModeles {
     }
 
     /** Les surcharges en vigueur, pour l'API d'administration. */
+    /**
+     * L'instant de la derniere lecture reussie, ou {@code null}.
+     *
+     * <p>Lu par {@code NotificationMetrics.suivreMoteurDeModeles} et par
+     * l'indicateur de sante. Aucune des deux ne recalcule l'age : une seule
+     * source, et le moteur est le seul a savoir.
+     */
+    public java.time.Instant derniereLectureReussie() {
+        return derniereLecture.get();
+    }
+
     public Map<String, String> surchargesEnVigueur() {
         return instantane.get();
     }

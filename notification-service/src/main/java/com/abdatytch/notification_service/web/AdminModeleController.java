@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
+import com.abdatytch.notification_service.exception.RefusExplique;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -65,10 +65,20 @@ import java.util.TreeSet;
  * ici.
  */
 @RestController
-@RequestMapping("/admin/modeles")
+@RequestMapping(AdminModeleController.CHEMIN)
 @Tag(name = "Administration des modèles",
         description = "Correction à chaud des textes de notification")
 public class AdminModeleController {
+
+    /**
+     * Le chemin de cette surface, nomme une fois.
+     *
+     * <p>Cite par AdminEnvoiController, qui renvoie ici quand un modele
+     * demande n'existe pas. Un chemin recopie dans un message d'erreur
+     * divergerait au premier renommage, et c'est precisement un message
+     * d'erreur qu'on ne relit jamais.
+     */
+    static final String CHEMIN = "/admin/modeles";
 
     private static final Logger log = LoggerFactory.getLogger(AdminModeleController.class);
 
@@ -128,7 +138,7 @@ public class AdminModeleController {
     public Mono<ModeleResponse> surcharger(@RequestBody SurchargeDeModeleRequest demande,
                                            @AuthenticationPrincipal Jwt jwt) {
         if (demande == null) {
-            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST,
+            return Mono.error(new RefusExplique(HttpStatus.BAD_REQUEST,
                     "Corps de requete absent : il faut une cle et une valeur."));
         }
         String cle = demande.cle();
@@ -136,14 +146,14 @@ public class AdminModeleController {
         if (motif != null) {
             // 400 et le motif : l'appelant est un exploitant, pas un inconnu
             // qui enumere. Le texte lui dit quoi corriger.
-            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, motif));
+            return Mono.error(new RefusExplique(HttpStatus.BAD_REQUEST, motif));
         }
         if (demande.valeur() == null || demande.valeur().isBlank()) {
             // Un texte vide n'est pas une suppression. Il produirait un message
             // envoye et vide — ce que le moteur refuse par principe, un message
             // vide faisant croire a l'emetteur qu'il a notifie. Pour revenir au
             // fichier, il faut DELETE.
-            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST,
+            return Mono.error(new RefusExplique(HttpStatus.BAD_REQUEST,
                     "La valeur est vide. Un texte vide partirait sans contenu : "
                             + "pour revenir au texte du fichier, supprimer la "
                             + "surcharge."));
@@ -192,7 +202,7 @@ public class AdminModeleController {
         log.info("Admin - retrait de la surcharge du modele {}", cle);
 
         return surcharges.findById(cle)
-                .switchIfEmpty(Mono.error(new ResponseStatusException(
+                .switchIfEmpty(Mono.error(new RefusExplique(
                         HttpStatus.NOT_FOUND,
                         "Aucune surcharge sur cette cle. Le texte du fichier "
                                 + "s'applique deja, et une API ne peut pas le "

@@ -145,13 +145,22 @@ public class SecurityConfig {
                         // Endpoints internes (protégés par X-Internal-Secret header)
                         .pathMatchers("/internal/**").permitAll()
                         
-                        // Endpoints d'authentification développeur (public)
-                        .pathMatchers("/dev/auth/register").permitAll()
-                        .pathMatchers("/dev/auth/login").permitAll()
-                        .pathMatchers("/dev/auth/refresh").permitAll()
-                        .pathMatchers("/dev/auth/verify-email").permitAll()
-                        .pathMatchers("/dev/auth/forgot-password").permitAll()
-                        .pathMatchers("/dev/auth/reset-password").permitAll()
+                        // SIX REGLES ONT ETE RETIREES ICI.
+                        //
+                        // Elles ouvraient /dev/auth/register, login, refresh,
+                        // verify-email, forgot-password et reset-password. Or
+                        // AUCUN controleur n'est monte sur /dev/auth : ce
+                        // service n'a que DevKeyManagementController
+                        // (@RequestMapping("/dev")) et DeveloperErasureController
+                        // ("/dev/erasure"). Les six endpoints reels vivent sous
+                        // /auth, declares juste en dessous.
+                        //
+                        // Six regles permitAll sur des chemins inexistants ne
+                        // sont pas inoffensives : elles font croire, a la
+                        // relecture, que cette surface existe et qu'elle est
+                        // volontairement ouverte. C'est ainsi qu'une route YAML
+                        // vers /dev/auth/** a vecu dans la configuration de la
+                        // passerelle, pointant vers le vide.
                         
                         .pathMatchers("/auth/register").permitAll()
                         .pathMatchers("/auth/login").permitAll()

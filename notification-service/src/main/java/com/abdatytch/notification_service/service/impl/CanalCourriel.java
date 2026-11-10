@@ -9,6 +9,7 @@ import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import com.abdatytch.commons.notification.DemandeDeNotification;
 import org.springframework.beans.factory.annotation.Qualifier;
+import com.abdatytch.commons.resilience.IDisjoncteurSortant;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Component;
@@ -81,11 +82,47 @@ public class CanalCourriel implements CanalDeRemise {
      * courriels ordinaires partaient par lui. Deux des trois cablages etaient
      * pourtant corrects, ce qui rendait le defaut tres difficile a voir.
      */
+    /**
+     * Les deux disjoncteurs, un par compte d'expedition.
+     *
+     * <h3>Pourquoi DEUX et non un seul</h3>
+     *
+     * Les deux comptes peuvent viser des serveurs differents. Un disjoncteur
+     * partage ferait couper les alertes de securite parce que le courrier
+     * ordinaire echoue — ou l'inverse, ce qui est pire.
+     *
+     * <h3>Pourquoi un disjoncteur sur le chemin CRITIQUE</h3>
+     *
+     * La question se pose : couper, c'est renoncer a tenter. Mais l'alternative
+     * n'est pas « tenter et reussir », c'est « tenter et attendre » — un SMTP
+     * injoignable ne refuse pas, il fait expirer. Chaque envoi occupe alors un
+     * thread de {@code boundedElastic} pendant le delai complet, et ce pool est
+     * PARTAGE : il porte aussi les OTP. Dix alertes vers un serveur mort
+     * retardent donc des connexions.
+     *
+     * <p>Le disjoncteur ne fait pas perdre un courriel qui serait parti : il
+     * refuse vite ce qui aurait echoue lentement. La non-remise est deja
+     * enregistree par l'appelant — {@code AlerteDeSecuriteServiceImpl} compte
+     * {@code resultat=non_remise} — donc l'echec reste visible.
+     */
+    static final String DISJONCTEUR_ORDINAIRE = "smtp-ordinaire";
+    static final String DISJONCTEUR_CRITIQUE = "smtp-critique";
+
+    private final IDisjoncteurSortant disjoncteur;
+
     public CanalCourriel(
             @Qualifier("expediteurOrdinaire") JavaMailSender expediteur,
-            @Qualifier("expediteurCritique") JavaMailSender expediteurCritique) {
+            @Qualifier("expediteurCritique") JavaMailSender expediteurCritique,
+            IDisjoncteurSortant disjoncteur) {
         this.expediteur = expediteur;
         this.expediteurCritique = expediteurCritique;
+        this.disjoncteur = disjoncteur;
+        // Declares au demarrage, comme AfrikSmsProvider : sinon l'instance
+        // n'existe qu'apres le premier envoi, donc invisible de la supervision
+        // jusque-la — et c'est precisement avant le premier envoi qu'on veut
+        // voir le panneau.
+        disjoncteur.declarer(DISJONCTEUR_ORDINAIRE);
+        disjoncteur.declarer(DISJONCTEUR_CRITIQUE);
     }
 
     /**
@@ -101,9 +138,24 @@ public class CanalCourriel implements CanalDeRemise {
      * un message au compte critique faute de savoir.
      */
     private JavaMailSender expediteurPour(MessageARemettre message) {
-        return message.urgence() == DemandeDeNotification.Urgence.CRITIQUE
-                ? expediteurCritique
-                : expediteur;
+        return estCritique(message) ? expediteurCritique : expediteur;
+    }
+
+    /**
+     * Le disjoncteur du compte employe pour ce message.
+     *
+     * <p>Il suit la MEME condition que {@link #expediteurPour}, par
+     * {@link #estCritique}. Ecrire le test deux fois ferait qu'un message parte
+     * par un compte et compte dans le disjoncteur de l'autre — un
+     * disjoncteur qui mesure un autre serveur que celui qu'il protege.
+     */
+    private String disjoncteurPour(MessageARemettre message) {
+        return estCritique(message) ? DISJONCTEUR_CRITIQUE : DISJONCTEUR_ORDINAIRE;
+    }
+
+    /** La condition, ecrite une seule fois. */
+    private static boolean estCritique(MessageARemettre message) {
+        return message.urgence() == DemandeDeNotification.Urgence.CRITIQUE;
     }
 
     @jakarta.annotation.PostConstruct
@@ -134,7 +186,7 @@ public class CanalCourriel implements CanalDeRemise {
             return Mono.just(Resultat.refuse("aucune adresse connue"));
         }
 
-        return Mono.fromCallable(() -> {
+        return disjoncteur.proteger(disjoncteurPour(message), Mono.fromCallable(() -> {
                     // TOUT est construit ici, dans le scope boundedElastic.
                     SimpleMailMessage courriel = new SimpleMailMessage();
                     courriel.setFrom(adresseExpediteur);
@@ -147,7 +199,7 @@ public class CanalCourriel implements CanalDeRemise {
                     expediteurPour(message).send(courriel);
                     return Resultat.remis();
                 })
-                .subscribeOn(Schedulers.boundedElastic())
+                .subscribeOn(Schedulers.boundedElastic()))
                 // Deux rattrapages, et la distinction decide d'un reessai.
                 //
                 // MailException couvre les refus du serveur et les pannes

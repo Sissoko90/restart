@@ -39,7 +39,7 @@ class CanalCourrielTest {
      * {@code build()} et faisait passer deux tests pour la mauvaise raison.
      */
     private CanalCourriel canal(String adresseExpediteur) {
-        CanalCourriel canal = new CanalCourriel(ordinaire, critique);
+        CanalCourriel canal = new CanalCourriel(ordinaire, critique, disjoncteurReel());
         ReflectionTestUtils.setField(canal, "adresseExpediteur", adresseExpediteur);
         ReflectionTestUtils.setField(canal, "adresseReponse", "");
         return canal;
@@ -149,5 +149,28 @@ class CanalCourrielTest {
             verify(ordinaire, never()).send(any(SimpleMailMessage.class));
             verify(critique, never()).send(any(SimpleMailMessage.class));
         }
+    }
+
+    /**
+     * Un disjoncteur REEL, avec une fenetre assez large pour ne jamais s'ouvrir.
+     *
+     * <p>Meme procede que {@code AfrikSmsProviderTest}, et pour les memes
+     * raisons : la fabrique de {@code DisjoncteurSortantConfig} porte les deux
+     * regles de production — ce qui compte comme une panne, et ce qui est leve
+     * a l'ouverture. Les recopier ici rendrait possible un test vert sur une
+     * regle differente de celle qui tourne.
+     *
+     * <p>Un registre neuf a chaque appel : sinon un test laisserait un
+     * disjoncteur ouvert pour le suivant, et l'ordre d'execution deviendrait
+     * une condition de reussite.
+     *
+     * <p>Fenetre de 100 appels et minimum de 100 : ces tests portent sur le
+     * canal, pas sur le disjoncteur. Il ne s'ouvre donc jamais ici et ne masque
+     * aucune assertion.
+     */
+    private static com.abdatytch.commons.resilience.IDisjoncteurSortant disjoncteurReel() {
+        return com.abdatytch.notification_service.config.DisjoncteurSortantConfig.pour(
+                io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry.ofDefaults(),
+                50f, 100, 100, 30L);
     }
 }

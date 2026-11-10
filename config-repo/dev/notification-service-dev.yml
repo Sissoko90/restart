@@ -50,6 +50,21 @@ spring:
       max-idle-time: 30m
       validation-query: SELECT 1
 
+  # Consul : la sonde interrogee est `readiness`, et non `/actuator/health`.
+  #
+  # Le defaut global de application-dev.yml est `/actuator/health`, qui agrege
+  # TOUS les indicateurs — dont `consul` et `clientConfigServer`. Avec
+  # `query-passing: true`, un hoquet du serveur de configuration suffirait a
+  # faire cesser le routage vers ce service.
+  #
+  # Le groupe `readiness` est defini plus bas, sous
+  # `management.endpoint.health.group`, avec le detail de ce qui y entre et de
+  # ce qui en reste dehors.
+  cloud:
+    consul:
+      discovery:
+        health-check-path: /actuator/health/readiness
+
   flyway:
     enabled: true
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_NOTIFICATION:notification_service_db}
@@ -128,6 +143,31 @@ spring:
 # CANAUX DE NOTIFICATION
 # ==========================================
 notification:
+  # ==========================================================
+  # ENVOI DEPUIS L'ADMINISTRATION
+  # ==========================================================
+  # Les deux endpoints de AdminEnvoiController : une personne, ou un groupe.
+  admin:
+    # Plafond de destinataires par appel.
+    #
+    # Il ne protege pas d'une faute de frappe — il rend visible le moment ou
+    # cet endpoint cesse d'etre un outil d'exploitation pour devenir un envoi
+    # de masse. Chaque destinataire coute une resolution de coordonnees chez
+    # user-service puis une remise par canal ; mille destinataires occuperaient
+    # le service pendant des minutes, et les codes de verification arrives
+    # entre-temps attendraient derriere.
+    #
+    # Un envoi de masse demande son propre service, avec sa propre file, son
+    # propre consentement et son lien de desabonnement.
+    plafond-groupe: ${NOTIFICATION_ADMIN_PLAFOND_GROUPE:200}
+
+    # Destinataires traites simultanement.
+    #
+    # Borne, et non un flatMap nu : sans borne, cinq cents resolutions de
+    # coordonnees partiraient d'un coup vers user-service, dont le disjoncteur
+    # s'ouvrirait — et les notifications ordinaires du bus echoueraient avec
+    # elles.
+    concurrence: ${NOTIFICATION_ADMIN_CONCURRENCE:4}
   # ==========================================================
   # Consentement par canal : ce qui s'applique quand la personne n'a RIEN dit
   # ==========================================================
@@ -338,6 +378,46 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+
+      # LA SONDE QUE CONSUL INTERROGE, ET CE QU'ELLE CONTIENT.
+      #
+      # `spring.cloud.consul.discovery.health-check-path` pointe ci-dessous sur
+      # `/actuator/health/readiness`, et non sur `/actuator/health`. Ce groupe
+      # decide donc du TRAFIC : avec `query-passing: true`, une instance dont
+      # ce controle echoue cesse d'etre annoncee a l'equilibreur.
+      #
+      # Ce qui est DEDANS, et pourquoi :
+      #   diskSpace  un disque plein empeche d'ecrire la boite de reception ;
+      #   r2dbc      la base porte la boite de reception, les jetons
+      #              d'appareil et les surcharges de modeles. Sans elle, la
+      #              quasi-totalite de la surface HTTP de ce service repond en
+      #              erreur : il ne doit pas recevoir de trafic.
+      #
+      # Ce qui est DEHORS, et c'est le point important :
+      #   redis      il porte le plafond de depense SMS, le registre des
+      #              sessions WebSocket et les accuses de reception. Sans lui,
+      #              le SMS s'arrete — mais le courriel, le push et la boite de
+      #              reception fonctionnent. Retirer le service du routage
+      #              aggraverait la panne au lieu de la contenir ;
+      #   canauxDeRemise      un canal coupe est le plus souvent un CHOIX (SMS
+      #              desactive en developpement, push sans fichier Firebase).
+      #              La sante d'un canal SORTANT ne doit pas decider du trafic
+      #              ENTRANT ;
+      #   surchargesDeModeles un rechargement arrete n'empeche pas de remettre :
+      #              le fichier versionne sert seul.
+      #   consul, clientConfigServer   ils sont dans `/actuator/health` par
+      #              autoconfiguration, et les mettre dans la sonde serait
+      #              circulaire : un hoquet de Consul rendrait TOUS les
+      #              services DOWN aux yeux de Consul.
+      #
+      # Les quatre exclus restent lisibles sur `/actuator/health`, et les
+      # canaux sont de plus publies en jauge — `notification_canal_actif` —
+      # donc visibles dans Grafana et interrogeables par une alerte. Un
+      # indicateur de sante sert l'exploitant et Consul ; une metrique sert le
+      # panneau et l'alerte. Les deux sont necessaires et ne se remplacent pas.
+      group:
+        readiness:
+          include: diskSpace,r2dbc
   metrics:
     tags:
       application: notification-service
