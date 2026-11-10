@@ -53,7 +53,16 @@ spring:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_SECURITY:security_service_db}
     user: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD}
-    baseline-on-migrate: true
+    # FAUX : plus rien n'a a etre adopte.
+    #
+    # A `true` sans `baseline-version`, Flyway qui trouve un schema non vide
+    # sans historique inscrit « version 1 deja passee » et SAUTE V1. Mesure le
+    # 2026-11-10 sur user_service_db : six tables, aucun historique — V1 aurait
+    # ete declaree appliquee, et deux de ses quatre tables n'auraient jamais
+    # existe. Le service aurait demarre sans se plaindre.
+    #
+    # A `false`, Flyway refuse un schema non vide sans historique, et le dit.
+    baseline-on-migrate: false
     locations: classpath:db/migration
 
   # Redis : la sortie du service, et non un cache.

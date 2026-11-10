@@ -134,6 +134,51 @@
 			<artifactId>postgresql</artifactId>
 			<scope>runtime</scope>
 		</dependency>
+
+		<!--
+			Flyway et son AUTOCONFIGURATION.
+
+			Le pilote JDBC ci-dessus etait declare « pour Flyway », et Flyway
+			n'etait pas la. Ce module embarque pourtant deux fichiers de migration
+			dans src/main/resources/db/migration : aucun n'a jamais pu s'appliquer
+			depuis ce jar.
+
+			CONSTAT, mesure le 2026-11-10 sur l'environnement de developpement :
+			user_service_db porte six tables et AUCUNE table
+			flyway_schema_history. Et ce ne sont pas les siennes : `users`
+			correspond bien a V1, mais les cinq autres — tenants,
+			tenant_api_keys, tenant_allowed_domains, tenant_usage_logs,
+			subscription_plans — appartiennent a un service qui ne fait pas
+			partie du projet. user_profiles et audit_logs, elles, n'existent
+			pas. Voir baseline-version dans config-repo : sans elle, Flyway
+			aurait saute V1 et ces deux tables n'auraient jamais ete creees.
+
+			LES DEUX ARTEFACTS SONT NECESSAIRES, et c'est le piege. Spring Boot 4 a
+			eclate ses autoconfigurations en modules distincts :
+			FlywayAutoConfiguration vit desormais dans spring-boot-flyway.
+			flyway-core seul met la BIBLIOTHEQUE sur le chemin de classe, et
+			personne ne lit spring.flyway.* — sans erreur, sans avertissement, sans
+			ligne de journal.
+
+			GARDE-FOU. FlywayAutoconfigureePartoutTest, dans platform-commons,
+			refuse desormais un module qui porte des migrations sans ces trois
+			declarations. Sa version precedente ne voyait PAS ce module : elle
+			partait de flyway-core pour exiger spring-boot-flyway, et ici ni l'un ni
+			l'autre n'etait declare. Une implication dont la premisse est fausse est
+			vraie, donc verte.
+		-->
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-core</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-flyway</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>io.micrometer</groupId>
 			<artifactId>micrometer-registry-prometheus</artifactId>

@@ -27,20 +27,65 @@ spring:
     redis:
       database: 3  # Base dédiée (0=gateway, 1=auth, 2=user, 3=interface)
 
+  # Consul : chemin de controle de sante.
+  #
+  # CE BLOC ETAIT SOUS `gateway:`, DONC INERTE.
+  #
+  # Il vivait sous `gateway.cloud.consul.discovery`, et Spring ne lit que
+  # `spring.cloud.consul.discovery`. Aucune erreur, aucun avertissement : une
+  # clef inconnue est ignoree en silence. interface-service s'enregistrait donc
+  # avec le defaut du cadre, `/actuator/health`.
+  #
+  # La difference n'est pas cosmetique. `/actuator/health` agrege TOUS les
+  # indicateurs — Redis, la base, le serveur de configuration. Une panne d'une
+  # dependance rend le service DOWN aux yeux de Consul, qui le retire de la
+  # decouverte : la passerelle ne le trouve plus, alors que le processus est
+  # vivant et sert tres bien les requetes qui ne touchent pas cette dependance.
+  # `liveness` ne repond que « ce processus est vivant ».
+  #
+  # Cinq services declarent deja cette clef au bon endroit, dont setting,
+  # quotas et security avec la meme valeur.
+  cloud:
+    consul:
+      discovery:
+        health-check-path: /actuator/health/liveness
+        health-check-critical-timeout: 30s
+
+  # Flyway : les neuf migrations de ce module n'etaient lues par personne.
+  #
+  # Ce bloc n'existait pas, et le POM ne declarait aucun artefact Flyway.
+  # Resultat mesure le 2026-11-10 : interface_db est restee a la version 8,
+  # datee du 2026-04-17. V9 attendait depuis — celle qui retire
+  # `users.refresh_token`, la colonne des jetons en clair, pendant que le code
+  # ne lit plus que `refresh_token_hash`.
+  #
+  # `url` est en JDBC et non en R2DBC : Flyway n'a pas d'API reactive. C'est la
+  # seule connexion bloquante du service, ouverte au demarrage puis fermee —
+  # elle ne touche pas le chemin des requetes.
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_INTERFACE:interface_db}
+    user: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    locations: classpath:db/migration
+    # FAUX : plus rien n'a a etre adopte.
+    #
+    # A `true` sans `baseline-version`, Flyway qui trouve un schema non vide
+    # sans historique inscrit « version 1 deja passee » et SAUTE V1. Mesure le
+    # 2026-11-10 sur user_service_db : six tables, aucun historique — V1 aurait
+    # ete declaree appliquee, et deux de ses quatre tables n'auraient jamais
+    # existe. Le service aurait demarre sans se plaindre.
+    #
+    # A `false`, Flyway refuse un schema non vide sans historique, et le dit.
+    baseline-on-migrate: false
+
 # ==========================================
 # GATEWAY SECURITY
 # ==========================================
 gateway:
   secret:
     key: ${GATEWAY_SECRET_KEY}
-  
-  # Configuration Consul spécifique
-  cloud:
-    consul:
-      discovery:
-        health-check-path: /actuator/health/liveness
-        health-check-critical-timeout: 30s
-# Configuration OpenAPI/Swagger spécifique
+  # Configuration OpenAPI/Swagger spécifique
 springdoc:
   api-docs:
     path: /v3/api-docs

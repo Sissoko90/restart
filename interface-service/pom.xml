@@ -81,6 +81,50 @@
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
 		</dependency>
+
+		<!--
+			Flyway et son AUTOCONFIGURATION.
+
+			Le pilote JDBC ci-dessus etait declare « pour Flyway », et Flyway
+			n'etait pas la. Ce module embarque pourtant neuf fichiers de migration
+			dans src/main/resources/db/migration : aucun n'a jamais pu s'appliquer
+			depuis ce jar.
+
+			CONSTAT, mesure le 2026-11-10 sur l'environnement de developpement :
+			interface_db est restee a la version 8, datee du 2026-04-17.
+			Flyway y a donc tourne une fois, sous un arrangement anterieur,
+			puis plus jamais. V9 attend depuis : la colonne
+			users.refresh_token, celle qui portait les jetons EN CLAIR, est
+			toujours dans le schema alors que le code ne lit plus que
+			refresh_token_hash. Elle ne contient aucune valeur — verifie —
+			donc rien n'a fui ; c'est une structure morte, pas une fuite.
+
+			LES DEUX ARTEFACTS SONT NECESSAIRES, et c'est le piege. Spring Boot 4 a
+			eclate ses autoconfigurations en modules distincts :
+			FlywayAutoConfiguration vit desormais dans spring-boot-flyway.
+			flyway-core seul met la BIBLIOTHEQUE sur le chemin de classe, et
+			personne ne lit spring.flyway.* — sans erreur, sans avertissement, sans
+			ligne de journal.
+
+			GARDE-FOU. FlywayAutoconfigureePartoutTest, dans platform-commons,
+			refuse desormais un module qui porte des migrations sans ces trois
+			declarations. Sa version precedente ne voyait PAS ce module : elle
+			partait de flyway-core pour exiger spring-boot-flyway, et ici ni l'un ni
+			l'autre n'etait declare. Une implication dont la premisse est fausse est
+			vraie, donc verte.
+		-->
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-core</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-flyway</artifactId>
+		</dependency>
 		
 		<!-- JWT -->
 		<dependency>
