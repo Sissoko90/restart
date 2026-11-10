@@ -113,23 +113,44 @@ spring:
   # Le port 1025 par defaut est celui de MailHog / Mailpit : en developpement, le
   # courriel est capture et non remis. C'est voulu — un envoi reel depuis un
   # poste de developpement atteindrait de vraies adresses.
+  # Le compte SMTP ordinaire.
+  #
+  # LES NOMS SONT CEUX QUI PORTENT DEJA LES VALEURS, et c'est tout l'objet de
+  # ce bloc.
+  #
+  # Il lisait SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD. Aucune de ces
+  # quatre variables n'existe dans .env — constate le 2026-11-10 — donc ce
+  # service retombait sur `localhost:1025` sans authentification, et le canal
+  # COURRIEL se declarait INACTIF faute de `notification.email.from`.
+  #
+  # Les valeurs existaient pourtant, sous EMAIL_HOST, EMAIL_PORT,
+  # EMAIL_USERNAME, EMAIL_PASSWORD : ce sont celles qu'interface-service lie a
+  # `spring.mail.*` dans ses propres ressources, et par lesquelles ses
+  # courriels partaient reellement.
+  #
+  # La plateforme portait donc QUATRE familles de noms pour une meme chose —
+  # EMAIL_*, SMTP_*, ADMIN_MAIL_*, CRITICAL_MAIL_* — et le lecteur utilisait
+  # celle qui etait vide. Ajouter des valeurs sous SMTP_* aurait fait une
+  # cinquieme copie ; aligner les noms en retire une.
   mail:
-    host: ${SMTP_HOST:localhost}
-    port: ${SMTP_PORT:1025}
-    username: ${SMTP_USERNAME:}
-    password: ${SMTP_PASSWORD:}
-    properties:
-      mail:
-        smtp:
-          auth: ${SMTP_AUTH:false}
-          starttls:
-            enable: ${SMTP_STARTTLS:false}
-          # Un envoi SMTP qui n'expire jamais retient un thread de
-          # boundedElastic indefiniment. Trois delais, parce que SMTP a trois
-          # phases et qu'un seul d'entre eux ne couvre pas les deux autres.
-          connectiontimeout: 5000
-          timeout: 5000
-          writetimeout: 5000
+    host: ${EMAIL_HOST:localhost}
+    port: ${EMAIL_PORT:1025}
+    username: ${EMAIL_USERNAME:}
+    password: ${EMAIL_PASSWORD:}
+    # LE BLOC `properties` A ETE RETIRE, parce qu'il etait INERTE.
+    #
+    # Il declarait mail.smtp.auth, starttls et les trois delais. Aucun n'etait
+    # lu : ConfigurationCourriel construit les deux JavaMailSender A LA MAIN —
+    # obligatoire, puisque MailSenderAutoConfiguration recule des qu'un
+    # JavaMailSender existe — et pose ces proprietes en dur dans
+    # `proprietesSmtp()`.
+    #
+    # Les laisser aurait donne a croire qu'on peut changer le comportement SMTP
+    # depuis la configuration. C'est faux, et c'est exactement le genre de clef
+    # qui rassure sans rien faire : ce depot en a deja trouve plusieurs.
+    #
+    # host, port, username et password ci-dessus, eux, SONT lus : les quatre
+    # @Value de ConfigurationCourriel pointent sur `spring.mail.*`.
 
   # Autorite JWT = interface-service
   security:
@@ -287,10 +308,15 @@ notification:
     # — et `@Value("${...port:587}")` sur un int leve NumberFormatException au
     # demarrage. Ce depot a deja paye cette regle sur un prefixe de cle Redis.
     critique:
-      host: ${NOTIFICATION_EMAIL_CRITIQUE_HOST:${SMTP_HOST:localhost}}
-      port: ${NOTIFICATION_EMAIL_CRITIQUE_PORT:${SMTP_PORT:1025}}
-      username: ${NOTIFICATION_EMAIL_CRITIQUE_USERNAME:${SMTP_USERNAME:}}
-      password: ${NOTIFICATION_EMAIL_CRITIQUE_PASSWORD:${SMTP_PASSWORD:}}
+      # Le repli passe par CRITICAL_MAIL_*, qui EXISTENT et designent
+      # exactement ce compte : interface-service les lit deja sous
+      # `admin.critical.mail.*` pour ses alertes d'exploitation. Puis par
+      # EMAIL_* — le compte ordinaire — pour que l'absence de second compte
+      # n'arrete pas les alertes de securite.
+      host: ${NOTIFICATION_EMAIL_CRITIQUE_HOST:${CRITICAL_MAIL_HOST:${EMAIL_HOST:localhost}}}
+      port: ${NOTIFICATION_EMAIL_CRITIQUE_PORT:${CRITICAL_MAIL_PORT:${EMAIL_PORT:1025}}}
+      username: ${NOTIFICATION_EMAIL_CRITIQUE_USERNAME:${CRITICAL_MAIL_USERNAME:${EMAIL_USERNAME:}}}
+      password: ${NOTIFICATION_EMAIL_CRITIQUE_PASSWORD:${CRITICAL_MAIL_PASSWORD:${EMAIL_PASSWORD:}}}
 
     # VIDE par defaut, et non une adresse inventee.
     #
@@ -302,8 +328,14 @@ notification:
     #
     # Le demarrage n'est PAS bloque, conformement a la politique du projet : le
     # service refuse d'envoyer et le dit, plutot que de ne pas demarrer.
-    from: ${NOTIFICATION_EMAIL_FROM:}
-    reply-to: ${NOTIFICATION_EMAIL_REPLY_TO:}
+    # L'adresse d'expedition, SANS laquelle le canal se declare INACTIF.
+    #
+    # Le repli sur EMAIL_FROM est ce qui rend le canal actif sur cet
+    # environnement : NOTIFICATION_EMAIL_FROM n'etait pas declaree, et le canal
+    # refusait donc toute remise — visible desormais dans la jauge
+    # notification_canal_actif{canal="COURRIEL"}.
+    from: ${NOTIFICATION_EMAIL_FROM:${EMAIL_FROM:}}
+    reply-to: ${NOTIFICATION_EMAIL_REPLY_TO:${EMAIL_FROM:}}
 
   # Les deux canaux ci-dessous ne sont PAS implementes a ce stade, et la
   # configuration le dit au lieu de le laisser croire. `provider: mock` sans

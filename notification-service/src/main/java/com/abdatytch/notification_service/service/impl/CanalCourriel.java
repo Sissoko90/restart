@@ -187,6 +187,72 @@ public class CanalCourriel implements CanalDeRemise {
     }
 
     /**
+     * Une tentative d'envoi, protegee par le disjoncteur nomme.
+     *
+     * <p>L'expediteur est un PARAMETRE et non une deduction : c'est ce qui
+     * permet de rejouer le meme message par un autre compte.
+     */
+    private Mono<Resultat> tenter(MessageARemettre message, JavaMailSender expediteurChoisi,
+                                  String nomDuDisjoncteur) {
+        return disjoncteur.proteger(nomDuDisjoncteur, Mono.fromCallable(() -> {
+                    // TOUT est construit ici, dans le scope boundedElastic.
+                    if (message.corpsHtml() == null) {
+                        envoyerTexteSeul(message, expediteurChoisi);
+                    } else {
+                        envoyerAvecVarianteHtml(message, expediteurChoisi);
+                    }
+                    return Resultat.remis();
+                })
+                .subscribeOn(Schedulers.boundedElastic()));
+    }
+
+    /**
+     * Une CRITIQUE dont le compte dedie echoue repart par le compte ordinaire.
+     *
+     * <h3>Le defaut que cela ferme, mesure</h3>
+     *
+     * La configuration annonce qu'un second compte « ameliore la remise, il
+     * n'en est pas la condition ». Son repli ne couvrait pourtant que des
+     * valeurs ABSENTES, pas des valeurs FAUSSES.
+     *
+     * <p>Constat du 2026-11-10 sur l'environnement de developpement : le compte
+     * ordinaire s'authentifie, le compte critique est refuse par le serveur —
+     * identifiants devenus invalides. Les alertes de securite et les codes de
+     * verification, qui sont precisement ce qui passe en CRITIQUE, etaient donc
+     * les SEULS messages perdus. Exactement l'inverse de ce que le second
+     * compte cherche a obtenir.
+     *
+     * <h3>Pourquoi le repli ne vaut QUE pour les critiques</h3>
+     *
+     * Un message ordinaire dont l'envoi echoue est deja reessaye par la reprise,
+     * et rien ne justifie de le faire partir d'un compte dont la reputation est
+     * reservee a ce qui doit arriver. Une CRITIQUE, elle, n'a pas de seconde
+     * chance utile : un code de verification reessaye dans trois minutes
+     * n'interesse plus personne.
+     *
+     * <h3>Une seule tentative de repli</h3>
+     *
+     * Si le compte ordinaire echoue aussi, l'erreur remonte et devient un
+     * ECHOUE normal. Pas de troisieme essai : les deux comptes injoignables
+     * signifient que c'est le serveur ou le reseau, et insister occuperait des
+     * threads de boundedElastic — ceux qui portent aussi les OTP.
+     *
+     * <p>Le disjoncteur du compte ordinaire s'applique a cette seconde
+     * tentative : un compte critique durablement casse ne doit pas faire
+     * ouvrir le disjoncteur ordinaire par ricochet au-dela de son propre seuil.
+     */
+    private Mono<Resultat> replierSurLOrdinaire(MessageARemettre message,
+                                                Throwable premierEchec) {
+        if (!estCritique(message)) {
+            return Mono.error(premierEchec);
+        }
+        log.warn("Compte critique indisponible ({}) : la notification CRITIQUE "
+                        + "repart par le compte ordinaire",
+                premierEchec.getClass().getSimpleName());
+        return tenter(message, expediteur, DISJONCTEUR_ORDINAIRE);
+    }
+
+    /**
      * Un courriel de texte brut.
      *
      * <p>{@code SimpleMailMessage} suffit et reste le chemin de la grande
@@ -194,7 +260,7 @@ public class CanalCourriel implements CanalDeRemise {
      * {@code MimeMessageHelper} : moins de pieces a assembler sur le chemin le
      * plus emprunte.
      */
-    private void envoyerTexteSeul(MessageARemettre message) {
+    private void envoyerTexteSeul(MessageARemettre message, JavaMailSender expediteurChoisi) {
         SimpleMailMessage courriel = new SimpleMailMessage();
         courriel.setFrom(adresseExpediteur);
         if (adresseReponse != null && !adresseReponse.isBlank()) {
@@ -203,7 +269,7 @@ public class CanalCourriel implements CanalDeRemise {
         courriel.setTo(message.coordonnee());
         courriel.setSubject(message.sujet());
         courriel.setText(message.corps());
-        expediteurPour(message).send(courriel);
+        expediteurChoisi.send(courriel);
     }
 
     /**
@@ -229,8 +295,9 @@ public class CanalCourriel implements CanalDeRemise {
      * passer a {@code false} ferait echouer {@code addInline} plus bas, sur une
      * exception qui ne nomme pas la cause.
      */
-    private void envoyerAvecVarianteHtml(MessageARemettre message) throws Exception {
-        var mime = expediteurPour(message).createMimeMessage();
+    private void envoyerAvecVarianteHtml(MessageARemettre message,
+                                         JavaMailSender expediteurChoisi) throws Exception {
+        var mime = expediteurChoisi.createMimeMessage();
         var assistant = new MimeMessageHelper(mime, true, "UTF-8");
 
         assistant.setFrom(adresseExpediteur);
@@ -242,7 +309,7 @@ public class CanalCourriel implements CanalDeRemise {
         assistant.setText(message.corps(), message.corpsHtml());
 
         integrerLeLogo(assistant, message.corpsHtml());
-        expediteurPour(message).send(mime);
+        expediteurChoisi.send(mime);
     }
 
     /**
@@ -329,16 +396,12 @@ public class CanalCourriel implements CanalDeRemise {
             return Mono.just(Resultat.refuse("aucune adresse connue"));
         }
 
-        return disjoncteur.proteger(disjoncteurPour(message), Mono.fromCallable(() -> {
-                    // TOUT est construit ici, dans le scope boundedElastic.
-                    if (message.corpsHtml() == null) {
-                        envoyerTexteSeul(message);
-                    } else {
-                        envoyerAvecVarianteHtml(message);
-                    }
-                    return Resultat.remis();
-                })
-                .subscribeOn(Schedulers.boundedElastic()))
+        return tenter(message, expediteurPour(message), disjoncteurPour(message))
+                // LE REPLI DES CRITIQUES SUR LE COMPTE ORDINAIRE.
+                //
+                // Pose avant les deux rattrapages ci-dessous : il doit voir
+                // l'echec AVANT qu'il ne soit converti en Resultat.
+                .onErrorResume(premierEchec -> replierSurLOrdinaire(message, premierEchec))
                 // Deux rattrapages, et la distinction decide d'un reessai.
                 //
                 // MailException couvre les refus du serveur et les pannes

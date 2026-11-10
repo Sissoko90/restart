@@ -2,7 +2,26 @@ spring:
   application:
     name: config-service
   profiles:
-    active: dev,native
+    # `include` et NON `active`, et c'est la difference entre demarrer et ne pas
+    # demarrer.
+    #
+    # `active: dev,native` est ECRASE par la variable d'environnement
+    # SPRING_PROFILES_ACTIVE. Or .env de ce depot pose
+    # SPRING_PROFILES_ACTIVE=dev — pour les onze autres services, qui en ont
+    # besoin — et config-service perdait alors son profil `native`.
+    #
+    # Consequence mesuree le 2026-11-10 : refus de demarrage sur
+    # « Invalid config server configuration — you need to set a Git URI ». Sans
+    # le profil `native`, le serveur cherche un depot Git au lieu de servir
+    # config-repo depuis le disque. Et le message ne nomme PAS le profil, donc
+    # il envoie chercher du cote d'une configuration Git qui n'existe pas.
+    #
+    # `include` est ADDITIF : il ajoute `native` a ce qui est deja actif, quelle
+    # que soit la valeur de SPRING_PROFILES_ACTIVE. Le profil `dev` vient
+    # desormais de l'environnement comme pour tous les autres services, et
+    # `native` est une propriete de CE service — ce qu'il est reellement, et non
+    # un choix d'environnement.
+    include: native
   main:
     allow-bean-definition-overriding: true
   cloud:

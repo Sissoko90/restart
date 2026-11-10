@@ -108,6 +108,90 @@ class CanalCourrielTest {
     }
 
     @Nested
+    @DisplayName("Le repli des CRITIQUES quand le compte dedie echoue")
+    class RepliDesCritiques {
+
+        /**
+         * Le defaut que ce repli ferme, et il a ete MESURE.
+         *
+         * <p>La configuration annonce qu'un second compte « ameliore la remise,
+         * il n'en est pas la condition ». Son repli ne couvrait pourtant que
+         * des valeurs ABSENTES, pas des valeurs FAUSSES.
+         *
+         * <p>Constat du 2026-11-10 : sur l'environnement de developpement, le
+         * compte ordinaire s'authentifie et le compte critique est refuse par le
+         * serveur. Les alertes de securite et les codes de verification —
+         * precisement ce qui passe en CRITIQUE — etaient donc les SEULS
+         * messages perdus. L'inverse exact de ce que le second compte cherche.
+         */
+        @Test
+        @DisplayName("un echec du compte critique fait repartir le message par l'ordinaire")
+        void repliSurLOrdinaire() {
+            org.mockito.Mockito.doThrow(new org.springframework.mail.MailSendException("refus"))
+                    .when(critique).send(org.mockito.ArgumentMatchers.any(SimpleMailMessage.class));
+
+            var resultat = canal(EXPEDITEUR)
+                    .remettre(message(DemandeDeNotification.Urgence.CRITIQUE))
+                    .block();
+
+            assertThat(resultat.etat())
+                    .withFailMessage("""
+                            La notification CRITIQUE a ete perdue alors que le \
+                            compte ordinaire fonctionne.
+
+                            Un code de verification ou une alerte de securite \
+                            n'a pas de seconde chance utile : reessaye dans \
+                            trois minutes, il n'interesse plus personne.""")
+                    .isEqualTo(CompteRenduDeRemise.Etat.REMIS);
+
+            org.mockito.Mockito.verify(critique)
+                    .send(org.mockito.ArgumentMatchers.any(SimpleMailMessage.class));
+            org.mockito.Mockito.verify(ordinaire)
+                    .send(org.mockito.ArgumentMatchers.any(SimpleMailMessage.class));
+        }
+
+        @Test
+        @DisplayName("un message ORDINAIRE qui echoue ne repart pas par un autre compte")
+        void pasDeRepliPourLOrdinaire() {
+            org.mockito.Mockito.doThrow(new org.springframework.mail.MailSendException("refus"))
+                    .when(ordinaire).send(org.mockito.ArgumentMatchers.any(SimpleMailMessage.class));
+
+            var resultat = canal(EXPEDITEUR)
+                    .remettre(message(DemandeDeNotification.Urgence.NORMALE))
+                    .block();
+
+            assertThat(resultat.etat()).isEqualTo(CompteRenduDeRemise.Etat.ECHOUE);
+            // Le compte critique n'est JAMAIS employe pour un message ordinaire :
+            // sa reputation d'expedition est reservee a ce qui doit arriver, et
+            // la reprise reessaiera celui-ci.
+            org.mockito.Mockito.verifyNoInteractions(critique);
+        }
+
+        @Test
+        @DisplayName("les deux comptes en echec rendent ECHOUE, sans troisieme essai")
+        void lesDeuxEnEchec() {
+            org.mockito.Mockito.doThrow(new org.springframework.mail.MailSendException("refus"))
+                    .when(critique).send(org.mockito.ArgumentMatchers.any(SimpleMailMessage.class));
+            org.mockito.Mockito.doThrow(new org.springframework.mail.MailSendException("refus"))
+                    .when(ordinaire).send(org.mockito.ArgumentMatchers.any(SimpleMailMessage.class));
+
+            var resultat = canal(EXPEDITEUR)
+                    .remettre(message(DemandeDeNotification.Urgence.CRITIQUE))
+                    .block();
+
+            assertThat(resultat.etat()).isEqualTo(CompteRenduDeRemise.Etat.ECHOUE);
+            // Une seule tentative par compte : deux comptes injoignables
+            // signifient que c'est le serveur ou le reseau, et insister
+            // occuperait des threads de boundedElastic — ceux qui portent aussi
+            // les OTP.
+            org.mockito.Mockito.verify(critique, org.mockito.Mockito.times(1))
+                    .send(org.mockito.ArgumentMatchers.any(SimpleMailMessage.class));
+            org.mockito.Mockito.verify(ordinaire, org.mockito.Mockito.times(1))
+                    .send(org.mockito.ArgumentMatchers.any(SimpleMailMessage.class));
+        }
+    }
+
+    @Nested
     @DisplayName("Les refus, avant tout envoi")
     class Refus {
 

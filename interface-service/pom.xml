@@ -260,11 +260,19 @@
 			<artifactId>micrometer-registry-prometheus</artifactId>
 		</dependency>
 		
-		<!-- Spring Boot Starter Mail -->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-mail</artifactId>
-		</dependency>
+		<!--
+			spring-boot-starter-mail A ETE RETIRE.
+
+			Ce service n'envoie plus aucun courriel : ses quatre methodes d'envoi
+			deleguent a notification-service par le client partage de
+			platform-commons. AdminEmailConfig et ses trois JavaMailSender ont ete
+			supprimes, et avec eux la seule chose qui faisait de ce module un
+			expediteur.
+
+			Le meme retrait a ete fait dans auth-service, et pour la meme raison :
+			un seul service sait parler SMTP, donc un seul endroit ou une
+			configuration d'expedition peut etre fausse.
+		-->
 		
 		<!-- Auth0 JWT Library -->
 		<dependency>

@@ -1,4 +1,15 @@
 spring:
+  # `spring.mail` A ETE RETIRE de ce module.
+  #
+  # Ce service n'envoie plus aucun courriel : ses quatre methodes d'envoi
+  # delegent a notification-service par le client partage de
+  # platform-commons. AdminEmailConfig et ses trois JavaMailSender ont ete
+  # supprimes avec ce bloc.
+  #
+  # Les variables EMAIL_HOST, EMAIL_PORT, EMAIL_USERNAME et EMAIL_PASSWORD
+  # ne disparaissent pas : notification-service les lit desormais sous
+  # `spring.mail.*` dans config-repo. Un seul service sait parler SMTP.
+
   application:
     name: interface-service
   config:
@@ -15,22 +26,6 @@ spring:
       profile: dev
       fail-fast: false
   # Configuration SMTP
-  mail:
-    host: ${EMAIL_HOST:smtp.gmail.com}
-    port: ${EMAIL_PORT:587}
-    username: ${EMAIL_USERNAME:}
-    password: ${EMAIL_PASSWORD}
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
-            required: true
-          connectiontimeout: 5000
-          timeout: 3000
-          writetimeout: 5000
-  # Configuration Redis
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -84,17 +79,16 @@ logging:
     com.abdatytch.interface_service: DEBUG
 
 # Configuration Email
-app:
-  email:
-    enabled: ${EMAIL_ENABLED:true}
-    # Aucune adresse de repli : le domaine abdatech.com n'est plus porte par ce
-    # projet, et une adresse d'apparence valide ferait partir des courriels que
-    # le serveur distant refuse sans que rien ne designe la cause. Vide, l'echec
-    # survient a l'envoi, avec un message explicite. auth-service emploie deja
-    # ${EMAIL_FROM} sans defaut.
-    from: ${EMAIL_FROM:}
-    verification-url: http://localhost:3000/verify-email
-    reset-password-url: http://localhost:3000/reset-password
+# `app.email` A ETE RETIRE : quatre clefs, aucun lecteur.
+#
+# `from` etait lu par EmailServiceImpl, qui ne compose plus de courriel.
+# `enabled` ne l'etait par personne. Et `verification-url` /
+# `reset-password-url` portaient deux adresses de front-end ECRITES EN DUR,
+# sans variable d'environnement et sans lecteur — donc impossibles a changer
+# par configuration, et sans effet de toute façon.
+#
+# L'adresse d'expedition vit desormais une seule fois, dans
+# `notification.email.from` de config-repo, qui retombe sur EMAIL_FROM.
 
 # Configuration JWT
 # NOTE: interface-service est l'AUTORITÉ de signature de la plateforme.
@@ -192,27 +186,6 @@ management:
         enabled: true
 
 # Configuration pour sécuriser les endpoints admin
-admin:
-  secret:
-    key: ${ADMIN_SECRET_KEY:}
-  # Configuration SMTP pour les alertes admin
-  mail:
-    enabled: ${ADMIN_MAIL_ENABLED:true}
-    host: ${ADMIN_MAIL_HOST:smtp.gmail.com}
-    port: ${ADMIN_MAIL_PORT:587}
-    username: ${ADMIN_MAIL_USERNAME:}
-    password: ${ADMIN_MAIL_PASSWORD:}
-    from: ${ADMIN_MAIL_FROM:}
-  # Configuration SMTP pour les alertes critiques (dernière couche)
-  critical:
-    mail:
-      enabled: ${CRITICAL_MAIL_ENABLED:true}
-      host: ${CRITICAL_MAIL_HOST:smtp.gmail.com}
-      port: ${CRITICAL_MAIL_PORT:587}
-      username: ${CRITICAL_MAIL_USERNAME:}
-      password: ${CRITICAL_MAIL_PASSWORD:}
-      from: ${CRITICAL_MAIL_FROM:}
-
 # Configuration pour la géolocalisation MaxMind
 geolocation:
   enabled: ${GEOLOCATION_ENABLED:true}
@@ -228,3 +201,13 @@ recovery:
     public-key: ${RECOVERY_RSA_PUBLIC_KEY:}
     private-key: ${RECOVERY_RSA_PRIVATE_KEY:}
 
+
+# `admin.mail` et `admin.critical.mail` ONT ETE RETIRES.
+#
+# Six clefs chacun, et AUCUN lecteur : AdminEmailConfig les lisait, et il a
+# ete supprime avec les trois JavaMailSender de ce service. Les variables
+# ADMIN_MAIL_* et CRITICAL_MAIL_* restent dans .env — notification-service
+# lit CRITICAL_MAIL_* pour son compte d'expedition dedie.
+#
+# Une clef de configuration que personne ne lit est pire qu'une clef absente :
+# elle donne a croire qu'un reglage s'applique.
