@@ -53,6 +53,7 @@ suivants sont **déjà identifiés** et documentés dans
 | Absence de limitation par compte à la connexion | Le plafond est par IP ; une attaque distribuée sur un seul compte passe |
 | `BiometricAuthServiceImpl.computeExpectedSignature` | Substitut, pas une vérification WebAuthn réelle |
 | Les deux comptes administrateur partagent les mêmes identifiants par défaut | À séparer avant production — voir [docs/COMPLIANCE.md §1bis](docs/COMPLIANCE.md) |
+| Les liens « c'est moi » / « ce n'est pas moi » de l'alerte de connexion administrateur sont des `GET` | Un scanner de messagerie qui préfiltre les liens peut déclencher le blocage sans qu'on ait cliqué. Demande une page de confirmation côté frontend, qui n'existe pas encore |
 
 Les signaler à nouveau est inutile ; les **approfondir** est utile.
 
@@ -70,6 +71,15 @@ Les signaler à nouveau est inutile ; les **approfondir** est utile.
 | 20 secrets avec une valeur par défaut dans la configuration, dont `GATEWAY_SECRET_KEY` — **avec deux valeurs différentes selon les services** | Élevée | Tous les défauts retirés : l'absence fait désormais échouer le démarrage |
 | Fragments de secrets journalisés (4 caractères du mot de passe admin, 8 du secret TOTP) et envoyés vers Loki, où ils sont conservés | Modérée | Retirés |
 | `GET /admin/info` exposait 8 caractères du secret TOTP | Modérée | Seul l'état du second facteur est exposé |
+
+## Corrigé le 2026-11-11
+
+| Faille | Gravité | Correction |
+|---|---|---|
+| **Injection HTML dans l'alerte de sécurité administrateur.** `AdminController` insérait le `User-Agent`, l'adresse et les champs de géolocalisation dans le corps HTML du courriel par `String.format`, sans échappement. Le `User-Agent` est posé par la personne que l'alerte dénonce : elle pouvait écrire un lien ou un faux bouton dans le message qui la signale, et l'exploitant n'avait aucun moyen de l'en distinguer | Élevée | Les textes vivent dans notification-service ; l'émetteur ne fournit que des variables, échappées par le rendu. `AucunCorpsHtmlEnJavaTest` refuse le retour du balisage dans du Java |
+| Trois alertes partaient en `text/plain` **avec leur balisage HTML visible** : le corps était composé en Java et transporté par un modèle sans variante `corps-html` | Faible | Trois modèles réels, dont deux avec variante HTML |
+| `AdminController` lisait `@Value("${admin.mail.from}")`, clef retirée de la configuration et **sans valeur par défaut** : tout démarrage neuf échouait sur un marqueur non résolu. Le défaut était masqué en local par une variable morte restée dans `.env`, Spring résolvant aussi contre l'environnement par liaison souple | Modérée | Clef remplacée par `admin.default.email`, qui est ce que le champ désignait. `ValeursInjecteesResolublesTest` refuse toute clef injectée sans source déclarée, et ne lit jamais l'environnement de celui qui l'exécute |
+| Sept endpoints `/internal/**` étaient publiés dans les collections Postman avec l'URL de la passerelle, qui ne les route pas. Outre les 404, cela invitait à router `/internal` — ce qui aurait détruit l'isolement qui fait leur sécurité | Faible | Les requêtes internes pointent le port du service et portent `X-Internal-Secret` |
 
 ## Contrôles automatiques
 

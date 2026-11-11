@@ -47,44 +47,72 @@ SECURITY_GATEWAY = (RACINE / "gateway-service/src/main/java/com/abdatytch/"
 ORDRE_DES_SERVICES = [
     "auth-service", "interface-service", "user-service", "media-service",
     "quotas-service", "setting-service", "security-service",
+    # notification-service manquait, et ses 17 endpoints n'ont donc JAMAIS
+    # figure dans cette reference : boite de reception, enregistrement
+    # d'appareil pour le push, administration des modeles et des envois.
+    # Le module n'est plus un squelette depuis longtemps ; cette liste, si.
+    "notification-service",
 ]
 
 
-ROUTES_YAML = RACINE / "config-repo/dev/gateway-service-dev.yml"
+# LE SEUL ROUTAGE DE LA PASSERELLE.
+#
+# `gateway-service/pom.xml` ne declare PAS `spring-cloud-starter-gateway` : il
+# n'existe aucun `RoutePredicateHandlerMapping`, donc les routes YAML n'ont
+# jamais rien route. Elles ont ete retirees du fichier de configuration.
+ROUTES_GATEWAY = (RACINE / "gateway-service/src/main/java/com/abdatytch/"
+                  "gateway_service/config/GatewayRoutesConfig.java")
 
 
 def lire_le_routage():
     """Rend ({prefixe: service}, {depuis: vers}) tels que la passerelle les tient.
 
-    Les DEUX mécanismes sont lus. Ce dépôt en porte deux — `CheminCible` plus le
-    `RouterFunction` d'un côté, les routes Spring Cloud Gateway en YAML de
-    l'autre — et n'en lire qu'un marquerait « non routé » des endpoints
-    parfaitement joignables. Une référence qui se trompe coûte plus cher qu'une
-    référence absente : l'intégrateur la croit.
+    CE QUI ETAIT LU, ET POURQUOI C'ETAIT FAUX
+
+    Deux sources etaient consultees, et aucune des deux ne dit ce qui est
+    route :
+
+    1. Les routes `spring.cloud.gateway.routes` en YAML. La docstring affirmait
+       que « ce depot porte DEUX mecanismes de routage ». Il n'en porte qu'un :
+       `gateway-service/pom.xml` ne declare pas `spring-cloud-starter-gateway`,
+       donc aucun `RoutePredicateHandlerMapping` n'existe. Ces routes n'ont
+       jamais rien route, et elles ont depuis ete retirees du fichier.
+    2. `CheminCible.SERVICES_PAR_PREFIXE`. Il ne route rien non plus : il dit
+       vers QUEL service un prefixe appartient, ce qui sert au mode maintenance
+       et a la signature. Un prefixe peut y figurer sans qu'aucune route ne le
+       serve — c'est exactement l'erreur qu'avait faite `ModuleLivrableTest`.
+
+    La reference pouvait donc declarer appelable un chemin que rien ne sert. Et
+    une reference qui se trompe coute plus cher qu'une reference absente :
+    l'integrateur la croit.
+
+    CE QUI EST LU MAINTENANT
+
+    `GatewayRoutesConfig`, le `RouterFunction` qui est le seul routage. Les
+    reecritures restent lues dans `CheminCible`, qui en est bien la source.
     """
     source = CHEMIN_CIBLE.read_text(encoding="utf-8")
-    prefixes = {}
-    for cle, valeur in re.findall(
-            r'SERVICES_PAR_PREFIXE\.put\("([^"]+)",\s*"([^"]+)"\)', source):
-        prefixes[cle] = valeur
     reecritures = dict(re.findall(
         r'REECRITURES\.put\("([^"]+)",\s*"([^"]+)"\)', source))
 
-    # Routes YAML : `uri: lb://<service>` puis `- Path=<motifs>`.
-    #
-    # Elles appliquent StripPrefix=2, donc le chemin interne est le chemin
-    # public prive de /api/v1 — la même convention que CheminCible sans
-    # réécriture. Elles sont ajoutées APRÈS, pour que CheminCible garde la
-    # priorité : c'est l'ordre réel, le RouterFunctionMapping de Spring passant
-    # avant le RoutePredicateHandlerMapping.
-    yaml = ROUTES_YAML.read_text(encoding="utf-8")
-    for service, motifs in re.findall(
-            r"uri:\s*lb://([a-z0-9-]+)\s*\n\s*predicates:\s*\n\s*-\s*Path=([^\n]+)",
-            yaml):
-        for motif in motifs.split(","):
-            prefixe = motif.strip().removesuffix("/**").removesuffix("/*")
-            if prefixe and prefixe not in prefixes:
-                prefixes[prefixe] = service
+    routes = ROUTES_GATEWAY.read_text(encoding="utf-8")
+    prefixes = {}
+
+    # `.nest(path("/api/v1/x/**"), builder -> builder ... "service", ...)`
+    # Le service est nomme dans le premier appel de proxy du bloc.
+    for prefixe, bloc in re.findall(
+            r'\.nest\(path\("([^"]+)"\),(.*?)\n\s*\)', routes, re.S):
+        service = re.search(r'webClient,\s*"([a-z0-9-]+)"', bloc)
+        if service:
+            prefixes[prefixe.removesuffix("/**").removesuffix("/*")] = service.group(1)
+
+    # Les routes a chemin exact, hors `.nest` : `.GET("/x", ... "service" ...)`
+    for chemin, service in re.findall(
+            r'\.(?:GET|POST|PUT|DELETE|PATCH)\("(/[^"]*)",[^\n]*?webClient,\s*"([a-z0-9-]+)"',
+            routes):
+        if chemin != "/**":
+            prefixes.setdefault(chemin, service)
+
     return prefixes, reecritures
 
 
@@ -135,7 +163,13 @@ def chemin_public(interne, service, prefixes, reecritures):
         if cible != service:
             continue
         # Le préfixe public, débarrassé de /api/v1, est-il réécrit ?
-        court = prefixe[len("/api/v1"):]
+        #
+        # SEULEMENT s'il est présent. La découpe était inconditionnelle, et
+        # `/dev/erasure` devenait donc `asure` : la route existait, la
+        # référence la déclarait « non routée ». Même règle que
+        # `CheminCible`, qui ne retire `/api/v1` que s'il y est.
+        court = (prefixe[len("/api/v1"):] if prefixe.startswith("/api/v1")
+                 else prefixe)
         vers = reecritures.get(court, court)
         if interne == vers or interne.startswith(vers + "/"):
             reste = interne[len(vers):]
@@ -255,9 +289,14 @@ def main():
     lignes.append("---")
     lignes.append("")
     lignes.append(f"**{total} endpoints appelables** depuis le frontend. "
-                  f"{internes} endpoints `/internal/**` sont exclus : ils ne "
-                  "sont joignables qu'entre services, derrière la signature HMAC "
-                  "de la passerelle, et un appel direct est refusé.")
+                  f"{internes} endpoints `/internal/**` sont exclus : aucune "
+                  "passerelle ne les route — c'est précisément ce qui les rend "
+                  "injoignables depuis l'extérieur. Un service les appelle en "
+                  "direct sur le port de son pair, avec l'en-tête "
+                  "`X-Internal-Secret`. La phrase précédente affirmait "
+                  "l'inverse — « derrière la signature HMAC de la passerelle, "
+                  "un appel direct est refusé » — et c'était faux dans les deux "
+                  "moitiés.")
     lignes.append("")
 
     SORTIE.parent.mkdir(parents=True, exist_ok=True)

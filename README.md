@@ -157,10 +157,13 @@ y ont été trouvées — est dans [docs/GATEWAY-SECURITY.md](docs/GATEWAY-SECUR
 
 ### Squelettes, hors construction
 
-`geo-service` (8084), `payment-service` (8085) et `notification-service` (8086)
-existent comme répertoires mais **ne sont pas déclarés dans le POM parent** : ils
-ne sont jamais compilés. Les aborder sera du développement neuf, pas de la
-consolidation.
+`geo-service` (8084) et `payment-service` (8085) existent comme répertoires mais
+**ne sont pas déclarés dans le POM parent** : ils ne sont jamais compilés. Les
+aborder sera du développement neuf, pas de la consolidation.
+
+`notification-service` (8086) était dans ce paragraphe, et n'y est plus : il est
+entré dans le réacteur, il est compilé, testé et déployé. Voir
+[docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md).
 
 ### Tableau de bord des modules
 
@@ -264,27 +267,30 @@ mvn -pl gateway-service test           # un seul module
 
 ### État des tests
 
-**2512 tests**, 0 échec. Répartition : auth 1127 · platform-commons 277 ·
-gateway 262 · interface 231 · user 205 · security 145 · media 132 · setting 61 ·
-quotas 59 · config 13.
+**2861 tests**, 0 échec. Répartition : auth 970 · interface 335 ·
+platform-commons 331 · notification 319 · gateway 295 · user 198 · security 145 ·
+media 132 · setting 61 · quotas 59 · config 16.
 
-Plancher de couverture : **21,41 %** des instructions, **13,60 %** des branches.
+Couverture : **52,4 %** des instructions, **46,6 %** des branches. Le plancher
+de non-régression a été relevé à ces valeurs — il était resté à 21,41 % et
+13,60 %, soit trente points sous la mesure réelle : la couverture aurait pu
+tomber de moitié sans que le garde-fou dise quoi que ce soit.
 
-La couverture est basse et [docs/TESTING.md](docs/TESTING.md) ne le dissimule
-pas. Ce qui compte davantage, c'est **où** portent les tests : le contrat JWT,
-les filtres du Gateway, le chiffrement des documents, le contrôle d'accès, la
-persistance. Plusieurs suites écrites ici ont révélé un défaut réel — dont un qui
-rejetait la totalité des jetons légitimes, et un autre qui rendait un module
-entièrement injoignable.
+Ce qui compte davantage que le pourcentage, c'est **où** portent les tests : le
+contrat JWT, les filtres du Gateway, le chiffrement des documents, le contrôle
+d'accès, la persistance. Plusieurs suites écrites ici ont révélé un défaut réel
+— dont un qui rejetait la totalité des jetons légitimes, et un autre qui rendait
+un module entièrement injoignable. [docs/TESTING.md](docs/TESTING.md) détaille
+la répartition, module par module, et ne dissimule pas les retardataires.
 
 Le garde-fou de CI n'exige pas un seuil absolu : il interdit que la couverture
 **baisse**. Un seuil à 80 % sur une base à 21 % serait désactivé en deux jours.
 
 ### Deux références engendrées, jamais écrites à la main
 
-`postman/` (211 requêtes) et [docs/API-FRONTEND.md](docs/API-FRONTEND.md) (203
-endpoints) sont **dérivées** des contrôleurs, de `CheminCible` et des
-`SecurityConfig`. À régénérer après tout ajout d'endpoint :
+`postman/` (221 requêtes) et [docs/API-FRONTEND.md](docs/API-FRONTEND.md) (211
+endpoints) sont **dérivées** des contrôleurs, de `GatewayRoutesConfig`, de
+`CheminCible` et des `SecurityConfig`. À régénérer après tout ajout d'endpoint :
 
 ```bash
 ./scripts/postman/generate.sh
@@ -457,7 +463,7 @@ Chacun a déjà causé un défaut réel.
 | **Court terme** | Unifier les quatre filtres de liste d'adresses divergents |
 | **Court terme** | Portabilité des données (RGPD art. 20) |
 | **Court terme** | Purger les comptes inactifs et la consommation d'API |
-| **Moyen terme** | `geo-service`, `payment-service`, `notification-service` |
+| **Moyen terme** | `geo-service`, `payment-service` |
 | **Moyen terme** | SBOM CycloneDX, signature des artefacts |
 | **Moyen terme** | Remplacer le substitut WebAuthn par une vraie vérification |
 
@@ -476,6 +482,7 @@ Chacun a déjà causé un défaut réel.
 | [docs/JWT-CONTRACT.md](docs/JWT-CONTRACT.md) | Contrat des jetons : claims, audiences, rotation |
 | [docs/NON-BLOCKING.md](docs/NON-BLOCKING.md) | Politique réactive, vérification BlockHound |
 | [docs/QUOTAS.md](docs/QUOTAS.md) · [docs/SETTINGS.md](docs/SETTINGS.md) | Quotas et paramètres |
+| [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md) | Canaux, modèles, surveillance, surface d'administration |
 | [docs/AUTH-SERVICE-R2DBC-MIGRATION.md](docs/AUTH-SERVICE-R2DBC-MIGRATION.md) | Migration JPA vers R2DBC |
 | [postman/README.md](postman/README.md) | Collections et ordre de test |
 | [SECURITY.md](SECURITY.md) | Signalement de failles |

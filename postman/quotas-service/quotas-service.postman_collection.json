@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Restart — quotas-service",
-    "description": "Collection générée depuis le code source (6 endpoints).\n\n**Appels via le Gateway** : `baseUrl` = `http://localhost:8081/api/v1`.\n\nL'appel en direct sur `http://localhost:8089` est refusé : les services exigent la signature HMAC du Gateway, qu'un client ne peut pas produire.\n\nLe jeton est capturé automatiquement après une connexion réussie et réinjecté dans `{{accessToken}}`.",
+    "description": "Collection générée depuis le code source (6 endpoints).\n\n**Appels via le Gateway** : `baseUrl` = `http://localhost:8081/api/v1`.\n\nL'appel en direct sur `http://localhost:8089` est refusé : les services exigent la signature HMAC du Gateway, qu'un client ne peut pas produire.\n\n**Une seule exception, et elle est voulue** : la surface `/internal/**` n'est routée par AUCUNE passerelle — c'est précisément ce qui la rend injoignable depuis l'extérieur. Ses requêtes utilisent donc `directUrl` (`http://localhost:8089`) et l'en-tête `X-Internal-Secret`, jamais un jeton.\n\nLe jeton est capturé automatiquement après une connexion réussie et réinjecté dans `{{accessToken}}`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -485,6 +485,14 @@
     },
     {
       "key": "maintenanceSecret",
+      "value": ""
+    },
+    {
+      "key": "directUrl",
+      "value": "http://localhost:8089"
+    },
+    {
+      "key": "internalSecret",
       "value": ""
     }
   ]

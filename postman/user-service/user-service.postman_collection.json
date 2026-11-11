@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Restart — user-service",
-    "description": "Collection générée depuis le code source (20 endpoints).\n\n**Appels via le Gateway** : `baseUrl` = `http://localhost:8081/api/v1`.\n\nL'appel en direct sur `http://localhost:8083` est refusé : les services exigent la signature HMAC du Gateway, qu'un client ne peut pas produire.\n\nLe jeton est capturé automatiquement après une connexion réussie et réinjecté dans `{{accessToken}}`.",
+    "description": "Collection générée depuis le code source (20 endpoints).\n\n**Appels via le Gateway** : `baseUrl` = `http://localhost:8081/api/v1`.\n\nL'appel en direct sur `http://localhost:8083` est refusé : les services exigent la signature HMAC du Gateway, qu'un client ne peut pas produire.\n\n**Une seule exception, et elle est voulue** : la surface `/internal/**` n'est routée par AUCUNE passerelle — c'est précisément ce qui la rend injoignable depuis l'extérieur. Ses requêtes utilisent donc `directUrl` (`http://localhost:8083`) et l'en-tête `X-Internal-Secret`, jamais un jeton.\n\nLe jeton est capturé automatiquement après une connexion réussie et réinjecté dans `{{accessToken}}`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -141,57 +141,30 @@
       "description": "Contrôleur `InternalUserReactiveController` — base `/internal/users`",
       "item": [
         {
-          "name": "GET /internal/users/auth/{authUserId}",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/internal/users/auth/:authUserId",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "internal",
-                "users",
-                "auth",
-                ":authUserId"
-              ],
-              "variable": [
-                {
-                  "key": "authUserId",
-                  "value": "{{authUserId}}",
-                  "description": "Valeur de authUserId"
-                }
-              ]
-            },
-            "description": "Handler : getUserByAuthUserId"
-          },
-          "event": [
+          "method": "GET",
+          "header": [
             {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Statut non 5xx\", function () {",
-                  "    pm.expect(pm.response.code).to.be.below(500);",
-                  "});",
-                  "pm.test(\"Réponse sous 2s\", function () {",
-                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
-                  "});"
-                ]
-              }
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Internal-Secret",
+              "value": "{{internalSecret}}"
             }
           ],
-          "response": []
+          "url": {
+            "raw": "{{directUrl}}/internal/users/auth/:authUserId",
+            "host": [
+              "{{directUrl}}"
+            ],
+            "path": [
+              "internal",
+              "users",
+              "auth",
+              ":authUserId"
+            ]
+          },
+          "description": "Handler : getUserByAuthUserId\n\nSurface INTERNE. Elle n'est routee par aucune passerelle : l'appel se fait en direct sur le port du service, avec le secret partage. Aucun jeton JWT n'y est attendu."
         }
       ]
     },
@@ -1189,6 +1162,14 @@
     },
     {
       "key": "maintenanceSecret",
+      "value": ""
+    },
+    {
+      "key": "directUrl",
+      "value": "http://localhost:8083"
+    },
+    {
+      "key": "internalSecret",
       "value": ""
     }
   ]

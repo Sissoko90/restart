@@ -2,13 +2,20 @@
 # ==========================================================
 # Garde-fou de couverture : interdire la RÉGRESSION
 # ==========================================================
-# Pourquoi pas un seuil absolu. La couverture est à ~19 % (voir
-# docs/TESTING.md). Exiger 80 % ferait échouer chaque PR sans rien
-# améliorer : le seuil serait désactivé au bout de deux jours, et le
-# projet se retrouverait sans garde-fou du tout.
+# Pourquoi pas un seuil absolu. La couverture était à ~19 % quand ce
+# script a été écrit (elle est à ~52 %, voir docs/TESTING.md). Exiger
+# 80 % aurait fait échouer chaque PR sans rien améliorer : le seuil
+# aurait été désactivé au bout de deux jours, et le projet se serait
+# retrouvé sans garde-fou du tout.
 #
 # Ce qu'on refuse ici, c'est que la couverture DIMINUE. Le plancher
 # monte à mesure que les tests s'ajoutent — c'est un cliquet.
+#
+# ENCORE FAUT-IL LE RELEVER. Il est resté à 21,41 % pendant que la
+# couverture réelle montait à 52,36 % : trente points d'écart, donc un
+# cliquet qui aurait laissé la couverture tomber de moitié sans rien
+# dire. Un cliquet qu'on ne remonte pas n'est pas un cliquet.
+# `--update` fait partie de la passe de test, pas d'une corvée annexe.
 #
 #   ./scripts/coverage-gate.sh              # vérifie
 #   ./scripts/coverage-gate.sh --update     # relève le plancher

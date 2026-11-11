@@ -1,0 +1,972 @@
+{
+  "info": {
+    "name": "Restart — notification-service",
+    "description": "Collection générée depuis le code source (17 endpoints).\n\n**Appels via le Gateway** : `baseUrl` = `http://localhost:8081/api/v1`.\n\nL'appel en direct sur `http://localhost:8086` est refusé : les services exigent la signature HMAC du Gateway, qu'un client ne peut pas produire.\n\n**Une seule exception, et elle est voulue** : la surface `/internal/**` n'est routée par AUCUNE passerelle — c'est précisément ce qui la rend injoignable depuis l'extérieur. Ses requêtes utilisent donc `directUrl` (`http://localhost:8086`) et l'en-tête `X-Internal-Secret`, jamais un jeton.\n\nLe jeton est capturé automatiquement après une connexion réussie et réinjecté dans `{{accessToken}}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Calcule {{totpCode}} a partir de totpSecret, avant chaque requete.",
+          "//",
+          "// AUCUN `return` au niveau superieur : le bac a sable de Postman n'encadre pas",
+          "// toujours le script dans une fonction, et un `return` hors fonction y est une",
+          "// erreur de syntaxe. Le script s'interrompait alors AVANT de poser totpCode,",
+          "// la connexion partait avec un code vide, et le serveur repondait",
+          "// « Identifiants invalides » — un message qui ne desigpas le script.",
+          "//",
+          "// Tout est donc dans une fonction, appelee a la fin, et le resultat est",
+          "// journalise : sans trace dans la console, un script de pre-requete qui echoue",
+          "// est indistinguable d'un mauvais mot de passe.",
+          "function codeTotp(secretBrut) {",
+          "    const secret = (secretBrut || \"\").replace(/[^A-Za-z2-7]/g, \"\").toUpperCase();",
+          "    if (!secret) { return \"\"; }",
+          "",
+          "    // Base32 -> octets. CryptoJS ne sait pas lire le base32.",
+          "    const ALPHABET = \"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567\";",
+          "    let bits = \"\";",
+          "    for (let i = 0; i < secret.length; i++) {",
+          "        const j = ALPHABET.indexOf(secret.charAt(i));",
+          "        if (j >= 0) { bits += j.toString(2).padStart(5, \"0\"); }",
+          "    }",
+          "    let hex = \"\";",
+          "    for (let i = 0; i + 8 <= bits.length; i += 8) {",
+          "        hex += parseInt(bits.substring(i, i + 8), 2).toString(16).padStart(2, \"0\");",
+          "    }",
+          "    if (!hex) { return \"\"; }",
+          "",
+          "    // Compteur : pas de 30 secondes depuis l'epoque, sur 8 octets.",
+          "    const pas = Math.floor(Date.now() / 1000 / 30);",
+          "    const compteur = pas.toString(16).padStart(16, \"0\");",
+          "",
+          "    const hmac = CryptoJS.HmacSHA1(",
+          "        CryptoJS.enc.Hex.parse(compteur),",
+          "        CryptoJS.enc.Hex.parse(hex)).toString();",
+          "",
+          "    // Troncature dynamique, RFC 4226.",
+          "    const decalage = parseInt(hmac.substring(hmac.length - 1), 16) * 2;",
+          "    const tronque = parseInt(hmac.substring(decalage, decalage + 8), 16) & 0x7fffffff;",
+          "    return String(tronque % 1000000).padStart(6, \"0\");",
+          "}",
+          "",
+          "// Le secret peut etre dans l'environnement OU dans la collection : chercher",
+          "// dans les deux evite le piege du mauvais environnement selectionne.",
+          "const brut = pm.environment.get(\"totpSecret\") || pm.collectionVariables.get(\"totpSecret\") || \"\";",
+          "const code = codeTotp(brut);",
+          "pm.collectionVariables.set(\"totpCode\", code);",
+          "",
+          "if (!brut) {",
+          "    console.log(\"totpSecret VIDE : totpCode laisse vide. Normal si le second \"",
+          "        + \"facteur n'est pas encore enrole ; sinon, renseignez-le dans \"",
+          "        + \"l'environnement.\");",
+          "} else if (!code) {",
+          "    console.log(\"totpSecret present mais illisible (base32 attendu) : \" + brut.length",
+          "        + \" caracteres.\");",
+          "} else {",
+          "    console.log(\"totpCode = \" + code);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "AccuseDeReceptionSms",
+      "description": "Contrôleur `AccuseDeReceptionSmsController` — base `/sms/accuses`",
+      "item": [
+        {
+          "name": "GET /sms/accuses/afriksms",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sms/accuses/afriksms?cle={{cleAccusesSms}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sms",
+                "accuses",
+                "afriksms"
+              ],
+              "query": [
+                {
+                  "key": "cle",
+                  "value": "{{cleAccusesSms}}",
+                  "description": "SMS_AFRIKSMS_NOTIFY_SECRET. Absent ou faux : 404."
+                }
+              ]
+            },
+            "description": "Handler : recevoirEnGet"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /sms/accuses/afriksms",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sms/accuses/afriksms?cle={{cleAccusesSms}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sms",
+                "accuses",
+                "afriksms"
+              ],
+              "query": [
+                {
+                  "key": "cle",
+                  "value": "{{cleAccusesSms}}",
+                  "description": "SMS_AFRIKSMS_NOTIFY_SECRET. Absent ou faux : 404."
+                }
+              ]
+            },
+            "description": "Handler : recevoirEnPost"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AdminEnvoi",
+      "description": "Contrôleur `AdminEnvoiController` — base `/admin/notifications`",
+      "item": [
+        {
+          "name": "POST /admin/notifications",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "notifications"
+              ]
+            },
+            "description": "Handler : envoyer\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/notifications/groupe",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/notifications/groupe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "notifications",
+                "groupe"
+              ]
+            },
+            "description": "Handler : envoyerAuGroupe\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AdminModele",
+      "description": "Contrôleur `AdminModeleController` — base `/admin/modeles`",
+      "item": [
+        {
+          "name": "GET /admin/modeles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/modeles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "modeles"
+              ]
+            },
+            "description": "Handler : lister\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /admin/modeles",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/modeles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "modeles"
+              ]
+            },
+            "description": "Handler : surcharger\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /admin/modeles",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/modeles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "modeles"
+              ]
+            },
+            "description": "Handler : retirer\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AdminSms",
+      "description": "Contrôleur `AdminSmsController` — base `/admin/sms`",
+      "item": [
+        {
+          "name": "GET /admin/sms/solde",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/sms/solde",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "sms",
+                "solde"
+              ]
+            },
+            "description": "Handler : consulterSolde\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/sms/url-de-rappel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/sms/url-de-rappel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "sms",
+                "url-de-rappel"
+              ]
+            },
+            "description": "Handler : declarerUrlDeRappel\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Appareil",
+      "description": "Contrôleur `AppareilController` — base `/notifications/appareils`",
+      "item": [
+        {
+          "name": "POST /notifications/appareils",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/appareils",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "appareils"
+              ]
+            },
+            "description": "Handler : declarer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /notifications/appareils",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/appareils",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "appareils"
+              ]
+            },
+            "description": "Handler : lister"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /notifications/appareils",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/appareils",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "appareils"
+              ]
+            },
+            "description": "Handler : retirer"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /notifications/appareils/tous",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/appareils/tous",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "appareils",
+                "tous"
+              ]
+            },
+            "description": "Handler : retirerTous"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "InternalMessage",
+      "description": "Contrôleur `InternalMessageController` — base `/internal/message`",
+      "item": [
+        {
+          "method": "POST",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Internal-Secret",
+              "value": "{{internalSecret}}"
+            }
+          ],
+          "url": {
+            "raw": "{{directUrl}}/internal/message",
+            "host": [
+              "{{directUrl}}"
+            ],
+            "path": [
+              "internal",
+              "message"
+            ]
+          },
+          "description": "Handler : envoyer\n\nSurface INTERNE. Elle n'est routee par aucune passerelle : l'appel se fait en direct sur le port du service, avec le secret partage. Aucun jeton JWT n'y est attendu."
+        }
+      ]
+    },
+    {
+      "name": "Notification",
+      "description": "Contrôleur `NotificationController` — base `/notifications`",
+      "item": [
+        {
+          "name": "GET /notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications"
+              ]
+            },
+            "description": "Handler : lister"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /notifications/compteur",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/compteur",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "compteur"
+              ]
+            },
+            "description": "Handler : compter"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /notifications/{id}/lue",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/:id/lue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                ":id",
+                "lue"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{id}}",
+                  "description": "Valeur de id"
+                }
+              ]
+            },
+            "description": "Handler : marquerLue"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081/api/v1"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "maintenanceToken",
+      "value": ""
+    },
+    {
+      "key": "email",
+      "value": "dev@example.com"
+    },
+    {
+      "key": "password",
+      "value": "SecurePass123!"
+    },
+    {
+      "key": "phoneNumber",
+      "value": "+22300000000"
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "adminPhone",
+      "value": ""
+    },
+    {
+      "key": "adminIdentifier",
+      "value": ""
+    },
+    {
+      "key": "adminPassword",
+      "value": ""
+    },
+    {
+      "key": "totpCode",
+      "value": ""
+    },
+    {
+      "key": "tempToken",
+      "value": ""
+    },
+    {
+      "key": "adminSecret",
+      "value": ""
+    },
+    {
+      "key": "maintenanceSecret",
+      "value": ""
+    },
+    {
+      "key": "directUrl",
+      "value": "http://localhost:8086"
+    },
+    {
+      "key": "internalSecret",
+      "value": ""
+    }
+  ]
+}

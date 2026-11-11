@@ -225,6 +225,11 @@ def chemin_gateway(service, path):
     return path
 
 
+def path_postman_brut(segments):
+    """`["a", ":id"]` -> `/a/:id`, ou chaine vide s'il n'y a rien."""
+    return ("/" + "/".join(segments)) if segments else ""
+
+
 def path_to_postman(path):
     """`/a/{id}/b` -> (["a", ":id", "b"], ["id"])."""
     segments, variables = [], []
@@ -304,6 +309,20 @@ def is_public(path, methode, service):
     return False
 
 
+# En-tete du secret partage, defini une seule fois dans le code par
+# `AutorisationInterne.EN_TETE_SECRET` (platform-commons).
+EN_TETE_INTERNE = "X-Internal-Secret"
+
+
+def est_interne(path):
+    """Le chemin appartient-il a la surface inter-services.
+
+    Segment ENTIER, et non `startswith` nu : `/internalement` n'est pas
+    `/internal`. Meme raisonnement que `CheminCible.estLeSegment`.
+    """
+    return path == "/internal" or path.startswith("/internal/")
+
+
 def build_request(service, port, endpoint):
     path = endpoint["path"]
     # Les en-tetes et le choix « public » se decident sur le chemin du
@@ -311,6 +330,36 @@ def build_request(service, port, endpoint):
     segments, path_vars = path_to_postman(chemin_gateway(service, path))
 
     headers = [{"key": "Content-Type", "value": "application/json"}]
+
+    # LA SURFACE INTERNE N'EST ROUTEE PAR AUCUNE PASSERELLE.
+    #
+    # Sept endpoints /internal/** etaient publies avec `{{baseUrl}}`, qui
+    # designe le Gateway. Ils rendaient donc 404 pour quiconque suivait la
+    # collection — et, pire, invitaient a « reparer » ce 404 en routant
+    # /internal, ce qui detruirait precisement l'isolement qui fait leur
+    # securite.
+    #
+    # Ils pointent desormais le port du service, et portent le secret partage
+    # au lieu d'un jeton : ils ne sont pas authentifies par JWT. Deux controles
+    # les gardent, et le second est ici — le premier, le pair TCP prive, ne se
+    # met pas dans une collection.
+    if est_interne(path):
+        headers.append({"key": EN_TETE_INTERNE, "value": "{{internalSecret}}"})
+        return {
+            "method": endpoint["method"],
+            "header": headers,
+            "url": {
+                "raw": "{{directUrl}}" + path_postman_brut(segments),
+                "host": ["{{directUrl}}"],
+                "path": segments,
+            },
+            "description": (f"Handler : {endpoint['handler']}\n\n"
+                            "Surface INTERNE. Elle n'est routee par aucune "
+                            "passerelle : l'appel se fait en direct sur le port "
+                            "du service, avec le secret partage. Aucun jeton "
+                            "JWT n'y est attendu."),
+        }
+
     if not is_public(path, endpoint["method"], service):
         # complete-profile ne s'authentifie PAS avec le jeton d'acces.
         #
@@ -570,6 +619,12 @@ def build_collection(service, info):
                 f"L'appel en direct sur `http://localhost:{info['port']}` est refusé : "
                 f"les services exigent la signature HMAC du Gateway, qu'un client "
                 f"ne peut pas produire.\n\n"
+                f"**Une seule exception, et elle est voulue** : la surface "
+                f"`/internal/**` n'est routée par AUCUNE passerelle — c'est "
+                f"précisément ce qui la rend injoignable depuis l'extérieur. Ses "
+                f"requêtes utilisent donc `directUrl` "
+                f"(`http://localhost:{info['port']}`) et l'en-tête "
+                f"`X-Internal-Secret`, jamais un jeton.\n\n"
                 + (
                     "**Préfixes propres à auth-service.** interface-service occupe "
                     "`/api/v1/auth/**` et `/api/v1/admin/**` ; auth-service est donc "
@@ -617,6 +672,12 @@ def build_collection(service, info):
             {"key": "tempToken", "value": ""},
             {"key": "adminSecret", "value": ""},
             {"key": "maintenanceSecret", "value": ""},
+            # Appel DIRECT au service, pour la seule surface /internal/**.
+            # Le Gateway ne la route pas, et ne doit pas la router.
+            {"key": "directUrl", "value": f"http://localhost:{info['port']}"},
+            # Vide, comme les autres secrets : cette collection est suivie par
+            # git. La vraie valeur vit dans le fichier d'environnement.
+            {"key": "internalSecret", "value": ""},
         ],
     }
 

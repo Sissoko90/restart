@@ -1,7 +1,12 @@
 # Stratégie de test
 
-> État au 2026-09-04 : **206 tests** (118 → 206), couverture **18,7 %** des
-> instructions, **11,6 %** des branches.
+> État au 2026-11-11 : **2861 tests** (206 → 2861), couverture **52,4 %** des
+> instructions, **46,6 %** des branches.
+>
+> Mesure précédente, 2026-09-04 : 206 tests, 18,7 % et 11,6 %. Le nombre de
+> tests est donc multiplié par quatorze, la couverture d'instructions par
+> moins de trois, et celle des branches par quatre. C'est cette dernière qui
+> compte — voir §2.
 
 ---
 
@@ -22,21 +27,35 @@ artificiellement le pourcentage sans rien dire de la qualité.
 
 ## 2. Où en est-on
 
-| Service | Instructions | Branches | Évolution |
-|---|---|---|---|
-| `config-service` | 88,7 % | — | trivial (2 classes) |
-| `setting-service` | 52,2 % | 13,3 % | écrit avec ses tests |
-| `quotas-service` | 44,5 % | 18,1 % | écrit avec ses tests |
-| `gateway-service` | 33,4 % | 17,4 % | 23,6 % → 33,4 % |
-| `platform-commons` | 27,5 % | 43,2 % | nouveau module |
-| `interface-service` | 21,2 % | 8,5 % | 18,5 % → 21,2 % |
-| `auth-service` | 16,1 % | 12,0 % | + tests d'intégration |
-| `media-service` | 9,3 % | 7,5 % | ⚠️ 7,3 % → 9,3 % |
-| `user-service` | 9,1 % | 5,7 % | ⚠️ |
+Mesure du 2026-11-11, agrégée par `./scripts/coverage-report.sh`.
 
-**La couverture de branches reste le vrai signal.** À 11,6 %, les chemins
-d'erreur — token expiré, quota dépassé, compte verrouillé, document altéré —
-restent majoritairement non testés. C'est là que se logent les failles.
+| Service | Instructions | Branches | Évolution des instructions |
+|---|---|---|---|
+| `config-service` | 100,0 % | 83,3 % | 88,7 % → 100,0 % (trivial, 2 classes) |
+| `gateway-service` | 65,7 % | 53,0 % | 33,4 % → 65,7 % |
+| `setting-service` | 65,5 % | 47,4 % | 52,2 % → 65,5 % |
+| `notification-service` | 63,5 % | 58,4 % | entré dans le réacteur depuis |
+| `quotas-service` | 61,6 % | 45,8 % | 44,5 % → 61,6 % |
+| `user-service` | 60,5 % | 42,8 % | 9,1 % → 60,5 % |
+| `interface-service` | 54,2 % | 42,7 % | 21,2 % → 54,2 % |
+| `platform-commons` | 53,8 % | 62,8 % | 27,5 % → 53,8 % |
+| `auth-service` | 52,2 % | 50,1 % | 16,1 % → 52,2 % |
+| `security-service` | 48,9 % | 50,3 % | module neuf |
+| `media-service` | 31,1 % | 23,2 % | 9,3 % → 31,1 % |
+| **TOTAL** | **52,4 %** | **46,6 %** | 18,7 % → 52,4 % |
+
+**La couverture de branches reste le vrai signal**, et c'est elle qui a le plus
+progressé : 11,6 % → 46,6 %. Les chemins d'erreur — jeton expiré, quota
+dépassé, compte verrouillé, document altéré — sont désormais exercés sur près
+de la moitié de leurs embranchements. C'est là que se logent les failles, et
+c'est ce qui explique que les défauts trouvés cette année l'aient presque tous
+été par un test écrit pour autre chose.
+
+`media-service` est le dernier retardataire, et son classement est trompeur :
+quatre de ses classes les moins couvertes sont à **0 %**
+(`UserActivityLogServiceImpl`, `DocumentRequirementServiceImpl`,
+`DocumentEventPublisherImpl`), soit plus de 1500 instructions jamais
+exécutées.
 
 Le motif observé depuis le début se confirme : **les tests écrits pour une
 classe donnée y trouvent des défauts réels**. Sur les huit suites ajoutées, six

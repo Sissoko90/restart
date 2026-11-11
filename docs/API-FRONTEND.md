@@ -222,33 +222,36 @@ Les endpoints listés ci-dessous sont **câblés et couverts par des tests** :
 1908 tests sur 11 modules, dont 1095 pour auth-service, et les décisions de
 sécurité sont vérifiées par mutation. Ce qui reste connu et non résolu :
 
-- **12 endpoints rendent `(non routé par la passerelle)`** dans la référence,
-  tous dans interface-service (`/dev/**`, `/maintenance/**`) et user-service
-  (`/files/**`). Trois cas distincts, et ils ne se tranchent pas de la même
-  façon : `/maintenance/**` est une surface de dernier recours qui n'a
-  peut-être pas à être publique ; `/dev/erasure/me` est un **droit à
-  l'effacement** que son titulaire ne peut donc pas exercer ; la route
-  `/.well-known/jwks.json` de la passerelle pointe vers auth-service alors
-  qu'interface-service détient les clés. À décider avant intégration de ces
-  chemins.
-- Les jetons OAuth2 voyagent dans la chaîne de requête de la redirection de
-  rappel. Fonctionnel, mais un jeton en query string finit dans les journaux
-  d'accès et l'historique.
-- `geo-service`, `payment-service` et `notification-service` sont des squelettes
-  sans logique. Les endpoints de paiement n'existent pas.
+- **9 endpoints rendent `(non routé par la passerelle)`**, tous dans
+  interface-service : les six de `/maintenance/**` et trois de `/dev/**`. Un
+  seul cas reste donc ouvert, et c'est une décision, pas un oubli :
+  `/maintenance/**` est une surface de dernier recours, et la router la rendrait
+  atteignable depuis l'extérieur au moment précis où le reste est verrouillé.
+  Les deux autres cas de cette liste ont été tranchés : `/dev/erasure/me` est
+  routé — un droit à l'effacement que son titulaire ne pouvait pas exercer
+  n'était pas un droit — et `/dev/.well-known/jwks.json` est joignable par
+  `/.well-known/jwks.json`, qui pointe bien vers interface-service, détenteur
+  des clés. La version précédente de ce paragraphe affirmait l'inverse pour ce
+  dernier point, et annonçait 12 endpoints dont trois de user-service
+  (`/files/**`) qui sont routés depuis.
+- Les jetons OAuth2 **ne voyagent plus** dans la chaîne de requête de la
+  redirection de rappel. Le rappel rend un code de remise à usage unique,
+  échangé contre les jetons par un appel distinct (`CodeDeRemiseOAuth2Redis`).
+  Un jeton en query string finissait dans les journaux d'accès et l'historique
+  du navigateur.
+- `geo-service` et `payment-service` sont des squelettes sans logique : les
+  endpoints de paiement n'existent pas. **notification-service n'en est plus
+  un** — cinq canaux de remise, moteur de modèles à deux couches, boîte de
+  réception, enregistrement d'appareil pour le push, flux WebSocket,
+  administration des modèles et des envois. Ses 17 endpoints figurent
+  ci-dessous ; ils n'apparaissaient pas jusqu'ici parce que le générateur
+  omettait le module de sa liste.
 
 ## Référence des endpoints
 
 Générée depuis les contrôleurs par `scripts/postman/generer_reference_frontend.py`. Ne pas modifier à la main : la prochaine génération écrase.
 
 ### auth-service (port 8082)
-
-**AccuseDeReceptionSmsController**
-
-| Méthode | Chemin appelé par le frontend | Accès | Corps |
-|---|---|---|---|
-| `GET` | `/api/v1/sms/accuses/afriksms` | public | — |
-| `POST` | `/api/v1/sms/accuses/afriksms` | public | — |
 
 **AdminAccountController**
 
@@ -268,13 +271,6 @@ Générée depuis les contrôleurs par `scripts/postman/generer_reference_fronte
 | `POST` | `/api/v1/auth-sdk/admin/login` | public | oui |
 | `POST` | `/api/v1/auth-sdk/admin/totp/enroll` | public | oui |
 | `POST` | `/api/v1/auth-sdk/admin/totp/reset` | public | oui |
-
-**AdminSmsController**
-
-| Méthode | Chemin appelé par le frontend | Accès | Corps |
-|---|---|---|---|
-| `GET` | `/api/v1/auth-admin/sms/solde` | admin | — |
-| `POST` | `/api/v1/auth-admin/sms/url-de-rappel` | admin | — |
 
 **AuditController**
 
@@ -380,15 +376,6 @@ Générée depuis les contrôleurs par `scripts/postman/generer_reference_fronte
 | `POST` | `/api/v1/auth-sdk/erasure/{subjectId}` | authentifie | — |
 | `GET` | `/api/v1/auth-sdk/erasure/{requestId}/status` | authentifie | — |
 
-**MessageTemplateController**
-
-| Méthode | Chemin appelé par le frontend | Accès | Corps |
-|---|---|---|---|
-| `GET` | `/api/v1/auth-admin/templates` | admin | oui |
-| `POST` | `/api/v1/auth-admin/templates` | admin | oui |
-| `PUT` | `/api/v1/auth-admin/templates/{templateId}` | admin | oui |
-| `DELETE` | `/api/v1/auth-admin/templates/{templateId}` | admin | — |
-
 **UserRoleManagementController**
 
 | Méthode | Chemin appelé par le frontend | Accès | Corps |
@@ -431,7 +418,7 @@ Générée depuis les contrôleurs par `scripts/postman/generer_reference_fronte
 
 | Méthode | Chemin appelé par le frontend | Accès | Corps |
 |---|---|---|---|
-| `GET` | `(non routé par la passerelle)` | non routé | — |
+| `GET` | `/.well-known/jwks.json` | public | — |
 | `POST` | `(non routé par la passerelle)` | non routé | — |
 | `GET` | `(non routé par la passerelle)` | non routé | — |
 | `DELETE` | `(non routé par la passerelle)` | non routé | — |
@@ -440,7 +427,7 @@ Générée depuis les contrôleurs par `scripts/postman/generer_reference_fronte
 
 | Méthode | Chemin appelé par le frontend | Accès | Corps |
 |---|---|---|---|
-| `POST` | `(non routé par la passerelle)` | non routé | — |
+| `POST` | `/dev/erasure/me` | authentifie | — |
 
 **MaintenanceController**
 
@@ -618,7 +605,55 @@ Générée depuis les contrôleurs par `scripts/postman/generer_reference_fronte
 | `POST` | `/api/v1/security-admin/ip` | admin | — |
 | `DELETE` | `/api/v1/security-admin/ip/{id}` | admin | — |
 
+### notification-service (port 8086)
+
+**AccuseDeReceptionSmsController**
+
+| Méthode | Chemin appelé par le frontend | Accès | Corps |
+|---|---|---|---|
+| `GET` | `/api/v1/sms/accuses/afriksms` | public | — |
+| `POST` | `/api/v1/sms/accuses/afriksms` | public | — |
+
+**AdminEnvoiController**
+
+| Méthode | Chemin appelé par le frontend | Accès | Corps |
+|---|---|---|---|
+| `POST` | `/api/v1/admin/notifications` | admin | oui |
+| `POST` | `/api/v1/admin/notifications/groupe` | admin | oui |
+
+**AdminModeleController**
+
+| Méthode | Chemin appelé par le frontend | Accès | Corps |
+|---|---|---|---|
+| `GET` | `/api/v1/admin/modeles` | admin | — |
+| `PUT` | `/api/v1/admin/modeles` | admin | oui |
+| `DELETE` | `/api/v1/admin/modeles` | admin | — |
+
+**AdminSmsController**
+
+| Méthode | Chemin appelé par le frontend | Accès | Corps |
+|---|---|---|---|
+| `GET` | `/api/v1/admin/sms/solde` | admin | — |
+| `POST` | `/api/v1/admin/sms/url-de-rappel` | admin | — |
+
+**AppareilController**
+
+| Méthode | Chemin appelé par le frontend | Accès | Corps |
+|---|---|---|---|
+| `POST` | `/api/v1/notifications/appareils` | authentifie | oui |
+| `GET` | `/api/v1/notifications/appareils` | authentifie | — |
+| `DELETE` | `/api/v1/notifications/appareils` | authentifie | — |
+| `DELETE` | `/api/v1/notifications/appareils/tous` | authentifie | — |
+
+**NotificationController**
+
+| Méthode | Chemin appelé par le frontend | Accès | Corps |
+|---|---|---|---|
+| `GET` | `/api/v1/notifications` | authentifie | — |
+| `GET` | `/api/v1/notifications/compteur` | authentifie | — |
+| `POST` | `/api/v1/notifications/{id}/lue` | authentifie | — |
+
 ---
 
-**203 endpoints appelables** depuis le frontend. 6 endpoints `/internal/**` sont exclus : ils ne sont joignables qu'entre services, derrière la signature HMAC de la passerelle, et un appel direct est refusé.
+**211 endpoints appelables** depuis le frontend. 8 endpoints `/internal/**` sont exclus : aucune passerelle ne les route — c'est précisément ce qui les rend injoignables depuis l'extérieur. Un service les appelle en direct sur le port de son pair, avec l'en-tête `X-Internal-Secret`. La phrase précédente affirmait l'inverse — « derrière la signature HMAC de la passerelle, un appel direct est refusé » — et c'était faux dans les deux moitiés.
 
