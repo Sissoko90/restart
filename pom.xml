@@ -79,6 +79,16 @@
 		  sans les reecrire casserait le build.
 		-->
 		<module>notification-service</module>
+		<!--
+		  market-service : la place de marche.
+
+		  Dans le reacteur DES SA CREATION, et non ajoute plus tard. Le module le
+		  plus recent du depot, notification-service, a passe des semaines dehors :
+		  son POM existait, declarait une vingtaine de dependances, et aucun build
+		  ne le compilait. Un module hors reacteur ne beneficie ni du
+		  dependencyManagement du parent, ni des epinglages de CVE, ni d'un test.
+		-->
+		<module>market-service</module>
 	</modules>
 
 	<properties>

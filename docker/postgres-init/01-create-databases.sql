@@ -33,3 +33,11 @@ CREATE DATABASE security_service_db;
 -- au demarrage sur « database does not exist » — un module tout vert et
 -- incapable de demarrer.
 CREATE DATABASE notification_service_db;
+
+-- Base de la place de marche.
+--
+-- Ajoutee en meme temps que market-service, et dans le meme mouvement que son
+-- entree dans le reacteur : le garde-fou chaqueBaseEstCreee a refuse le build
+-- tant qu'elle manquait. C'est la deuxieme fois qu'il rend ce service, et la
+-- lecon est la meme — un module peut etre tout vert et incapable de demarrer.
+CREATE DATABASE market_service_db;

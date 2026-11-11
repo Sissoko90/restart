@@ -1,0 +1,162 @@
+# ==========================================================
+# market-service — la place de marche
+# ==========================================================
+# Boutiques professionnelles, catalogue, moderation, avis.
+#
+# Ce service ne stocke AUCUN fichier : media-service detient les photos de
+# produit et les pieces justificatives, et market-service n'en garde que
+# l'identifiant. Il ne tient aucune identite — auth-service la detient — et ne
+# connait pas le pays d'une personne : user-service le lui dit.
+# ==========================================================
+
+server:
+  # 8092 : le premier port libre apres security-service (8091).
+  # Pas de context-path — la passerelle route /api/v1/market/**.
+  port: 8092
+
+spring:
+  application:
+    name: market-service
+  cloud:
+    consul:
+      discovery:
+        health-check-path: /actuator/health
+
+  # ==========================================
+  # Base de donnees — PostgreSQL R2DBC
+  # ==========================================
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_MARKET:market_service_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    pool:
+      initial-size: 10
+      max-size: 50
+      max-idle-time: 30m
+      validation-query: SELECT 1
+
+  # ==========================================
+  # Schema — Flyway
+  # ==========================================
+  # Flyway n'a pas d'API reactive : il passe par JDBC, au demarrage seulement,
+  # et jamais sur le chemin d'une requete.
+  #
+  # `baseline-on-migrate: false`, et c'est la seule valeur juste. A `true` sans
+  # `baseline-version`, Flyway qui trouve un schema non vide sans historique
+  # inscrit « version 1 deja passee » et SAUTE V1 — le service demarre alors
+  # sans se plaindre, sur des tables qui n'existent pas. Mesure faite sur
+  # user_service_db le 2026-11-10.
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_MARKET:market_service_db}
+    user: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    baseline-on-migrate: false
+    locations: classpath:db/migration
+
+  kafka:
+    consumer:
+      group-id: market-service-group-dev
+
+# ==========================================
+# Securite de passerelle
+# ==========================================
+gateway:
+  secret:
+    key: ${GATEWAY_SECRET_KEY}
+
+# `security.internal-secret` vient de application-dev.yml : il est partage par
+# tous les services, et le declarer ici en ferait un second detenteur.
+
+# ==========================================
+# Les services dont celui-ci depend
+# ==========================================
+# Les URL pointent le port du service, PAS la passerelle : /internal/** n'est
+# route par aucune passerelle, et c'est ce qui le rend injoignable de
+# l'exterieur.
+user-service:
+  url: ${USER_SERVICE_URL:http://localhost:8083}
+  timeout-seconds: 3
+
+media-service:
+  url: ${MEDIA_SERVICE_URL:http://localhost:8087}
+  timeout-seconds: 5
+
+notification-service:
+  url: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
+  timeout-seconds: 5
+
+# ==========================================
+# Reglages propres au marche
+# ==========================================
+market:
+  cache:
+    # Duree de vie d'une portee de catalogue en cache.
+    #
+    # COURTE, et ce n'est que le filet : approuver une boutique EVINCE la clef,
+    # donc le vendeur voit ses droits elargis immediatement. Ce delai borne la
+    # duree d'une incoherence si l'eviction echoue, au lieu de la laisser
+    # indefinie.
+    portee-secondes: ${MARKET_CACHE_PORTEE_SECONDES:120}
+  catalogue:
+    # Taille maximale d'une page. Un plafond, pas un defaut : sans lui, un
+    # appelant demandant dix mille articles ferait ramener dix mille lignes.
+    taille-page-maximale: ${MARKET_PAGE_MAX:100}
+    taille-page-defaut: ${MARKET_PAGE_DEFAUT:20}
+
+logging:
+  level:
+    com.abdatytch.market_service: DEBUG
+    org.springframework.security: DEBUG
+
+# ==========================================
+# Sondes de sante
+# ==========================================
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: diskSpace,r2dbc,redis
+        liveness:
+          include: ping
+  health:
+    r2dbc:
+      enabled: true
+    redis:
+      enabled: true
+
+cors:
+  allowed-origins: http://localhost:3000,http://localhost:8080,http://localhost:8081,http://localhost:4200
+  allowed-methods: GET,POST,PUT,DELETE,PATCH,OPTIONS
+  allowed-headers: Authorization,Content-Type,Accept,X-Requested-With,X-XSRF-TOKEN
+  exposed-headers: Authorization,X-Total-Count
+  allow-credentials: true
+  max-age: 3600
+
+# ==========================================
+# Disjoncteurs
+# ==========================================
+# UNE INSTANCE PAR DEPENDANCE, et jamais une partagee : deux dependances qui
+# portent le meme nom tombent ensemble, donc la panne de l'une ferme le chemin
+# de l'autre.
+#
+# Les noms sont ceux declares dans le code (`ClientProfilUtilisateur`,
+# `ClientMedia`). Une instance non declaree ici herite de `default` — la
+# declarer explicitement la rend visible dans /actuator/circuitbreakers et dans
+# Prometheus avant tout trafic.
+resilience4j:
+  circuitbreaker:
+    instances:
+      user-service-profil:
+        baseConfig: default
+      media-service-document:
+        baseConfig: default
+  retry:
+    instances:
+      market-service:
+        baseConfig: default
+  ratelimiter:
+    instances:
+      market-service:
+        baseConfig: default
