@@ -280,6 +280,9 @@ public final class CheminCible {
         // interface-service, qui ne porte pas cette surface.
         //
         // AVANT /api/v1/admin, pour la meme raison que les suivants.
+        // Le catalogue, les boutiques et les categories de la place de marche.
+        SERVICES_PAR_PREFIXE.put("/api/v1/market", "market-service");
+
         SERVICES_PAR_PREFIXE.put("/api/v1/admin/users", "user-service");
         SERVICES_PAR_PREFIXE.put("/api/v1/admin/quotas", "quotas-service");
         SERVICES_PAR_PREFIXE.put("/api/v1/admin/settings", "setting-service");
@@ -310,6 +313,12 @@ public final class CheminCible {
         // notifications — c'est-a-dire le moyen d'annoncer la maintenance.
         SERVICES_PAR_PREFIXE.put("/api/v1/admin/notifications", "notification-service");
         // EN DERNIER : capturerait les trois precedents sinon.
+        // La moderation du marche. AVANT /api/v1/admin, comme les autres
+        // surfaces d'administration qui ne sont pas portees par
+        // interface-service : la resolution retient le prefixe le plus LONG,
+        // mais l'ordre de declaration documente l'intention.
+        SERVICES_PAR_PREFIXE.put("/api/v1/admin/market", "market-service");
+
         SERVICES_PAR_PREFIXE.put("/api/v1/admin", "interface-service");
     }
 

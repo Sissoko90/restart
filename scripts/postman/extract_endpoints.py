@@ -22,6 +22,12 @@ SERVICES = {
     # construit pas depuis une annotation @GetMapping — il n'y en a pas, le
     # point d'entree est un SimpleUrlHandlerMapping.
     "notification-service": ("notification_service", 8086),
+    # La place de marche. Inscrite ici DES sa creation : ModuleLivrableTest
+    # refuse le build tant qu'un service exposant des endpoints n'y figure pas,
+    # et c'est exactement son role — des endpoints qui existent sans qu'aucune
+    # collection ne permette de les appeler sont des endpoints que personne
+    # n'essaiera.
+    "market-service": ("market_service", 8092),
 }
 
 METHOD_ANNOTATIONS = {

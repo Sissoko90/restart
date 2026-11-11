@@ -412,6 +412,31 @@ public class GatewayRoutesConfig {
             //
             // AVANT la route generale /api/v1/admin/**, comme les chemins de
             // media-service juste en dessous.
+            // LA PLACE DE MARCHE.
+            //
+            // /api/v1/admin/market/** AVANT la route generale /api/v1/admin/**,
+            // comme toutes les surfaces d'administration portees par un autre
+            // service qu'interface-service. Place apres, elle partirait chez
+            // interface-service, qui ne porte aucun chemin /admin/market — et
+            // la moderation entiere rendrait 404.
+            .nest(path("/api/v1/admin/market/**"), builder -> builder
+                .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "market-service", defaultCircuitBreaker))
+                .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "market-service", defaultCircuitBreaker))
+                .PUT("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "market-service", defaultCircuitBreaker))
+                .DELETE("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "market-service", defaultCircuitBreaker))
+            )
+            // Le catalogue, les boutiques et les categories.
+            //
+            // Aucune reecriture : le service recoit /market/**, qui est aussi
+            // le prefixe de ses controleurs. CheminsDuMarche les nomme une fois
+            // de son cote.
+            .nest(path("/api/v1/market/**"), builder -> builder
+                .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "market-service", defaultCircuitBreaker))
+                .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "market-service", defaultCircuitBreaker))
+                .PUT("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "market-service", defaultCircuitBreaker))
+                .PATCH("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "market-service", defaultCircuitBreaker))
+                .DELETE("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "market-service", defaultCircuitBreaker))
+            )
             .nest(path("/api/v1/admin/quotas/**"), builder -> builder
                 .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "quotas-service", defaultCircuitBreaker))
                 .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "quotas-service", defaultCircuitBreaker))

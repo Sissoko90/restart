@@ -34,4 +34,8 @@ public interface AvisRepository extends ReactiveCrudRepository<Avis, UUID> {
 
     /** Tous les avis d'une personne : pour l'effacement RGPD. */
     Flux<Avis> findByAuthUserId(String authUserId);
+
+    /** Le nombre d'avis en attente, pour la metrique de file. */
+    @Query("SELECT COUNT(*) FROM avis WHERE statut_moderation = 'EN_ATTENTE'")
+    Mono<Long> compterAModerer();
 }

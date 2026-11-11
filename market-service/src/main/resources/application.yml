@@ -1,0 +1,41 @@
+# ==========================================================
+# market-service — amorcage
+# ==========================================================
+# Ce fichier ne contient QUE ce qu'il faut pour aller chercher le reste :
+# l'identite du service et l'adresse du serveur de configuration. Tout le reste
+# — port, base de donnees, Flyway, disjoncteurs, sondes — vit dans
+# config-repo/dev/market-service-dev.yml.
+#
+# Deux endroits pour une meme valeur finissent par diverger, et c'est celui
+# d'ici qui gagnerait en silence : un fichier empaquete dans le JAR surcharge
+# ce que le serveur de configuration envoie pour les clefs qu'il declare.
+# ==========================================================
+
+spring:
+  application:
+    name: market-service
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  config:
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+
+  cloud:
+    config:
+      enabled: true
+      # `fail-fast: false` : le service demarre meme si le serveur de
+      # configuration n'est pas encore la, et retente. C'est la politique du
+      # depot — un demarrage bloque par une dependance absente transforme un
+      # redemarrage ordinaire en panne en cascade.
+      fail-fast: false
+      retry:
+        max-attempts: 3
+        initial-interval: 1000
+        max-interval: 2000
+
+# `spring.webflux.multipart.*` n'est PAS declare ici, et c'est delibere : ce
+# service ne recoit aucun fichier. Les photos de produit et les pieces
+# justificatives sont deposees chez media-service, qui seul sait les analyser,
+# les chiffrer et leur appliquer une duree de conservation. Ce module n'en garde
+# que l'identifiant.

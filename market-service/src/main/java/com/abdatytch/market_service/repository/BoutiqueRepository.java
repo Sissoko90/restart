@@ -40,4 +40,8 @@ public interface BoutiqueRepository extends ReactiveCrudRepository<Boutique, UUI
      */
     @Query("SELECT * FROM boutique WHERE rccm = :rccm AND id <> :exclue")
     Flux<Boutique> memeRccm(String rccm, UUID exclue);
+
+    /** Le nombre de boutiques en attente, pour la metrique de file. */
+    @Query("SELECT COUNT(*) FROM boutique WHERE statut = 'EN_ATTENTE'")
+    Mono<Long> compterAModerer();
 }

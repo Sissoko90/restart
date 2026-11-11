@@ -20,6 +20,23 @@
 -- la version 13 : aucune extension a creer.
 --
 -- ----------------------------------------------------------------------------
+-- TOUTES les tables portent created_at ET updated_at
+-- ----------------------------------------------------------------------------
+-- Y compris celles dont les lignes ne sont jamais modifiees en place —
+-- produit_photo, produit_caracteristique, boutique_document sont remplacees en
+-- bloc, pas mises a jour.
+--
+-- La raison n'est pas l'audit : c'est que toutes les entites heritent de
+-- `BaseEntity`, qui declare les deux colonnes. R2DBC mappe la classe entiere,
+-- donc une table a qui il en manque une fait echouer le SELECT avec « bad SQL
+-- grammar » — pas a l'ecriture, mais a la LECTURE, et seulement sur le chemin
+-- qui lit cette table. Mesure du 2026-11-12 : la creation d'un produit rendait
+-- 500 parce que l'enrichissement relisait produit_photo.
+--
+-- Deux conventions pour un meme socle d'entites couteraient plus cher que huit
+-- octets par ligne.
+--
+-- ----------------------------------------------------------------------------
 -- AUCUNE clef etrangere vers un autre service
 -- ----------------------------------------------------------------------------
 -- `auth_user_id` designe un compte d'auth-service, `document_id` un document de
@@ -139,6 +156,7 @@ CREATE TABLE boutique_document (
     -- intention.
     document_id VARCHAR(64)  NOT NULL,
     created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT boutique_document_type_connu
         CHECK (type IN ('RCCM', 'NIF', 'PIECE_IDENTITE', 'AUTRE')),
     CONSTRAINT boutique_document_unique UNIQUE (boutique_id, document_id)
@@ -224,6 +242,7 @@ CREATE TABLE produit_photo (
     position    INTEGER      NOT NULL DEFAULT 0,
     principale  BOOLEAN      NOT NULL DEFAULT FALSE,
     created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT produit_photo_unique UNIQUE (produit_id, document_id)
 );
 
@@ -280,6 +299,8 @@ CREATE TABLE produit_caracteristique (
     cle         VARCHAR(80)  NOT NULL,
     valeur      VARCHAR(400) NOT NULL,
     position    INTEGER      NOT NULL DEFAULT 0,
+    created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT produit_caracteristique_unique UNIQUE (produit_id, cle)
 );
 

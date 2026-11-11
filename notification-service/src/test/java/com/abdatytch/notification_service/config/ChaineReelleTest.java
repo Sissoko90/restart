@@ -1,6 +1,7 @@
 package com.abdatytch.notification_service.config;
 
 import com.abdatytch.commons.security.AutorisationInterne;
+import com.abdatytch.commons.security.DecodeurJwtDeLaPlateforme;
 import com.abdatytch.commons.security.HMACSignatureUtil;
 import com.abdatytch.notification_service.security.GatewayAccessWebFilter;
 import io.jsonwebtoken.Jwts;
@@ -15,6 +16,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.web.context.reactive.AnnotationConfigReactiveWebApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.MapPropertySource;
@@ -96,6 +98,14 @@ class ChaineReelleTest {
     private static final String SECRET_INTERNE = "secret-interne-pour-test";
     private static final String UTILISATEUR = "22222222-2222-2222-2222-222222222222";
 
+    /**
+     * L'emetteur de cette plateforme : un NOM, pas une URL.
+     *
+     * <p>C'est la valeur de {@code jwt.issuer} dans la configuration partagee,
+     * et ce que l'autorite inscrit dans {@code iss}.
+     */
+    private static final String EMETTEUR = "interface-service";
+
     /** Les chemins TELS QUE LE SERVICE LES RECOIT : la passerelle retire /api/v1. */
     private static final String BOITE = "/notifications";
     private static final String APPAREILS = "/notifications/appareils";
@@ -127,18 +137,31 @@ class ChaineReelleTest {
     static class ConfigurationDeTest {
 
         /**
-         * Le decodeur de jetons.
+         * Le decodeur de jetons, AVEC LES REGLES DE PRODUCTION.
          *
-         * <p>En production il est construit par l'autoconfiguration a partir de
-         * {@code jwk-set-uri}, qui irait chercher les cles sur le reseau. Ici il
-         * verifie avec la cle publique engendree par le test : c'est une VRAIE
-         * verification de signature, pas un decodeur permissif.
+         * <p>La source des cles differe — une cle publique engendree ici plutot
+         * qu'un JWKS joint par le reseau — mais les REGLES sont celles de
+         * {@code DecodeurJwtDeLaPlateforme} : signature, horodatages, et
+         * emetteur verifie par son NOM.
+         *
+         * <p>La premiere version de ce bean s'arretait a la signature. Elle
+         * passait donc au vert alors que la production refusait TOUS les jetons
+         * de la plateforme, parce que {@code issuer-uri} faisait comparer
+         * {@code iss} a une URL. Un test qui n'exerce qu'une partie des regles
+         * verifie moins qu'il n'en a l'air.
+         *
+         * <p>{@code @Primary} : {@code SecurityConfig} declare desormais son
+         * propre decodeur, et deux beans du meme type laisseraient Spring sans
+         * moyen de choisir.
          */
         @Bean
+        @Primary
         ReactiveJwtDecoder decodeur() {
-            return NimbusReactiveJwtDecoder
-                    .withPublicKey((RSAPublicKey) paireDeCles.getPublic())
-                    .build();
+            return DecodeurJwtDeLaPlateforme.appliquerLesRegles(
+                    NimbusReactiveJwtDecoder
+                            .withPublicKey((RSAPublicKey) paireDeCles.getPublic())
+                            .build(),
+                    EMETTEUR);
         }
 
         /**
@@ -199,6 +222,7 @@ class ChaineReelleTest {
     private String jeton(Object roles) {
         return Jwts.builder()
                 .subject(UTILISATEUR)
+                .issuer(EMETTEUR)
                 .claim("roles", roles)
                 .expiration(new Date(System.currentTimeMillis() + 60_000))
                 .signWith(paireDeCles.getPrivate())
@@ -301,11 +325,63 @@ class ChaineReelleTest {
                     .expectStatus().isForbidden();
         }
 
+        /**
+         * LE DEFAUT QUI EST PASSE, ET QUE CE TEST PINCE.
+         *
+         * <p>La configuration declarait
+         * {@code issuer-uri: http://localhost:8088}, ce qui fait comparer
+         * {@code iss} a une URL. L'autorite de ce depot emet
+         * {@code iss: interface-service} — un NOM. Tous les jetons etaient donc
+         * refuses, et toute la surface HTTP de ce service etait injoignable :
+         * boite de reception, enregistrement d'appareil, administration.
+         *
+         * <p>Il n'avait pas ete vu parce que la seule verification de bout en
+         * bout faite sur ce service passait par le flux WebSocket, dont le
+         * jeton est valide par la PASSERELLE et non par le serveur de
+         * ressources du module.
+         *
+         * <p>Ce test exerce les deux cotes : l'emetteur attendu passe, un autre
+         * est refuse. Retirer la verification ferait tomber le second.
+         */
+        @Test
+        @DisplayName("un jeton d'un AUTRE emetteur est refuse")
+        void emetteurEtranger() {
+            String autre = Jwts.builder()
+                    .subject(UTILISATEUR)
+                    .issuer("https://autorite.invalid")
+                    .claim("roles", List.of("ROLE_USER"))
+                    .expiration(new Date(System.currentTimeMillis() + 60_000))
+                    .signWith(paireDeCles.getPrivate())
+                    .compact();
+            signe(BOITE, autre).expectStatus().isUnauthorized();
+        }
+
+        /**
+         * Un jeton SANS emetteur du tout.
+         *
+         * <p>Distinct du precedent : un claim absent et un claim different
+         * empruntent deux chemins dans le validateur, et c'est le cas absent
+         * qui passe le plus facilement a travers une comparaison ecrite a
+         * l'envers.
+         */
+        @Test
+        @DisplayName("un jeton SANS emetteur est refuse")
+        void sansEmetteur() {
+            String muet = Jwts.builder()
+                    .subject(UTILISATEUR)
+                    .claim("roles", List.of("ROLE_USER"))
+                    .expiration(new Date(System.currentTimeMillis() + 60_000))
+                    .signWith(paireDeCles.getPrivate())
+                    .compact();
+            signe(BOITE, muet).expectStatus().isUnauthorized();
+        }
+
         @Test
         @DisplayName("un jeton signe par une AUTRE cle est refuse")
         void jetonEtranger() {
             String etranger = Jwts.builder()
                     .subject(UTILISATEUR)
+                    .issuer(EMETTEUR)
                     .claim("roles", List.of("ROLE_USER"))
                     .expiration(new Date(System.currentTimeMillis() + 60_000))
                     .signWith(Jwts.SIG.RS256.keyPair().build().getPrivate())
@@ -333,6 +409,7 @@ class ChaineReelleTest {
         private String jetonExpireDepuis(long secondes) {
             return Jwts.builder()
                     .subject(UTILISATEUR)
+                    .issuer(EMETTEUR)
                     .claim("roles", List.of("ROLE_USER"))
                     .expiration(new Date(System.currentTimeMillis() - secondes * 1_000))
                     .signWith(paireDeCles.getPrivate())

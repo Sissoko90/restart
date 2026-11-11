@@ -118,4 +118,8 @@ public interface ProduitRepository extends ReactiveCrudRepository<Produit, UUID>
     @Query("UPDATE produit SET pays = :pays, updated_at = CURRENT_TIMESTAMP "
             + "WHERE boutique_id = :boutiqueId")
     Mono<Void> propagerLePays(UUID boutiqueId, String pays);
+
+    /** Le nombre d'articles en attente, pour la metrique de file. */
+    @Query("SELECT COUNT(*) FROM produit WHERE statut_moderation = 'EN_ATTENTE'")
+    Mono<Long> compterAModerer();
 }

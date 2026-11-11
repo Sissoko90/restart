@@ -87,6 +87,25 @@
 		     AuthorizationContext, qui vivent dans spring-security-web. Meme
 		     portee `provided` et meme raison : les consommateurs apportent deja
 		     spring-security par leur starter. -->
+		<!--
+		  Serveur de ressources OAuth2, en OPTIONAL.
+		
+		  Pour le seul DecodeurJwtDeLaPlateforme, qui verifie la signature par le
+		  JWKS et l'emetteur par son NOM — ce qu'aucune ligne de configuration ne
+		  sait exprimer, et dont l'absence faisait refuser TOUS les jetons de la
+		  plateforme avec « The iss claim is not valid ».
+		
+		  `optional` et non une dependance ordinaire : les modules qui n'exposent
+		  aucune surface HTTP protegee par jeton — gateway-service a son propre
+		  filtre, config-service n'en a pas — n'ont aucune raison de la tirer. Les
+		  deux qui s'en servent la declarent deja de leur cote.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+			<optional>true</optional>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.security</groupId>
 			<artifactId>spring-security-web</artifactId>

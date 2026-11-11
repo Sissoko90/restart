@@ -653,7 +653,57 @@ Générée depuis les contrôleurs par `scripts/postman/generer_reference_fronte
 | `GET` | `/api/v1/notifications/compteur` | authentifie | — |
 | `POST` | `/api/v1/notifications/{id}/lue` | authentifie | — |
 
+### market-service (port 8092)
+
+**AdminMarketController**
+
+| Méthode | Chemin appelé par le frontend | Accès | Corps |
+|---|---|---|---|
+| `GET` | `/api/v1/admin/market/boutiques` | admin | — |
+| `POST` | `/api/v1/admin/market/boutiques/{boutiqueId}/decision` | admin | oui |
+| `GET` | `/api/v1/admin/market/produits` | admin | oui |
+| `POST` | `/api/v1/admin/market/produits/{produitId}/decision` | admin | oui |
+| `GET` | `/api/v1/admin/market/avis` | admin | — |
+| `POST` | `/api/v1/admin/market/avis/{avisId}/decision` | admin | oui |
+| `POST` | `/api/v1/admin/market/categories` | admin | — |
+| `PUT` | `/api/v1/admin/market/categories/{categorieId}` | admin | — |
+| `DELETE` | `/api/v1/admin/market/categories/{categorieId}` | admin | — |
+
+**BoutiqueController**
+
+| Méthode | Chemin appelé par le frontend | Accès | Corps |
+|---|---|---|---|
+| `POST` | `/api/v1/market/boutiques` | authentifie | oui |
+| `GET` | `/api/v1/market/boutiques/moi` | authentifie | oui |
+| `PUT` | `/api/v1/market/boutiques/moi` | authentifie | oui |
+| `POST` | `/api/v1/market/boutiques/moi/pieces` | authentifie | oui |
+| `GET` | `/api/v1/market/boutiques/{boutiqueId}` | authentifie | — |
+| `GET` | `/api/v1/market/boutiques/moi/produits` | authentifie | — |
+| `POST` | `/api/v1/market/boutiques/moi/produits` | authentifie | oui |
+| `PUT` | `/api/v1/market/boutiques/moi/produits/{produitId}` | authentifie | oui |
+| `PUT` | `/api/v1/market/boutiques/moi/produits/{produitId}/photos` | authentifie | oui |
+| `PUT` | `/api/v1/market/boutiques/moi/produits/{produitId}/variantes` | authentifie | oui |
+| `PUT` | `/api/v1/market/boutiques/moi/produits/{produitId}/caracteristiques` | authentifie | oui |
+| `PATCH` | `/api/v1/market/boutiques/moi/produits/{produitId}/actif` | authentifie | — |
+| `DELETE` | `/api/v1/market/boutiques/moi/produits/{produitId}` | authentifie | — |
+
+**CatalogueController**
+
+| Méthode | Chemin appelé par le frontend | Accès | Corps |
+|---|---|---|---|
+| `GET` | `/api/v1/market/produits` | authentifie | — |
+| `GET` | `/api/v1/market/produits/{produitId}` | authentifie | — |
+| `GET` | `/api/v1/market/produits/{produitId}/avis` | authentifie | — |
+| `POST` | `/api/v1/market/produits/{produitId}/avis` | authentifie | oui |
+| `GET` | `/api/v1/market/produits/{produitId}/avis/moi` | authentifie | — |
+
+**CategorieController**
+
+| Méthode | Chemin appelé par le frontend | Accès | Corps |
+|---|---|---|---|
+| `GET` | `/api/v1/market/categories` | authentifie | — |
+
 ---
 
-**211 endpoints appelables** depuis le frontend. 9 endpoints `/internal/**` sont exclus : aucune passerelle ne les route — c'est précisément ce qui les rend injoignables depuis l'extérieur. Un service les appelle en direct sur le port de son pair, avec l'en-tête `X-Internal-Secret`. La phrase précédente affirmait l'inverse — « derrière la signature HMAC de la passerelle, un appel direct est refusé » — et c'était faux dans les deux moitiés.
+**239 endpoints appelables** depuis le frontend. 9 endpoints `/internal/**` sont exclus : aucune passerelle ne les route — c'est précisément ce qui les rend injoignables depuis l'extérieur. Un service les appelle en direct sur le port de son pair, avec l'en-tête `X-Internal-Secret`. La phrase précédente affirmait l'inverse — « derrière la signature HMAC de la passerelle, un appel direct est refusé » — et c'était faux dans les deux moitiés.
 

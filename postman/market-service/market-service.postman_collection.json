@@ -1,0 +1,1679 @@
+{
+  "info": {
+    "name": "Restart — market-service",
+    "description": "Collection générée depuis le code source (28 endpoints).\n\n**Appels via le Gateway** : `baseUrl` = `http://localhost:8081/api/v1`.\n\nL'appel en direct sur `http://localhost:8092` est refusé : les services exigent la signature HMAC du Gateway, qu'un client ne peut pas produire.\n\n**Une seule exception, et elle est voulue** : la surface `/internal/**` n'est routée par AUCUNE passerelle — c'est précisément ce qui la rend injoignable depuis l'extérieur. Ses requêtes utilisent donc `directUrl` (`http://localhost:8092`) et l'en-tête `X-Internal-Secret`, jamais un jeton.\n\nLe jeton est capturé automatiquement après une connexion réussie et réinjecté dans `{{accessToken}}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Calcule {{totpCode}} a partir de totpSecret, avant chaque requete.",
+          "//",
+          "// AUCUN `return` au niveau superieur : le bac a sable de Postman n'encadre pas",
+          "// toujours le script dans une fonction, et un `return` hors fonction y est une",
+          "// erreur de syntaxe. Le script s'interrompait alors AVANT de poser totpCode,",
+          "// la connexion partait avec un code vide, et le serveur repondait",
+          "// « Identifiants invalides » — un message qui ne desigpas le script.",
+          "//",
+          "// Tout est donc dans une fonction, appelee a la fin, et le resultat est",
+          "// journalise : sans trace dans la console, un script de pre-requete qui echoue",
+          "// est indistinguable d'un mauvais mot de passe.",
+          "function codeTotp(secretBrut) {",
+          "    const secret = (secretBrut || \"\").replace(/[^A-Za-z2-7]/g, \"\").toUpperCase();",
+          "    if (!secret) { return \"\"; }",
+          "",
+          "    // Base32 -> octets. CryptoJS ne sait pas lire le base32.",
+          "    const ALPHABET = \"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567\";",
+          "    let bits = \"\";",
+          "    for (let i = 0; i < secret.length; i++) {",
+          "        const j = ALPHABET.indexOf(secret.charAt(i));",
+          "        if (j >= 0) { bits += j.toString(2).padStart(5, \"0\"); }",
+          "    }",
+          "    let hex = \"\";",
+          "    for (let i = 0; i + 8 <= bits.length; i += 8) {",
+          "        hex += parseInt(bits.substring(i, i + 8), 2).toString(16).padStart(2, \"0\");",
+          "    }",
+          "    if (!hex) { return \"\"; }",
+          "",
+          "    // Compteur : pas de 30 secondes depuis l'epoque, sur 8 octets.",
+          "    const pas = Math.floor(Date.now() / 1000 / 30);",
+          "    const compteur = pas.toString(16).padStart(16, \"0\");",
+          "",
+          "    const hmac = CryptoJS.HmacSHA1(",
+          "        CryptoJS.enc.Hex.parse(compteur),",
+          "        CryptoJS.enc.Hex.parse(hex)).toString();",
+          "",
+          "    // Troncature dynamique, RFC 4226.",
+          "    const decalage = parseInt(hmac.substring(hmac.length - 1), 16) * 2;",
+          "    const tronque = parseInt(hmac.substring(decalage, decalage + 8), 16) & 0x7fffffff;",
+          "    return String(tronque % 1000000).padStart(6, \"0\");",
+          "}",
+          "",
+          "// Le secret peut etre dans l'environnement OU dans la collection : chercher",
+          "// dans les deux evite le piege du mauvais environnement selectionne.",
+          "const brut = pm.environment.get(\"totpSecret\") || pm.collectionVariables.get(\"totpSecret\") || \"\";",
+          "const code = codeTotp(brut);",
+          "pm.collectionVariables.set(\"totpCode\", code);",
+          "",
+          "if (!brut) {",
+          "    console.log(\"totpSecret VIDE : totpCode laisse vide. Normal si le second \"",
+          "        + \"facteur n'est pas encore enrole ; sinon, renseignez-le dans \"",
+          "        + \"l'environnement.\");",
+          "} else if (!code) {",
+          "    console.log(\"totpSecret present mais illisible (base32 attendu) : \" + brut.length",
+          "        + \" caracteres.\");",
+          "} else {",
+          "    console.log(\"totpCode = \" + code);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "AdminMarket",
+      "description": "Contrôleur `AdminMarketController` — base `/admin/market`",
+      "item": [
+        {
+          "name": "GET /admin/market/boutiques",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/market/boutiques",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "market",
+                "boutiques"
+              ]
+            },
+            "description": "Handler : boutiques\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/market/boutiques/{boutiqueId}/decision",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/market/boutiques/:boutiqueId/decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "market",
+                "boutiques",
+                ":boutiqueId",
+                "decision"
+              ],
+              "variable": [
+                {
+                  "key": "boutiqueId",
+                  "value": "{{boutiqueId}}",
+                  "description": "Valeur de boutiqueId"
+                }
+              ]
+            },
+            "description": "Handler : deciderBoutique\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /admin/market/produits",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/market/produits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "market",
+                "produits"
+              ]
+            },
+            "description": "Handler : produits\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/market/produits/{produitId}/decision",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/market/produits/:produitId/decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "market",
+                "produits",
+                ":produitId",
+                "decision"
+              ],
+              "variable": [
+                {
+                  "key": "produitId",
+                  "value": "{{produitId}}",
+                  "description": "Valeur de produitId"
+                }
+              ]
+            },
+            "description": "Handler : deciderProduit\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /admin/market/avis",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/market/avis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "market",
+                "avis"
+              ]
+            },
+            "description": "Handler : avis\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/market/avis/{avisId}/decision",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/market/avis/:avisId/decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "market",
+                "avis",
+                ":avisId",
+                "decision"
+              ],
+              "variable": [
+                {
+                  "key": "avisId",
+                  "value": "{{avisId}}",
+                  "description": "Valeur de avisId"
+                }
+              ]
+            },
+            "description": "Handler : deciderAvis\n\n⚠️ Réservé au rôle ADMIN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /admin/market/categories",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/market/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "market",
+                "categories"
+              ]
+            },
+            "description": "Handler : creerCategorie\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /admin/market/categories/{categorieId}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/market/categories/:categorieId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "market",
+                "categories",
+                ":categorieId"
+              ],
+              "variable": [
+                {
+                  "key": "categorieId",
+                  "value": "{{categorieId}}",
+                  "description": "Valeur de categorieId"
+                }
+              ]
+            },
+            "description": "Handler : modifierCategorie\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /admin/market/categories/{categorieId}",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/market/categories/:categorieId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "market",
+                "categories",
+                ":categorieId"
+              ],
+              "variable": [
+                {
+                  "key": "categorieId",
+                  "value": "{{categorieId}}",
+                  "description": "Valeur de categorieId"
+                }
+              ]
+            },
+            "description": "Handler : supprimerCategorie\n\n⚠️ Réservé au rôle ADMIN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Boutique",
+      "description": "Contrôleur `BoutiqueController` — base `/market/boutiques`",
+      "item": [
+        {
+          "name": "POST /market/boutiques",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/boutiques",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "boutiques"
+              ]
+            },
+            "description": "Handler : ouvrir",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /market/boutiques/moi",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/boutiques/moi",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "boutiques",
+                "moi"
+              ]
+            },
+            "description": "Handler : mienne"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /market/boutiques/moi",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/boutiques/moi",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "boutiques",
+                "moi"
+              ]
+            },
+            "description": "Handler : modifier",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /market/boutiques/moi/pieces",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/boutiques/moi/pieces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "boutiques",
+                "moi",
+                "pieces"
+              ]
+            },
+            "description": "Handler : rattacher",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /market/boutiques/{boutiqueId}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/boutiques/:boutiqueId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "boutiques",
+                ":boutiqueId"
+              ],
+              "variable": [
+                {
+                  "key": "boutiqueId",
+                  "value": "{{boutiqueId}}",
+                  "description": "Valeur de boutiqueId"
+                }
+              ]
+            },
+            "description": "Handler : vitrine"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /market/boutiques/moi/produits",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/boutiques/moi/produits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "boutiques",
+                "moi",
+                "produits"
+              ]
+            },
+            "description": "Handler : mesProduits"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /market/boutiques/moi/produits",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/boutiques/moi/produits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "boutiques",
+                "moi",
+                "produits"
+              ]
+            },
+            "description": "Handler : creer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /market/boutiques/moi/produits/{produitId}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/boutiques/moi/produits/:produitId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "boutiques",
+                "moi",
+                "produits",
+                ":produitId"
+              ],
+              "variable": [
+                {
+                  "key": "produitId",
+                  "value": "{{produitId}}",
+                  "description": "Valeur de produitId"
+                }
+              ]
+            },
+            "description": "Handler : modifierProduit",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /market/boutiques/moi/produits/{produitId}/photos",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/boutiques/moi/produits/:produitId/photos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "boutiques",
+                "moi",
+                "produits",
+                ":produitId",
+                "photos"
+              ],
+              "variable": [
+                {
+                  "key": "produitId",
+                  "value": "{{produitId}}",
+                  "description": "Valeur de produitId"
+                }
+              ]
+            },
+            "description": "Handler : photos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /market/boutiques/moi/produits/{produitId}/variantes",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/boutiques/moi/produits/:produitId/variantes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "boutiques",
+                "moi",
+                "produits",
+                ":produitId",
+                "variantes"
+              ],
+              "variable": [
+                {
+                  "key": "produitId",
+                  "value": "{{produitId}}",
+                  "description": "Valeur de produitId"
+                }
+              ]
+            },
+            "description": "Handler : variantes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /market/boutiques/moi/produits/{produitId}/caracteristiques",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/boutiques/moi/produits/:produitId/caracteristiques",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "boutiques",
+                "moi",
+                "produits",
+                ":produitId",
+                "caracteristiques"
+              ],
+              "variable": [
+                {
+                  "key": "produitId",
+                  "value": "{{produitId}}",
+                  "description": "Valeur de produitId"
+                }
+              ]
+            },
+            "description": "Handler : caracteristiques",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PATCH /market/boutiques/moi/produits/{produitId}/actif",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/boutiques/moi/produits/:produitId/actif",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "boutiques",
+                "moi",
+                "produits",
+                ":produitId",
+                "actif"
+              ],
+              "variable": [
+                {
+                  "key": "produitId",
+                  "value": "{{produitId}}",
+                  "description": "Valeur de produitId"
+                }
+              ]
+            },
+            "description": "Handler : activation"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /market/boutiques/moi/produits/{produitId}",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/boutiques/moi/produits/:produitId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "boutiques",
+                "moi",
+                "produits",
+                ":produitId"
+              ],
+              "variable": [
+                {
+                  "key": "produitId",
+                  "value": "{{produitId}}",
+                  "description": "Valeur de produitId"
+                }
+              ]
+            },
+            "description": "Handler : supprimer"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Catalogue",
+      "description": "Contrôleur `CatalogueController` — base `/market/produits`",
+      "item": [
+        {
+          "name": "GET /market/produits",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/produits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "produits"
+              ]
+            },
+            "description": "Handler : lister"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /market/produits/{produitId}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/produits/:produitId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "produits",
+                ":produitId"
+              ],
+              "variable": [
+                {
+                  "key": "produitId",
+                  "value": "{{produitId}}",
+                  "description": "Valeur de produitId"
+                }
+              ]
+            },
+            "description": "Handler : fiche"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /market/produits/{produitId}/avis",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/produits/:produitId/avis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "produits",
+                ":produitId",
+                "avis"
+              ],
+              "variable": [
+                {
+                  "key": "produitId",
+                  "value": "{{produitId}}",
+                  "description": "Valeur de produitId"
+                }
+              ]
+            },
+            "description": "Handler : avis"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /market/produits/{produitId}/avis",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/produits/:produitId/avis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "produits",
+                ":produitId",
+                "avis"
+              ],
+              "variable": [
+                {
+                  "key": "produitId",
+                  "value": "{{produitId}}",
+                  "description": "Valeur de produitId"
+                }
+              ]
+            },
+            "description": "Handler : noter",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TODO\": \"compléter le corps\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /market/produits/{produitId}/avis/moi",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/produits/:produitId/avis/moi",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "produits",
+                ":produitId",
+                "avis",
+                "moi"
+              ],
+              "variable": [
+                {
+                  "key": "produitId",
+                  "value": "{{produitId}}",
+                  "description": "Valeur de produitId"
+                }
+              ]
+            },
+            "description": "Handler : monAvis"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Categorie",
+      "description": "Contrôleur `CategorieController` — base `/market/categories`",
+      "item": [
+        {
+          "name": "GET /market/categories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/market/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "market",
+                "categories"
+              ]
+            },
+            "description": "Handler : enfants"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Statut non 5xx\", function () {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test(\"Réponse sous 2s\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081/api/v1"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "maintenanceToken",
+      "value": ""
+    },
+    {
+      "key": "email",
+      "value": "dev@example.com"
+    },
+    {
+      "key": "password",
+      "value": "SecurePass123!"
+    },
+    {
+      "key": "phoneNumber",
+      "value": "+22300000000"
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "adminPhone",
+      "value": ""
+    },
+    {
+      "key": "adminIdentifier",
+      "value": ""
+    },
+    {
+      "key": "adminPassword",
+      "value": ""
+    },
+    {
+      "key": "totpCode",
+      "value": ""
+    },
+    {
+      "key": "tempToken",
+      "value": ""
+    },
+    {
+      "key": "adminSecret",
+      "value": ""
+    },
+    {
+      "key": "maintenanceSecret",
+      "value": ""
+    },
+    {
+      "key": "directUrl",
+      "value": "http://localhost:8092"
+    },
+    {
+      "key": "internalSecret",
+      "value": ""
+    }
+  ]
+}

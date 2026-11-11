@@ -157,7 +157,16 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8088}
+          # `issuer-uri` A ETE RETIRE.
+          #
+          # Il faisait valider le claim `iss` contre cette URL, alors que
+          # l'autorite emet `iss: interface-service` — un NOM, declare par
+          # `jwt.issuer` dans la configuration partagee. Tous les jetons
+          # etaient refuses : « The iss claim is not valid ».
+          #
+          # L'emetteur EST toujours verifie, par DecodeurJwtDeLaPlateforme
+          # dans SecurityConfig. Le retirer d'ici sans rien mettre a la place
+          # aurait supprime le controle au lieu de le corriger.
           jwk-set-uri: ${JWKS_URL:http://localhost:8088/dev/.well-known/jwks.json}
 
 # ==========================================

@@ -1,6 +1,7 @@
 package com.abdatytch.notification_service.config;
 
 import com.abdatytch.commons.security.AutorisationInterne;
+import com.abdatytch.commons.security.DecodeurJwtDeLaPlateforme;
 import com.abdatytch.commons.security.CheminsPublics;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -12,6 +13,7 @@ import org.springframework.security.config.annotation.web.reactive.EnableWebFlux
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
@@ -95,6 +97,29 @@ public class SecurityConfig {
     public AutorisationInterne autorisationInterne(
             @Value("${security.internal-secret:}") String secretInterne) {
         return new AutorisationInterne(secretInterne);
+    }
+
+    /**
+     * Le decodeur de jetons.
+     *
+     * <h3>Declare ICI parce qu'aucune ligne de configuration ne suffit</h3>
+     *
+     * {@code issuer-uri} faisait valider le claim {@code iss} contre une URL,
+     * alors que l'autorite de ce depot emet {@code iss: interface-service} —
+     * un NOM. Resultat : TOUS les jetons refuses, avec « The iss claim is not
+     * valid ». Le retirer sans rien mettre a la place aurait supprime la
+     * verification de l'emetteur, ce qui est pire.
+     *
+     * <p>{@link DecodeurJwtDeLaPlateforme} verifie la signature par le JWKS,
+     * les horodatages avec la tolerance d'horloge de Spring, et l'emetteur par
+     * son nom. Il vit dans platform-commons : deux services en avaient besoin
+     * le meme jour.
+     */
+    @Bean
+    public ReactiveJwtDecoder reactiveJwtDecoder(
+            @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwks,
+            @Value("${jwt.issuer:interface-service}") String emetteur) {
+        return DecodeurJwtDeLaPlateforme.avecEmetteur(jwks, emetteur);
     }
 
     @Bean

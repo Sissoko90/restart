@@ -52,6 +52,7 @@ ORDRE_DES_SERVICES = [
     # d'appareil pour le push, administration des modeles et des envois.
     # Le module n'est plus un squelette depuis longtemps ; cette liste, si.
     "notification-service",
+    "market-service",
 ]
 
 
