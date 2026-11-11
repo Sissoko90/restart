@@ -7,6 +7,7 @@ import com.abdatytch.interface_service.dto.request.AdminLoginRequest;
 import com.abdatytch.interface_service.entity.User;
 import com.abdatytch.interface_service.repository.UserRepository;
 import com.abdatytch.interface_service.service.EmailService;
+import com.abdatytch.interface_service.service.FaitsDeTentativeAdmin;
 import com.abdatytch.interface_service.service.GeoLocationService;
 import com.abdatytch.interface_service.service.IDevJwtService;
 import com.abdatytch.commons.totp.TotpService;
@@ -42,6 +43,19 @@ public class AdminController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminController.class);
 
+    /**
+     * Validite des deux liens de l'alerte de connexion.
+     *
+     * <p>Le nombre etait ecrit DEUX fois : {@code plusMinutes(30)} pour
+     * l'echeance reelle, et « 30 minutes » dans le texte du courriel. Rien
+     * n'obligeait les deux a rester d'accord, et un message qui annonce une
+     * echeance fausse fait cliquer sur un lien deja mort.
+     */
+    private static final Duration VALIDITE_DE_LA_CONFIRMATION = Duration.ofMinutes(30);
+
+    /** Validite du lien de maintenance. Meme raison, meme remede. */
+    private static final Duration VALIDITE_DE_LA_MAINTENANCE = Duration.ofHours(24);
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final TotpService totpService;
@@ -50,7 +64,34 @@ public class AdminController {
     private final GeoLocationService geoLocationService;
     private final ReactiveStringRedisTemplate redisTemplate;
 
-    @Value("${admin.mail.from}")
+    /**
+     * L'adresse du compte administrateur.
+     *
+     * <h3>La clef lue etait {@code admin.mail.from}, et elle n'existe plus</h3>
+     *
+     * Ce bloc de configuration a ete retire du module en meme temps que ses
+     * trois comptes SMTP — ce service n'expedie plus rien lui-meme. Le
+     * {@code @Value} n'avait AUCUNE valeur par defaut : un demarrage neuf
+     * aurait echoue sur un marqueur non resolu.
+     *
+     * <h3>Et c'etait deja la mauvaise clef</h3>
+     *
+     * Ce champ ne sert pas a expedier : il sert a RETROUVER le compte
+     * administrateur ({@code findByEmail}) et a lui adresser l'alerte de
+     * tentative de connexion. Le commentaire de {@code getAdminInfo} disait
+     * d'ailleurs que l'adresse devait venir d'{@code ADMIN_DEFAULT_EMAIL} —
+     * le code lisait autre chose. {@code AdminSeeder},
+     * {@code RecoverySecretScheduler} et {@code MaintenanceController} lisent
+     * tous les trois {@code admin.default.email} ; ce champ les rejoint.
+     *
+     * <h3>Le destinataire de l'alerte est donc le bon</h3>
+     *
+     * L'alerte « est-ce vous ? » ne peut etre repondue que par la personne a
+     * qui appartient le compte. L'ancienne clef y envoyait l'adresse
+     * d'EXPEDITION, ce qui marchait par coincidence tant que les deux etaient
+     * la meme boite.
+     */
+    @Value("${admin.default.email}")
     private String adminEmail;
 
     @Value("${server.port:8081}")
@@ -283,7 +324,8 @@ public class AdminController {
                     // Marquer le compte comme en attente de confirmation
                     user.setAdminConfirmationPending(true);
                     user.setAdminConfirmationToken(confirmationToken);
-                    user.setAdminConfirmationExpiresAt(LocalDateTime.now().plusMinutes(30));
+                    user.setAdminConfirmationExpiresAt(LocalDateTime.now()
+                            .plusMinutes(VALIDITE_DE_LA_CONFIRMATION.toMinutes()));
                     user.setAdminConfirmationIp(ipAddress);
 
                     // Sauvegarder l'utilisateur
@@ -312,7 +354,8 @@ public class AdminController {
                         // Générer un token de maintenance
                         String maintenanceToken = generateMaintenanceToken();
                         user.setCriticalMaintenanceToken(maintenanceToken);
-                        user.setCriticalMaintenanceExpiresAt(LocalDateTime.now().plusHours(24));
+                        user.setCriticalMaintenanceExpiresAt(LocalDateTime.now()
+                                .plusHours(VALIDITE_DE_LA_MAINTENANCE.toHours()));
 
                         // Envoyer l'email critique avec toutes les infos
                         sendCriticalAlertEmail(user, maintenanceToken, ipAddress, userAgent);
@@ -351,149 +394,53 @@ public class AdminController {
     }
 
     /**
-
-     * Envoie un email de confirmation admin avec 2 boutons (C'est moi / Ce n'est pas moi)
-     * Inclut toutes les informations détaillées de géolocalisation et de l'appareil
+     * Previent l'administrateur qu'une connexion a son compte a ete tentee.
+     *
+     * <h3>Le corps du message n'est plus compose ici</h3>
+     *
+     * Cette methode ecrivait cent lignes de HTML en {@code String.format},
+     * DEUX fois — une par branche de la geolocalisation. Le HTML partait vers
+     * un modele sans variante {@code corps-html} : le courriel arrivait en
+     * texte brut, balisage compris.
+     *
+     * <p>Pire, {@code userAgent} et les champs de geolocalisation y entraient
+     * sans echappement. Le {@code User-Agent} est pose par la personne que
+     * cette alerte denonce : elle pouvait ecrire un lien dans le message qui
+     * la signale. Passes en variables d'un gabarit, ils sont echappes par le
+     * rendu de notification-service.
+     *
+     * <h3>Une geolocalisation absente ne supprime plus l'alerte</h3>
+     *
+     * L'ancien code s'abonnait avec un gestionnaire d'erreur qui renvoyait un
+     * second message, plus court. Il n'avait en revanche rien pour un
+     * {@code Mono} VIDE — et un Mono vide ne declenche ni l'un ni l'autre :
+     * l'alerte ne partait tout simplement pas. {@code defaultIfEmpty} ferme ce
+     * cas, et les champs manquants portent « non disponible ».
      */
-    private void sendAdminConfirmationEmail(User user, String confirmationToken, String ipAddress, String userAgent) {
+    private void sendAdminConfirmationEmail(User user, String confirmationToken,
+                                            String ipAddress, String userAgent) {
         String baseUrl = publicBaseUrl + "/admin/confirm";
         String confirmUrl = baseUrl + "?token=" + confirmationToken + "&action=confirm";
         String blockUrl = baseUrl + "?token=" + confirmationToken + "&action=block";
 
-        // Récupérer les infos de géolocalisation de manière réactive
+        FaitsDeTentativeAdmin sansGeo = new FaitsDeTentativeAdmin(
+                user.getEmail(), ipAddress, userAgent, null,
+                user.getFailedLoginAttempts(), user.getPostConfirmationAttempts());
+
         geoLocationService.getDetailedGeoInfo(ipAddress, userAgent)
-            .subscribe(geoInfo -> {
-                String subject = " Alerte de sécurité : Tentative de connexion admin";
-
-                String message = String.format("""
-<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
-                    <div style='background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); padding: 30px; text-align: center;'>
-                    <h1 style='margin: 0; color: white; font-size: 24px;'> Alerte de sécurité</h1>
-                    <p style='margin: 10px 0 0 0; color: rgba(255,255,255,0.9);'>Tentative de connexion admin détectée</p>
-                    </div>
-                    <div style='background: #f9f9f9; padding: 30px;'>
-                    <p style='color: #333; line-height: 1.6;'>Bonjour Administrateur,</p>
-                    <p style='color: #333; line-height: 1.6;'>Une tentative de connexion admin a été détectée.</p>
-
-                    <div style='background: white; border-left: 4px solid #667eea; padding: 20px; margin: 20px 0;'>
-                    <h3 style='margin: 0 0 15px 0; color: #667eea; font-size: 16px;'>INFORMATIONS DE CONNEXION</h3>
-                    <p style='margin: 5px 0; color: #666;'><strong>Email :</strong> %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>Heure :</strong> %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>IP Address :</strong> %s</p>
-                    </div>
-
-                    <div style='background: white; border-left: 4px solid #764ba2; padding: 20px; margin: 20px 0;'>
-                    <h3 style='margin: 0 0 15px 0; color: #764ba2; font-size: 16px;'>INFORMATIONS DE GÉOLOCALISATION</h3>
-                    <p style='margin: 5px 0; color: #666;'><strong>Pays :</strong> %s (%s)</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>Ville :</strong> %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>Région :</strong> %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>Fuseau horaire :</strong> %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>Coordonnées :</strong> %s, %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>ISP :</strong> %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>Organisation :</strong> %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>ASN :</strong> %s</p>
-                    </div>
-
-                    <div style='background: white; border-left: 4px solid #667eea; padding: 20px; margin: 20px 0;'>
-                    <h3 style='margin: 0 0 15px 0; color: #667eea; font-size: 16px;'>INFORMATIONS APPAREIL</h3>
-                    <p style='margin: 5px 0; color: #666;'><strong>Type d'appareil :</strong> %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>Navigateur :</strong> %s %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>Système d'exploitation :</strong> %s %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>User-Agent :</strong> %s</p>
-                    </div>
-
-                    <div style='background: white; border-left: 4px solid #764ba2; padding: 20px; margin: 20px 0;'>
-                    <h3 style='margin: 0 0 15px 0; color: #764ba2; font-size: 16px;'>INFORMATIONS DE TENTATIVE</h3>
-                    <p style='margin: 5px 0; color: #666;'><strong>ID de tentative :</strong> %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>Type d'événement :</strong> %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>Statut :</strong> %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>Timestamp :</strong> %s</p>
-                    </div>
-
-                    <div style='background: #fff3cd; border: 1px solid #ffc107; padding: 20px; margin: 20px 0; border-radius: 5px;'>
-                    <h3 style='margin: 0 0 15px 0; color: #856404; font-size: 16px;'>ACTION REQUISE</h3>
-                    <p style='margin: 10px 0; color: #856404; line-height: 1.6;'>Pour confirmer si c'est vous, cliquez sur l'un des liens ci-dessous :</p>
-                    <p style='margin: 10px 0;'>
-                    <a href='%s' style='display: inline-block; padding: 12px 24px; background: #28a745; color: white; text-decoration: none; border-radius: 5px; margin-right: 10px;'>C'EST MOI</a>
-                    <a href='%s' style='display: inline-block; padding: 12px 24px; background: #dc3545; color: white; text-decoration: none; border-radius: 5px;'>CE N'EST PAS MOI</a>
-                    </p>
-                    <p style='margin: 10px 0; color: #856404; font-size: 12px;'>Ce lien expirera dans 30 minutes.</p>
-                    </div>
-                    </div>
-                    <div style='background: #333; color: white; padding: 20px; text-align: center;'>
-                    <p style='margin: 0; font-size: 12px; color: rgba(255,255,255,0.7);'>Cet email a été envoyé automatiquement par le système Restart.</p>
-                    </div>
-                    </div>
-                    """
-,
-                    user.getEmail(),
-                    LocalDateTime.now(),
-                    geoInfo.getIpAddress(),
-                    geoInfo.getCountry(),
-                    geoInfo.getCountryCode(),
-                    geoInfo.getCity(),
-                    geoInfo.getRegion(),
-                    geoInfo.getTimezone(),
-                    geoInfo.getLatitude(),
-                    geoInfo.getLongitude(),
-                    geoInfo.getIsp(),
-                    geoInfo.getOrganization(),
-                    geoInfo.getAsn(),
-                    geoInfo.getDeviceType(),
-                    geoInfo.getBrowserFamily(),
-                    geoInfo.getBrowserVersion(),
-                    geoInfo.getOsFamily(),
-                    geoInfo.getOsVersion(),
-                    geoInfo.getDeviceInfo(),
-                    geoInfo.getId(),
-                    geoInfo.getEventType(),
-                    geoInfo.getStatus(),
-                    geoInfo.getTimestamp(),
-                    confirmUrl,
-                    blockUrl
-                );
-
-                emailService.sendAdminAlertEmail(adminEmail, subject, message).subscribe();
-            }, error -> {
-                log.error("Erreur lors de la récupération des infos de géolocalisation: {}", error.getMessage());
-                // Fallback: envoyer l'email sans les infos détaillées
-                String subject = " Alerte de sécurité : Tentative de connexion admin";
-                String message = String.format("""
-<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
-                    <div style='background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); padding: 30px; text-align: center;'>
-                    <h1 style='margin: 0; color: white; font-size: 24px;'> Alerte de sécurité</h1>
-                    <p style='margin: 10px 0 0 0; color: rgba(255,255,255,0.9);'>Tentative de connexion admin détectée</p>
-                    </div>
-                    <div style='background: #f9f9f9; padding: 30px;'>
-                    <p style='color: #333; line-height: 1.6;'>Bonjour Administrateur,</p>
-                    <p style='color: #333; line-height: 1.6;'>Une tentative de connexion admin a été détectée.</p>
-
-                    <div style='background: white; border-left: 4px solid #667eea; padding: 20px; margin: 20px 0;'>
-                    <h3 style='margin: 0 0 15px 0; color: #667eea; font-size: 16px;'>INFORMATIONS DE CONNEXION</h3>
-                    <p style='margin: 5px 0; color: #666;'><strong>Email :</strong> %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>Heure :</strong> %s</p>
-                    <p style='margin: 5px 0; color: #666;'><strong>IP Address :</strong> %s</p>
-                    </div>
-
-                    <div style='background: #fff3cd; border: 1px solid #ffc107; padding: 20px; margin: 20px 0; border-radius: 5px;'>
-                    <h3 style='margin: 0 0 15px 0; color: #856404; font-size: 16px;'>ACTION REQUISE</h3>
-                    <p style='margin: 10px 0; color: #856404; line-height: 1.6;'>Pour confirmer si c'est vous, cliquez sur l'un des liens ci-dessous :</p>
-                    <p style='margin: 10px 0;'>
-                    <a href='%s' style='display: inline-block; padding: 12px 24px; background: #28a745; color: white; text-decoration: none; border-radius: 5px; margin-right: 10px;'>C'EST MOI</a>
-                    <a href='%s' style='display: inline-block; padding: 12px 24px; background: #dc3545; color: white; text-decoration: none; border-radius: 5px;'>CE N'EST PAS MOI</a>
-                    </p>
-                    <p style='margin: 10px 0; color: #856404; font-size: 12px;'>Ce lien expirera dans 30 minutes.</p>
-                    </div>
-                    </div>
-                    <div style='background: #333; color: white; padding: 20px; text-align: center;'>
-                    <p style='margin: 0; font-size: 12px; color: rgba(255,255,255,0.7);'>Cet email a été envoyé automatiquement par le système Restart.</p>
-                    </div>
-                    </div>
-                    """
-, user.getEmail(), LocalDateTime.now(), ipAddress, confirmUrl, blockUrl);
-
-                emailService.sendAdminAlertEmail(adminEmail, subject, message).subscribe();
-            });
+            .map(geo -> new FaitsDeTentativeAdmin(user.getEmail(), ipAddress, userAgent,
+                    geo, user.getFailedLoginAttempts(), user.getPostConfirmationAttempts()))
+            .onErrorResume(erreur -> {
+                log.warn("Geolocalisation indisponible pour l'alerte de connexion "
+                        + "administrateur, l'alerte part sans elle : {}", erreur.getMessage());
+                return Mono.just(sansGeo);
+            })
+            .defaultIfEmpty(sansGeo)
+            .flatMap(faits -> emailService.alerterSurUneConnexionAdmin(adminEmail, faits,
+                    confirmUrl, blockUrl, VALIDITE_DE_LA_CONFIRMATION.toMinutes()))
+            .subscribe(rien -> { },
+                    erreur -> log.error("Alerte de connexion administrateur non envoyee : {}",
+                            erreur.getMessage()));
     }
 
     /**
@@ -710,111 +657,36 @@ public class AdminController {
     }
 
     /**
-
-     * Envoie un email critique avec toutes les informations détaillées
+     * Signale que la confirmation a ete franchie et que les tentatives
+     * continuent.
+     *
+     * <p>Meme correction que {@code sendAdminConfirmationEmail} : le rapport
+     * etait ecrit deux fois en {@code String.format}, et un {@code Mono} vide
+     * de la geolocalisation faisait disparaitre l'alerte la plus grave du
+     * service. Il part en CRITIQUE, donc par le compte d'expedition dedie,
+     * avec repli sur le compte ordinaire.
      */
-    private void sendCriticalAlertEmail(User user, String maintenanceToken, String ipAddress, String userAgent) {
+    private void sendCriticalAlertEmail(User user, String maintenanceToken,
+                                        String ipAddress, String userAgent) {
         String maintenanceUrl = publicBaseUrl + "/maintenance/auth?token=" + maintenanceToken;
 
+        FaitsDeTentativeAdmin sansGeo = new FaitsDeTentativeAdmin(
+                user.getEmail(), ipAddress, userAgent, null,
+                user.getFailedLoginAttempts(), user.getPostConfirmationAttempts());
+
         geoLocationService.getDetailedGeoInfo(ipAddress, userAgent)
-            .subscribe(geoInfo -> {
-                String subject = " ALERTE CRITIQUE : Attaque admin en cours - Dernière couche de sécurité";
-                String message = String.format("""
-URGENT - ATTAQUE ADMIN EN COURS
-
-                    === INFORMATIONS DE L'ATTAQUANT ===
-                    Email : %s
-                    Heure : %s
-                    IP Address : %s
-
-                    === INFORMATIONS DE GÉOLOCALISATION ===
-                    Pays : %s (%s)
-                    Ville : %s
-                    Région : %s
-                    Fuseau horaire : %s
-                    Coordonnées : %s, %s
-                    ISP : %s
-                    Organisation : %s
-                    ASN : %s
-
-                    === INFORMATIONS APPAREIL ===
-                    Type d'appareil : %s
-                    Navigateur : %s %s
-                    Système d'exploitation : %s %s
-                    User-Agent : %s
-
-                    === CONTEXTE DE L'ATTAQUE ===
-                    L'attaquant a réussi à contourner la première couche de sécurité (confirmation admin)
-                    et a effectué 3 tentatives supplémentaires après confirmation.
-
-                    Nombre total de tentatives : %d
-                    Tentatives après confirmation : %d
-
-                    === ACTION REQUISE ===
-                    L'IP de l'attaquant a été bloquée dans Redis.
-                    Pour autoriser l'accès maintenance (en cas de légitimité), utilisez ce lien :
-
-                    ACCÈS MAINTENANCE : %s
-
-                    Ce lien expirera dans 24 heures.
-
-                    Cordialement,
-                    Équipe de sécurité Restart
-                    """
-,
-                    user.getEmail(),
-                    LocalDateTime.now(),
-                    geoInfo.getIpAddress(),
-                    geoInfo.getCountry(),
-                    geoInfo.getCountryCode(),
-                    geoInfo.getCity(),
-                    geoInfo.getRegion(),
-                    geoInfo.getTimezone(),
-                    geoInfo.getLatitude(),
-                    geoInfo.getLongitude(),
-                    geoInfo.getIsp(),
-                    geoInfo.getOrganization(),
-                    geoInfo.getAsn(),
-                    geoInfo.getDeviceType(),
-                    geoInfo.getBrowserFamily(),
-                    geoInfo.getBrowserVersion(),
-                    geoInfo.getOsFamily(),
-                    geoInfo.getOsVersion(),
-                    geoInfo.getDeviceInfo(),
-                    user.getFailedLoginAttempts(),
-                    user.getPostConfirmationAttempts(),
-                    maintenanceUrl
-                );
-                emailService.sendCriticalAlertEmail(criticalAlertEmail, subject, message).subscribe();
-            }, error -> {
-                log.error("Erreur lors de la récupération des infos de géolocalisation pour email critique: {}", error.getMessage());
-                // Fallback: envoyer l'email critique sans les infos détaillées
-                String subject = " ALERTE CRITIQUE : Attaque admin en cours - Dernière couche de sécurité";
-                String message = String.format("""
-URGENT - ATTAQUE ADMIN EN COURS
-
-                    Email : %s
-                    Heure : %s
-                    IP Address : %s
-
-                    L'attaquant a réussi à contourner la première couche de sécurité (confirmation admin)
-                    et a effectué 3 tentatives supplémentaires après confirmation.
-
-                    Nombre total de tentatives : %d
-                    Tentatives après confirmation : %d
-
-                    L'IP de l'attaquant a été bloquée dans Redis.
-                    Pour autoriser l'accès maintenance, utilisez ce lien :
-
-                    ACCÈS MAINTENANCE : %s
-
-                    Ce lien expirera dans 24 heures.
-
-                    Cordialement,
-                    Équipe de sécurité Restart
-                    """
-, user.getEmail(), LocalDateTime.now(), ipAddress, user.getFailedLoginAttempts(), user.getPostConfirmationAttempts(), maintenanceUrl);
-                emailService.sendCriticalAlertEmail(criticalAlertEmail, subject, message).subscribe();
-            });
+            .map(geo -> new FaitsDeTentativeAdmin(user.getEmail(), ipAddress, userAgent,
+                    geo, user.getFailedLoginAttempts(), user.getPostConfirmationAttempts()))
+            .onErrorResume(erreur -> {
+                log.warn("Geolocalisation indisponible pour l'alerte critique, "
+                        + "l'alerte part sans elle : {}", erreur.getMessage());
+                return Mono.just(sansGeo);
+            })
+            .defaultIfEmpty(sansGeo)
+            .flatMap(faits -> emailService.alerterSurUneAttaqueAdmin(criticalAlertEmail,
+                    faits, maintenanceUrl, VALIDITE_DE_LA_MAINTENANCE.toHours()))
+            .subscribe(rien -> { },
+                    erreur -> log.error("Alerte critique non envoyee : {}",
+                            erreur.getMessage()));
     }
 }

@@ -204,10 +204,25 @@ recovery:
 
 # `admin.mail` et `admin.critical.mail` ONT ETE RETIRES.
 #
-# Six clefs chacun, et AUCUN lecteur : AdminEmailConfig les lisait, et il a
-# ete supprime avec les trois JavaMailSender de ce service. Les variables
-# ADMIN_MAIL_* et CRITICAL_MAIL_* restent dans .env — notification-service
-# lit CRITICAL_MAIL_* pour son compte d'expedition dedie.
+# AdminEmailConfig les lisait, et il a ete supprime avec les trois
+# JavaMailSender de ce service. notification-service lit CRITICAL_MAIL_* pour
+# son compte d'expedition dedie ; ADMIN_MAIL_* n'est plus lu par personne et a
+# ete retire de .env.example.
+#
+# CORRECTION DU 2026-11-11 : ce commentaire affirmait « AUCUN lecteur », et
+# c'etait FAUX. AdminController lisait encore `admin.mail.from`, sans valeur
+# par defaut. Un demarrage neuf aurait echoue sur un marqueur non resolu.
+#
+# Il demarrait pourtant en local : Spring resout aussi contre l'environnement,
+# avec la correspondance souple ADMIN_MAIL_FROM vers admin.mail.from, et la
+# variable morte trainait encore dans le .env de la machine. Vert ici, rouge
+# au premier conteneur.
+#
+# Ce champ lit desormais `admin.default.email` — qui est ce qu'il designait
+# vraiment : le compte administrateur, pas une adresse d'expedition. Le
+# garde-fou ValeursInjecteesResolublesTest refuse le retour d'une clef injectee
+# sans source declaree, et ne regarde jamais l'environnement de celui qui le
+# lance.
 #
 # Une clef de configuration que personne ne lit est pire qu'une clef absente :
 # elle donne a croire qu'un reglage s'applique.

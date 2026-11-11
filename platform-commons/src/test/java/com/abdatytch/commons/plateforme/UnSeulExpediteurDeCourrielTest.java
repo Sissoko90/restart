@@ -81,7 +81,7 @@ class UnSeulExpediteurDeCourrielTest {
      * s'est deja fait prendre deux fois ainsi.
      */
     private static String sansCommentairesXml(String pom) {
-        return pom.replaceAll("(?s)<!--.*?-->", " ");
+        return SourcesDuDepot.sansCommentairesXml(pom);
     }
 
     @Test
@@ -171,54 +171,7 @@ class UnSeulExpediteurDeCourrielTest {
      * rendu {@code CouvertureDesCheminsAdminTest} rouge sur du code correct.
      */
     private static String sansCommentairesJava(String source) {
-        StringBuilder sortie = new StringBuilder(source.length());
-        boolean chaine = false;
-        boolean ligne = false;
-        boolean bloc = false;
-        int i = 0;
-        while (i < source.length()) {
-            char c = source.charAt(i);
-            String deux = i + 1 < source.length() ? source.substring(i, i + 2) : "";
-            if (ligne) {
-                if (c == '\n') {
-                    ligne = false;
-                    sortie.append(c);
-                }
-            } else if (bloc) {
-                if (deux.equals("*/")) {
-                    bloc = false;
-                    i += 2;
-                    continue;
-                }
-            } else if (chaine) {
-                sortie.append(c);
-                if (c == '\\' && i + 1 < source.length()) {
-                    sortie.append(source.charAt(i + 1));
-                    i += 2;
-                    continue;
-                }
-                if (c == '"') {
-                    chaine = false;
-                }
-            } else {
-                if (deux.equals("//")) {
-                    ligne = true;
-                    i += 2;
-                    continue;
-                }
-                if (deux.equals("/*")) {
-                    bloc = true;
-                    i += 2;
-                    continue;
-                }
-                if (c == '"') {
-                    chaine = true;
-                }
-                sortie.append(c);
-            }
-            i++;
-        }
-        return sortie.toString();
+        return SourcesDuDepot.sansCommentairesJava(source);
     }
 
     /** Le garde-fou se garde : sans modules trouves, il ne verifie rien. */
@@ -232,23 +185,10 @@ class UnSeulExpediteurDeCourrielTest {
     }
 
     private static List<Path> modules() throws IOException {
-        try (Stream<Path> contenu = Files.list(racineDuDepot())) {
-            return contenu.filter(Files::isDirectory)
-                    .filter(dossier -> Files.exists(dossier.resolve("pom.xml")))
-                    .sorted()
-                    .toList();
-        }
+        return SourcesDuDepot.modules();
     }
 
     private static Path racineDuDepot() {
-        Path courant = Path.of("").toAbsolutePath();
-        for (int i = 0; i < 5 && courant != null; i++) {
-            if (Files.exists(courant.resolve("docker-compose-minimal.yml"))) {
-                return courant;
-            }
-            courant = courant.getParent();
-        }
-        throw new AssertionError(
-                "Racine du depot introuvable depuis " + Path.of("").toAbsolutePath());
+        return SourcesDuDepot.racineDuDepot();
     }
 }

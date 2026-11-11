@@ -11,24 +11,65 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
-/**
+import java.time.Duration;
 
- * Tâche scheduled pour régénérer automatiquement le recovery secret toutes les 24h
- * Le nouveau recovery secret est chiffré avec RSA et envoyé par email à l'admin
+/**
+ * Regenere periodiquement le secret de recuperation de l'administrateur, et le
+ * lui envoie chiffre.
+ *
+ * <h2>Les {@code .block()} de cette classe sont deliberes</h2>
+ *
+ * Ce code ne s'execute que sur le pool de taches planifiees, jamais sur un
+ * EventLoop Netty. Bloquer y est le comportement attendu. Ne pas reprendre ce
+ * motif dans du code servant des requetes.
+ *
+ * <h2>LE CORPS DU COURRIEL N'EST PLUS ICI</h2>
+ *
+ * Cette classe composait le message en concatenant une centaine de fragments
+ * de HTML, puis le passait a une methode d'envoi generique qui prenait un corps
+ * deja fait. Comme le modele qui le transportait n'avait aucune variante
+ * {@code corps-html}, le courriel partait en texte brut AVEC son balisage : le
+ * destinataire lisait la source. Mesure faite sur un courriel recu le
+ * 2026-11-10 a 20:02 UTC.
+ *
+ * <p>Le texte vit desormais dans notification-service, en deux variantes —
+ * texte et HTML — comme tous les autres messages de la plateforme. Cette classe
+ * ne fournit plus que des valeurs.
+ *
+ * <h2>Le delai est declare UNE fois</h2>
+ *
+ * {@link #PERIODE} sert a la fois a la planification et au texte du message.
+ * Les deux etaient ecrits separement — {@code fixedRate = 24 * 60 * 60 * 1000}
+ * d'un cote, « dans 24 heures » de l'autre — donc libres de diverger sans que
+ * rien ne le signale. Un courriel qui annonce une echeance fausse est pire
+ * qu'un courriel qui n'en annonce aucune.
  */
 @Component
 public class RecoverySecretScheduler {
 
-    /* * Les .block() de cette classe sont DÉLIBÉRÉS et sans danger : ce code ne
-     * s'exécute qu'au démarrage (CommandLineRunner) ou sur le pool de tâches
-     * planifiées, jamais sur un EventLoop Netty. Bloquer y est le comportement
-     * attendu — le démarrage doit être séquentiel.
-     *
-     * Ne pas reprendre ce motif dans du code servant des requêtes.
-     */
-
-
     private static final Logger log = LoggerFactory.getLogger(RecoverySecretScheduler.class);
+
+    /**
+     * La periode de regeneration, source unique.
+     *
+     * <h3>Pourquoi une chaine ISO-8601 et non un nombre</h3>
+     *
+     * {@code @Scheduled} exige une CONSTANTE DE COMPILATION ; une
+     * {@code Duration} n'en est pas une. Declarer la periode en
+     * {@code Duration} obligerait donc a reecrire la meme valeur dans
+     * l'annotation — c'est-a-dire a recreer la divergence qu'on ferme ici.
+     *
+     * <p>Une chaine {@code static final} est une constante de compilation, et
+     * {@code fixedRateString} accepte la duree ISO-8601. La {@link #PERIODE}
+     * en est DERIVEE, et sert au texte du courriel. Changer la valeur se fait
+     * donc a un seul endroit, et la planification comme le message suivent.
+     */
+    static final String PERIODE_ISO = "PT24H";
+
+    static final Duration PERIODE = Duration.parse(PERIODE_ISO);
+
+    /** Le premier passage, assez tard pour que le contexte soit en place. */
+    static final String DELAI_INITIAL_ISO = "PT1M";
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -49,94 +90,40 @@ public class RecoverySecretScheduler {
     }
 
     /**
-
-     * Régénère le recovery secret toutes les 24h
-     * Exécution initiale : 1 minute après le démarrage, puis toutes les 24h
+     * Regenere le secret : {@value #DELAI_INITIAL_ISO} apres le demarrage,
+     * puis chaque {@value #PERIODE_ISO}.
      */
-    @Scheduled(initialDelay = 60000, fixedRate = 24 * 60 * 60 * 1000) // 24h
+    @Scheduled(initialDelayString = DELAI_INITIAL_ISO, fixedRateString = PERIODE_ISO)
     public void regenerateRecoverySecret() {
         try {
-            log.info(" Début de la régénération du recovery secret...");
+            log.info("Regeneration du secret de recuperation en cours");
 
-            // Récupérer l'utilisateur admin
             User admin = userRepository.findByEmail(adminEmail).block();
 
             if (admin == null) {
-                log.warn(" Admin non trouvé, impossible de régénérer le recovery secret");
+                log.warn("Administrateur introuvable : le secret de recuperation "
+                        + "n'a pas ete regenere");
                 return;
             }
 
-            // Générer un nouveau recovery secret
-            String newRecoverySecret = recoverySecretService.generateRecoverySecret();
+            String nouveauSecret = recoverySecretService.generateRecoverySecret();
+            String secretChiffre = recoverySecretService.encryptRecoverySecret(nouveauSecret);
 
-            // Chiffrer le recovery secret avec la clé RSA publique
-            String encryptedSecret = recoverySecretService.encryptRecoverySecret(newRecoverySecret);
-
-            // Mettre à jour le recovery secret hash dans la base de données
-            admin.setRecoverySecretHash(passwordEncoder.encode(newRecoverySecret));
+            admin.setRecoverySecretHash(passwordEncoder.encode(nouveauSecret));
             userRepository.save(admin).block();
 
-            log.info(" Recovery secret régénéré pour l'admin: {}", adminEmail);
+            log.info("Secret de recuperation regenere pour l'administrateur");
 
-            // Envoyer l'email avec le recovery secret chiffré
-            sendRecoverySecretEmail(admin, encryptedSecret);
-
-        } catch (Exception e) {
-            log.error(" Erreur lors de la régénération du recovery secret: {}", e.getMessage(), e);
-        }
-    }
-
-    /**
-
-     * Envoie l'email avec le recovery secret chiffré
-     */
-    private void sendRecoverySecretEmail(User admin, String encryptedSecret) {
-        try {
-            String subject = " Nouveau Recovery Secret - Restart Admin";
-
-            String body = "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>"
-                    + "<div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;'>"
-                    + "<h1 style='color: white; margin: 0;'> Restart</h1>"
-                    + "<p style='color: rgba(255,255,255,0.9); margin: 10px 0 0 0;'>Système Sécurisé</p>"
-                    + "</div>"
-                    + "<div style='padding: 30px; background: #f9f9f9;'>"
-                    + "<h2 style='color: #333; margin-top: 0;'>Nouveau Recovery Secret</h2>"
-                    + "<p style='color: #666; line-height: 1.6;'>"
-                    + "Bonjour " + admin.getFirstName() + ","
-                    + "</p>"
-                    + "<p style='color: #666; line-height: 1.6;'>"
-                    + "Votre recovery secret a été régénéré automatiquement pour des raisons de sécurité."
-                    + "</p>"
-                    + "<div style='background: white; border-left: 4px solid #667eea; padding: 15px; margin: 20px 0;'>"
-                    + "<p style='color: #333; margin: 0; font-weight: bold;'>Recovery Secret Chiffré (RSA) :</p>"
-                    + "<code style='display: block; background: #f4f4f4; padding: 10px; margin: 10px 0; word-break: break-all; color: #333;'>"+ encryptedSecret
-                + "</code>"
-                    + "</div>"
-                    + "<p style='color: #666; line-height: 1.6;'>"
-                    + "Ce recovery secret est chiffré avec votre clé RSA publique. "
-                    + "Utilisez votre clé privée pour le déchiffrer."
-                    + "</p>"
-                    + "<p style='color: #666; line-height: 1.6;'>"
-                    + " <strong>Important :</strong> Gardez ce recovery secret en sécurité. "
-                    + "Il vous permettra de récupérer l'accès à votre compte admin si vous perdez votre mot de passe."
-                    + "</p>"
-                    + "<p style='color: #666; line-height: 1.6;'>"
-                    + "Ce recovery secret expirera dans 24 heures et sera régénéré automatiquement."
-                    + "</p>"
-                    + "</div>"
-                    + "<div style='background: #333; color: white; padding: 20px; text-align: center;'>"
-                    + "<p style='margin: 0; font-size: 12px; color: rgba(255,255,255,0.7);'>"
-                    + "Cet email a été envoyé automatiquement par le système Restart."
-                    + "</p>"
-                    + "</div>"
-                    + "</div>";
-
-            emailService.sendAdminAlertEmail(admin.getEmail(), subject, body).block();
-
-            log.info(" Email avec le recovery secret chiffré envoyé à: {}", admin.getEmail());
+            // La non-remise est journalisee par EmailServiceImpl ; ce bloc ne
+            // peut donc plus perdre l'information en silence, ce que faisait
+            // l'ancien .block() sans compte rendu.
+            emailService.envoyerLeSecretDeRecuperation(admin.getEmail(),
+                    admin.getFirstName(), secretChiffre, PERIODE.toHours()).block();
 
         } catch (Exception e) {
-            log.error(" Erreur lors de l'envoi de l'email avec le recovery secret: {}", e.getMessage(), e);
+            // Ni le secret, ni le chiffre, ni l'adresse ne sont journalises.
+            log.error("Regeneration du secret de recuperation impossible : {}",
+                    e.getMessage(), e);
         }
     }
 }
