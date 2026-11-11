@@ -33,14 +33,22 @@ public class MarketMetrics {
     /** Les decisions rendues, par nature et par sens. */
     public static final String DECISIONS = "market.moderation.decisions.total";
 
-    /** Les refus pour portee insuffisante : la regle de visibilite au travail. */
-    public static final String HORS_PORTEE = "market.catalogue.hors-portee.total";
+    /**
+     * Les refus pour portee insuffisante : la regle de visibilite au travail.
+     *
+     * <p>Souligne et non tiret dans {@code hors_portee}. Micrometer accepte les
+     * deux et les rend identiques cote Prometheus, mais la convention du depot
+     * est le point et le souligne — et {@code MetriquesDesAlertesTest} ne
+     * reconnait un litteral de metrique qu'a cette forme. Un nom avec tiret est
+     * donc declare FANTOME, alors qu'il est bien emis.
+     */
+    public static final String HORS_PORTEE = "market.catalogue.hors_portee.total";
 
     /** Le temps de rendu d'une page de catalogue, bout en bout. */
     public static final String DUREE_CATALOGUE = "market.catalogue.duree";
 
     /** Les photos demandees que media-service n'a pas pu signer. */
-    public static final String PHOTOS_NON_SIGNEES = "market.photos.non-signees.total";
+    public static final String PHOTOS_NON_SIGNEES = "market.photos.non_signees.total";
 
     private final MeterRegistry registre;
 

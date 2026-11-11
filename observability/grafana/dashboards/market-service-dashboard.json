@@ -1,0 +1,364 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "8.0.0",
+      "targets": [
+        {
+          "expr": "market_moderation_file{application=\"market-service\",nature=\"boutique\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Boutiques en attente",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "8.0.0",
+      "targets": [
+        {
+          "expr": "market_moderation_file{application=\"market-service\",nature=\"produit\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Articles en attente",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "8.0.0",
+      "targets": [
+        {
+          "expr": "market_moderation_file{application=\"market-service\",nature=\"avis\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Avis en attente",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "8.0.0",
+      "targets": [
+        {
+          "expr": "sum(increase(market_moderation_decisions_total{application=\"market-service\"}[24h]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Decisions rendues (24 h)",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "pluginVersion": "8.0.0",
+      "targets": [
+        {
+          "expr": "market_moderation_file{application=\"market-service\",nature=\"boutique\"}",
+          "legendFormat": "boutique",
+          "refId": "A"
+        },
+        {
+          "expr": "market_moderation_file{application=\"market-service\",nature=\"produit\"}",
+          "legendFormat": "produit",
+          "refId": "B"
+        },
+        {
+          "expr": "market_moderation_file{application=\"market-service\",nature=\"avis\"}",
+          "legendFormat": "avis",
+          "refId": "C"
+        }
+      ],
+      "title": "Files de moderation",
+      "type": "timeseries",
+      "description": "Une file qui monte sans redescendre signifie que plus personne ne modere. Rien d'autre ne le signale : le service repond normalement, les vendeurs deposent, et leurs articles ne sortent jamais."
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "pluginVersion": "8.0.0",
+      "targets": [
+        {
+          "expr": "sum by (sens) (rate(market_moderation_decisions_total{application=\"market-service\"}[5m]))",
+          "legendFormat": "{{sens}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Decisions de moderation, par sens",
+      "type": "timeseries",
+      "description": "Un taux de rejet qui s'envole signale soit une campagne de depots abusifs, soit une regle de moderation devenue trop stricte."
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "pluginVersion": "8.0.0",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(market_catalogue_duree_seconds_bucket{application=\"market-service\"}[5m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(market_catalogue_duree_seconds_bucket{application=\"market-service\"}[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(market_catalogue_duree_seconds_bucket{application=\"market-service\"}[5m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "title": "Rendu d'une page de catalogue (centiles)",
+      "type": "timeseries",
+      "description": "Une cassure vient presque toujours d'une requete qui a perdu son index, ou d'un N+1 reintroduit dans l'enrichissement des photos."
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "pluginVersion": "8.0.0",
+      "targets": [
+        {
+          "expr": "rate(market_catalogue_hors_portee_total{application=\"market-service\"}[5m])",
+          "legendFormat": "hors portee",
+          "refId": "A"
+        }
+      ],
+      "title": "Acces refuses pour portee insuffisante",
+      "type": "timeseries",
+      "description": "Du trafic NORMAL : un particulier qui ouvre un lien vers un article reserve aux professionnels, ou partage depuis un autre pays. Aucune alerte dessus — c'est la CASSURE de tendance qui se lit ici. Aucune etiquette ne porte ce qui a ete demande : une metrique n'est pas un journal d'activite personnel."
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "pluginVersion": "8.0.0",
+      "targets": [
+        {
+          "expr": "rate(market_photos_non_signees_total{application=\"market-service\"}[5m])",
+          "legendFormat": "non signees",
+          "refId": "A"
+        }
+      ],
+      "title": "Photos non signees",
+      "type": "timeseries",
+      "description": "Une photo non signee est OMISE de la reponse : la fiche s'affiche sans elle. Degradation voulue, mais SILENCIEUSE — aucune erreur HTTP n'apparait. Causes attendues : MinIO indisponible (le repli local chiffre ne peut pas etre presigne), ou un type ayant perdu son drapeau signableSansProprietaire."
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "pluginVersion": "8.0.0",
+      "targets": [
+        {
+          "expr": "resilience4j_circuitbreaker_state{application=\"market-service\",state=\"open\"}",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Disjoncteurs sortants",
+      "type": "timeseries",
+      "description": "Une instance par dependance : user-service pour le pays, media-service pour les liens signes. Un disjoncteur ouvert sur user-service restreint la portee des particuliers — ils voient moins, jamais plus."
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 27,
+  "style": "dark",
+  "tags": [
+    "market",
+    "moderation",
+    "catalogue"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "market-service — catalogue et moderation",
+  "uid": "market-service",
+  "version": 1
+}

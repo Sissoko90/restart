@@ -142,6 +142,22 @@ scrape_configs:
           service: 'notification'
           tier: 'backend'
 
+  # market-service — inscrit ICI en meme temps que ses alertes.
+  #
+  # Un service absent de `scrape_configs` ne produit aucune erreur : il est
+  # simplement invisible, et ses alertes ne se declenchent JAMAIS — l'expression
+  # PromQL rend un ensemble vide, ce qui n'est pas une erreur pour Prometheus.
+  #
+  # notification-service a vecu des semaines ainsi. Ce module n'y passera pas.
+  - job_name: 'market-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8092']
+        labels:
+          application: 'market-service'
+          service: 'market'
+          tier: 'backend'
+
   # Config Service — sa chute empeche tout demarrage de service
   - job_name: 'config-service'
     metrics_path: '/actuator/prometheus'

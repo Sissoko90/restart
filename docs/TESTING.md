@@ -1,7 +1,7 @@
 # Stratégie de test
 
-> État au 2026-11-11 : **2861 tests** (206 → 2861), couverture **52,4 %** des
-> instructions, **46,6 %** des branches.
+> État au 2026-11-12 : **3028 tests** (206 → 3028), couverture **52,7 %**
+> des instructions, **47,3 %** des branches.
 >
 > Mesure précédente, 2026-09-04 : 206 tests, 18,7 % et 11,6 %. Le nombre de
 > tests est donc multiplié par quatorze, la couverture d'instructions par
@@ -41,8 +41,9 @@ Mesure du 2026-11-11, agrégée par `./scripts/coverage-report.sh`.
 | `platform-commons` | 53,8 % | 62,8 % | 27,5 % → 53,8 % |
 | `auth-service` | 52,2 % | 50,1 % | 16,1 % → 52,2 % |
 | `security-service` | 48,9 % | 50,3 % | module neuf |
+| `market-service` | 58,4 % | 57,2 % | module neuf |
 | `media-service` | 31,1 % | 23,2 % | 9,3 % → 31,1 % |
-| **TOTAL** | **52,4 %** | **46,6 %** | 18,7 % → 52,4 % |
+| **TOTAL** | **52,7 %** | **47,3 %** | 18,7 % → 52,7 % |
 
 **La couverture de branches reste le vrai signal**, et c'est elle qui a le plus
 progressé : 11,6 % → 46,6 %. Les chemins d'erreur — jeton expiré, quota

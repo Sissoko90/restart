@@ -1,0 +1,133 @@
+# ============================================================================
+# market-service — regles d'alerte
+# ============================================================================
+# Les noms de series employes ici sont ceux que Micrometer EXPOSE, et non les
+# noms declares en Java : les points et les tirets deviennent des soulignes.
+# `MetriquesDesAlertesTest` verifie que chaque serie interrogee est bien emise
+# par du code du depot — ce depot a deja porte des alertes posees sur des noms
+# que personne n'emettait.
+#
+# ----------------------------------------------------------------------------
+# CE QUI N'A PAS DE REGLE, ET POURQUOI
+# ----------------------------------------------------------------------------
+# market_catalogue_hors_portee_total — un refus pour portee insuffisante est du
+#   trafic NORMAL : un particulier qui ouvre un lien vers un article reserve aux
+#   professionnels, ou un lien partage depuis un autre pays. C'est la regle de
+#   visibilite qui travaille. Une alerte dessus se declencherait en permanence,
+#   donc serait ignoree — et le jour ou elle signifierait quelque chose,
+#   personne ne la lirait. Elle sert au panneau, ou une CASSURE de tendance se
+#   voit.
+#
+# market_catalogue_duree — a calibrer sur du trafic reel. Un seuil pose
+#   maintenant serait devine, et une alerte calibree au hasard apprend seulement
+#   a ne plus la lire.
+
+groups:
+  - name: market-service
+    rules:
+
+      # ----------------------------------------------------------------
+      # LA MODERATION S'EST ARRETEE
+      # ----------------------------------------------------------------
+      # Rien d'autre ne le signale. Le service repond normalement, les vendeurs
+      # deposent leurs articles, et ceux-ci ne sortent simplement jamais. Du
+      # point de vue d'un commercant, la plateforme est en panne ; du point de
+      # vue de la supervision, tout va bien.
+      #
+      # Le seuil porte sur la DUREE et non sur la taille : une file de trente
+      # articles un lundi matin est saine, la meme file inchangee depuis six
+      # heures ne l'est pas. `min_over_time` dit precisement cela — elle n'est
+      # JAMAIS descendue en dessous du seuil sur la fenetre.
+      - alert: FileDeModerationFigee
+        expr: min_over_time(market_moderation_file[6h]) > 20
+        for: 15m
+        labels:
+          severity: warning
+          service: market-service
+        annotations:
+          summary: "File de moderation figee ({{ $labels.nature }})"
+          description: >-
+            La file de moderation des {{ $labels.nature }} n'est pas descendue
+            sous 20 depuis six heures. Les articles deposes ne sont pas publies,
+            et rien d'autre ne le signale : le service repond normalement.
+
+      # Une file qui explose : soit un depot massif, soit personne depuis des
+      # jours. Les deux demandent un regard, et le seuil est franc.
+      - alert: FileDeModerationSaturee
+        expr: market_moderation_file > 200
+        for: 30m
+        labels:
+          severity: critical
+          service: market-service
+        annotations:
+          summary: "File de moderation saturee ({{ $labels.nature }})"
+          description: >-
+            Plus de 200 {{ $labels.nature }} en attente depuis trente minutes.
+
+      # ----------------------------------------------------------------
+      # LES PHOTOS NE S'AFFICHENT PLUS
+      # ----------------------------------------------------------------
+      # Une photo non signee est OMISE de la reponse : la fiche s'affiche sans
+      # elle. C'est la bonne degradation — mieux vaut une photo manquante qu'un
+      # lien mort — mais elle est SILENCIEUSE. Sans cette alerte, un catalogue
+      # entier peut perdre ses images sans qu'aucune erreur HTTP n'apparaisse.
+      #
+      # Causes attendues : MinIO indisponible, donc repli local chiffre qui ne
+      # peut pas etre presigne ; ou un type de document qui a perdu son drapeau
+      # `signableSansProprietaire`.
+      - alert: PhotosDeProduitNonSignees
+        expr: rate(market_photos_non_signees_total[10m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          service: market-service
+        annotations:
+          summary: "Des photos de produit ne sont plus servies"
+          description: >-
+            media-service ne signe plus certaines photos. Les fiches s'affichent
+            sans leurs images, et aucune erreur HTTP ne le signale. Verifier
+            MinIO, et le drapeau signableSansProprietaire du type PHOTO_PRODUIT.
+
+      # ----------------------------------------------------------------
+      # PLUS AUCUNE DECISION
+      # ----------------------------------------------------------------
+      # Complementaire de FileDeModerationFigee, et non redondante : celle-ci se
+      # declenche meme quand la file est VIDE. Une equipe de moderation qui ne
+      # decide plus rien alors qu'il n'y a rien a decider n'est pas un incident ;
+      # mais couplee a une file qui monte, c'est le meme symptome vu des deux
+      # cotes, et deux signaux valent mieux qu'un quand l'un peut etre masque.
+      - alert: AucuneDecisionDeModeration
+        expr: >-
+          sum(increase(market_moderation_decisions_total[12h])) == 0
+          and sum(market_moderation_file) > 0
+        for: 1h
+        labels:
+          severity: warning
+          service: market-service
+        annotations:
+          summary: "Aucune decision de moderation depuis douze heures"
+          description: >-
+            Des elements attendent, et aucune decision n'a ete rendue depuis
+            douze heures.
+
+      # ----------------------------------------------------------------
+      # LE CATALOGUE RALENTIT
+      # ----------------------------------------------------------------
+      # Pas un seuil absolu — il serait devine — mais une COMPARAISON a soi :
+      # le 95e centile a plus que double par rapport a la journee precedente.
+      # Une regression de ce genre vient presque toujours d'une requete qui a
+      # perdu son index, ou d'un N+1 reintroduit dans l'enrichissement.
+      - alert: CatalogueRalenti
+        expr: >-
+          histogram_quantile(0.95, sum(rate(market_catalogue_duree_seconds_bucket[15m])) by (le))
+          > 2 * histogram_quantile(0.95, sum(rate(market_catalogue_duree_seconds_bucket[1d] offset 1d)) by (le))
+        for: 20m
+        labels:
+          severity: warning
+          service: market-service
+        annotations:
+          summary: "Le catalogue a plus que double son temps de reponse"
+          description: >-
+            Le 95e centile du rendu d'une page de catalogue a plus que double
+            par rapport a la veille. Chercher une requete qui a perdu son index,
+            ou un N+1 reintroduit dans l'enrichissement des photos.

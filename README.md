@@ -267,11 +267,9 @@ mvn -pl gateway-service test           # un seul module
 
 ### État des tests
 
-**2861 tests**, 0 échec. Répartition : auth 970 · interface 335 ·
-platform-commons 331 · notification 319 · gateway 295 · user 198 · security 145 ·
-media 132 · setting 61 · quotas 59 · config 16.
+**3028 tests**, 0 échec. Répartition : auth 970 · notification 359 · interface 335 · platform 331 · gateway 295 · user 198 · security 145 · media 132 · market 127 · setting 61 · quotas 59 · config 16.
 
-Couverture : **52,4 %** des instructions, **46,6 %** des branches. Le plancher
+Couverture : **52,7 %** des instructions, **47,3 %** des branches. Le plancher
 de non-régression a été relevé à ces valeurs — il était resté à 21,41 % et
 13,60 %, soit trente points sous la mesure réelle : la couverture aurait pu
 tomber de moitié sans que le garde-fou dise quoi que ce soit.
@@ -288,7 +286,7 @@ Le garde-fou de CI n'exige pas un seuil absolu : il interdit que la couverture
 
 ### Deux références engendrées, jamais écrites à la main
 
-`postman/` (221 requêtes) et [docs/API-FRONTEND.md](docs/API-FRONTEND.md) (211
+`postman/` (250 requêtes) et [docs/API-FRONTEND.md](docs/API-FRONTEND.md) (239
 endpoints) sont **dérivées** des contrôleurs, de `GatewayRoutesConfig`, de
 `CheminCible` et des `SecurityConfig`. À régénérer après tout ajout d'endpoint :
 
@@ -483,6 +481,7 @@ Chacun a déjà causé un défaut réel.
 | [docs/NON-BLOCKING.md](docs/NON-BLOCKING.md) | Politique réactive, vérification BlockHound |
 | [docs/QUOTAS.md](docs/QUOTAS.md) · [docs/SETTINGS.md](docs/SETTINGS.md) | Quotas et paramètres |
 | [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md) | Canaux, modèles, surveillance, surface d'administration |
+| [docs/MARKET.md](docs/MARKET.md) | Place de marché : visibilité, boutiques, modération, photos signées |
 | [docs/AUTH-SERVICE-R2DBC-MIGRATION.md](docs/AUTH-SERVICE-R2DBC-MIGRATION.md) | Migration JPA vers R2DBC |
 | [postman/README.md](postman/README.md) | Collections et ordre de test |
 | [SECURITY.md](SECURITY.md) | Signalement de failles |
