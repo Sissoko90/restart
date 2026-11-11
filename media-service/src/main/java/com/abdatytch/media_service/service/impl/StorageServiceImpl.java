@@ -16,6 +16,10 @@ import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import java.util.concurrent.TimeUnit;
+import java.time.Duration;
+import io.minio.http.Method;
+import io.minio.GetPresignedObjectUrlArgs;
 import reactor.core.scheduler.Schedulers;
 
 import jakarta.annotation.PostConstruct;
@@ -266,4 +270,51 @@ public class StorageServiceImpl implements StorageService {
         .subscribeOn(Schedulers.boundedElastic());
     }
 
+
+    /** Plafond de validite d'un lien signe. MinIO accepte sept jours ; pas nous. */
+    private static final Duration DUREE_MAXIMALE_DU_LIEN = Duration.ofMinutes(15);
+
+    /**
+     * {@inheritDoc}
+     *
+     * <h3>La duree est BORNEE ici, pas chez l'appelant</h3>
+     *
+     * Un appelant distrait demanderait sept jours — le maximum que MinIO
+     * accepte — et l'URL circulerait une semaine. Le plafond vit donc du cote
+     * qui signe, parce que c'est lui qui porte la consequence.
+     *
+     * <h3>{@code boundedElastic}, a verifier plutot qu'a supposer</h3>
+     *
+     * La signature est un calcul HMAC local, donc en principe non bloquante.
+     * « En principe » ne suffit pas sur le chemin d'une requete : le SDK peut
+     * relire une configuration ou resoudre une region. L'isoler coute un saut
+     * de fil et retire la question.
+     */
+    @Override
+    public Mono<String> genererLienSigne(String chemin, Duration duree) {
+        if (chemin == null || chemin.isBlank()) {
+            return Mono.empty();
+        }
+        Duration effective = (duree == null || duree.compareTo(DUREE_MAXIMALE_DU_LIEN) > 0)
+                ? DUREE_MAXIMALE_DU_LIEN : duree;
+
+        return Mono.fromCallable(() -> minioClient.getPresignedObjectUrl(
+                        GetPresignedObjectUrlArgs.builder()
+                                .method(Method.GET)
+                                .bucket(bucketName)
+                                .object(chemin)
+                                .expiry((int) effective.toSeconds(), TimeUnit.SECONDS)
+                                .build()))
+                .subscribeOn(Schedulers.boundedElastic())
+                .onErrorResume(panne -> {
+                    // Vide, et non une erreur : un lien non signable fait
+                    // retomber l'appelant sur le telechargement ordinaire. Une
+                    // erreur ferait disparaitre la photo au lieu de la servir
+                    // plus lentement.
+                    log.warn("Lien signe impossible ({}) : l'appelant retombera "
+                            + "sur le telechargement ordinaire",
+                            panne.getClass().getSimpleName());
+                    return Mono.empty();
+                });
+    }
 }

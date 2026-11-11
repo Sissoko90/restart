@@ -1,10 +1,12 @@
 package com.abdatytch.media_service.config;
 
+import com.abdatytch.commons.security.AutorisationInterne;
 import com.abdatytch.media_service.constants.SecurityConstants;
 import com.abdatytch.media_service.security.GatewayAccessWebFilter;
 import com.abdatytch.media_service.security.JwtAuthenticationWebFilter;
 import com.abdatytch.media_service.security.RoleAuthorizationWebFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
@@ -25,8 +27,29 @@ public class SecurityConfig {
     private final JwtAuthenticationWebFilter jwtAuthenticationWebFilter;
     private final RoleAuthorizationWebFilter roleAuthorizationWebFilter;
 
+    /**
+     * La regle d'autorisation des appels inter-services.
+     *
+     * <h3>Elle est nee avec le premier endpoint interne de ce module</h3>
+     *
+     * Le commentaire ci-dessous annoncait exactement ce risque : « un endpoint
+     * interne ajoute demain serait ne sans aucune protection, et de bonne foi ».
+     * {@code POST /internal/media/liens} est cet endpoint, et il arrive avec sa
+     * garde.
+     *
+     * <p>Un secret vide ne laisse RIEN passer : {@link AutorisationInterne}
+     * refuse chaque appel et le journalise — ferme a la requete, pas au
+     * demarrage.
+     */
     @Bean
-    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+    public AutorisationInterne autorisationInterne(
+            @Value("${security.internal-secret:}") String secretInterne) {
+        return new AutorisationInterne(secretInterne);
+    }
+
+    @Bean
+    public SecurityWebFilterChain securityWebFilterChain(
+            ServerHttpSecurity http, AutorisationInterne autorisationInterne) {
         return http
             .csrf(ServerHttpSecurity.CsrfSpec::disable)
             .cors(cors -> cors.disable())
@@ -64,6 +87,18 @@ public class SecurityConfig {
                 // Les chemins d'administration exigent le role, ici et non
                 // seulement dans le filtre : /admin/documents permet de lire et
                 // de supprimer les pieces justificatives de n'importe qui.
+                // LES APPELS DE SERVICE A SERVICE.
+                //
+                // Ce qui les authentifie n'est pas un jeton : un appel de
+                // service n'agit pour personne. C'est le secret partage,
+                // compare a temps constant, plus le pair TCP prive verifie par
+                // GatewayAccessWebFilter.
+                //
+                // AVANT la regle /admin/** et avant anyExchange : les matchers
+                // sont evalues dans l'ordre, et un chemin interne n'a ni role
+                // ni identite a presenter.
+                .pathMatchers("/internal/**").access(autorisationInterne)
+
                 .pathMatchers("/admin/**").hasRole("ADMIN")
 
                 // anyExchange().permitAll() a ete REMPLACE par authenticated().

@@ -655,5 +655,5 @@ Générée depuis les contrôleurs par `scripts/postman/generer_reference_fronte
 
 ---
 
-**211 endpoints appelables** depuis le frontend. 8 endpoints `/internal/**` sont exclus : aucune passerelle ne les route — c'est précisément ce qui les rend injoignables depuis l'extérieur. Un service les appelle en direct sur le port de son pair, avec l'en-tête `X-Internal-Secret`. La phrase précédente affirmait l'inverse — « derrière la signature HMAC de la passerelle, un appel direct est refusé » — et c'était faux dans les deux moitiés.
+**211 endpoints appelables** depuis le frontend. 9 endpoints `/internal/**` sont exclus : aucune passerelle ne les route — c'est précisément ce qui les rend injoignables depuis l'extérieur. Un service les appelle en direct sur le port de son pair, avec l'en-tête `X-Internal-Secret`. La phrase précédente affirmait l'inverse — « derrière la signature HMAC de la passerelle, un appel direct est refusé » — et c'était faux dans les deux moitiés.
 

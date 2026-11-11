@@ -24,6 +24,12 @@ import java.util.List;
 @AllArgsConstructor
 @Document(collection = "document_type_configs")
 public class DocumentTypeConfig extends BaseEntity {
+
+    /** Nul vaut FAUX : un type existant ne devient pas signable par defaut. */
+    public boolean estSignableSansProprietaire() {
+        return Boolean.TRUE.equals(signableSansProprietaire);
+    }
+
     
     /**
      * Code unique du document (ex: NATIONAL_ID, DRIVER_LICENSE)
@@ -100,4 +106,29 @@ public class DocumentTypeConfig extends BaseEntity {
      */
     @Builder.Default
     private Boolean isActive = true;
+
+    /**
+     * Ce type peut-il etre servi a quelqu'un d'AUTRE que son deposant.
+     *
+     * <h3>Le nom dit la decision de securite, pas la fonctionnalite</h3>
+     *
+     * « Photo publique » aurait decrit l'usage ; ceci decrit ce qu'on accorde :
+     * le droit de signer un lien pour un tiers. Un RCCM, un NIF, une piece
+     * d'identite ne doivent JAMAIS le porter.
+     *
+     * <h3>FAUX par defaut, et nul vaut faux</h3>
+     *
+     * media-service est sur MongoDB : les documents de type deja enregistres
+     * n'ont pas ce champ et le liront {@code null}. {@link #estSignableSansProprietaire()}
+     * traite donc nul comme faux — un type existant ne devient pas signable
+     * parce qu'on a ajoute une colonne.
+     *
+     * <h3>Pourquoi ce drapeau existe</h3>
+     *
+     * {@code downloadDocument} refuse si {@code document.getUserId()} n'est pas
+     * l'appelant, ce qui est juste pour une piece d'identite et rend une photo
+     * de produit invisible pour tout acheteur. market-service a besoin de
+     * montrer ces photos ; il ne les detient pas, et ne doit pas les detenir.
+     */
+    private Boolean signableSansProprietaire = false;
 }

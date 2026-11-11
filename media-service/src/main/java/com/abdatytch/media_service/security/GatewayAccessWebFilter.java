@@ -1,6 +1,7 @@
 package com.abdatytch.media_service.security;
 
 import com.abdatytch.commons.security.CheminDeDecision;
+import com.abdatytch.commons.security.CheminInterne;
 import com.abdatytch.commons.security.GatewayClientIp;
 import com.abdatytch.commons.security.HMACSignatureUtil;
 import com.abdatytch.commons.security.PrivateNetworks;
@@ -109,6 +110,28 @@ public class GatewayAccessWebFilter implements WebFilter {
         String adresse = GatewayClientIp.pairTcp(exchange);
         if (!estReseauAutorise(adresse)) {
             return refuser(exchange, adresse, chemin, "reseau source non autorise");
+        }
+
+        // L'APPEL INTER-SERVICES, exempte de la SIGNATURE et d'elle seule.
+        //
+        // L'ordre compte et il est delibere : le controle de reseau prive
+        // ci-dessus s'applique AUSSI a /internal/**. Seule la signature de
+        // passerelle est levee, parce qu'aucune passerelle ne route ce chemin
+        // — c'est precisement ce qui le rend injoignable de l'exterieur.
+        //
+        // Exiger la signature ici serait un blocage net, et interface-service
+        // l'a deja paye : POST /internal/jwt/sign repondait 403 « Utilisez le
+        // Gateway », auth-service n'obtenait aucun jeton, et plus aucune
+        // connexion n'aboutissait — le symptome visible etant un 500 qui ne
+        // designait pas la cause.
+        //
+        // Ce qui protege ce chemin a la place : l'adresse privee verifiee
+        // ci-dessus, et X-Internal-Secret compare a temps constant par
+        // AutorisationInterne dans la chaine d'autorisation. Le secret est le
+        // controle qui porte — en conteneurs, « reseau prive » englobe tous les
+        // voisins.
+        if (CheminInterne.correspond(cheminDeDecision)) {
+            return chain.filter(exchange);
         }
 
         var enTetes = exchange.getRequest().getHeaders();
