@@ -42,9 +42,40 @@ import java.util.List;
 @EnableReactiveMethodSecurity
 public class SecurityConfig {
 
+    /**
+     * Les chemins que ce service sert SANS jeton.
+     *
+     * <h3>{@code /sms/accuses} : le rappel de l'operateur, qui etait MORT</h3>
+     *
+     * Ce prefixe manquait, et l'endpoint tombait donc dans
+     * {@code anyExchange().authenticated()}. Mesure du 2026-11-11 a travers la
+     * passerelle, sans jeton :
+     *
+     * <pre>
+     * GET  /api/v1/sms/accuses/afriksms  -&gt; 401
+     * POST /api/v1/sms/accuses/afriksms  -&gt; 401
+     * </pre>
+     *
+     * <p>Or un operateur SMS n'a pas de jeton et ne peut pas en avoir : il
+     * appelle l'URL qu'on lui a declaree, telle quelle. Aucun accuse de
+     * reception ne pouvait donc arriver, et le service ne distinguait pas
+     * « remis au fournisseur » de « remis au telephone ».
+     *
+     * <p>La passerelle, elle, l'ouvrait bien ({@code permitAll} sur
+     * {@code /api/v1/sms/accuses/**}). Les deux moities de la decision
+     * divergeaient, et c'est exactement le defaut que ce depot a deja paye
+     * cinq fois : un chemin public declare d'un cote et oublie de l'autre.
+     *
+     * <p>Ce qui protege l'endpoint n'est pas le jeton mais le parametre
+     * {@code cle}, compare a temps constant dans
+     * {@code AccuseDeReceptionSmsController} — le seul secret partageable avec
+     * un operateur tiers. Le rendre public ici ne l'ouvre donc pas : cela le
+     * rend joignable par le controle qui etait prevu pour lui.
+     */
     private static final CheminsPublics CHEMINS_PUBLICS = CheminsPublics.sondes()
             .pageDErreur()
             .documentationViaPasserelle()
+            .prefixe("/sms/accuses")
             .construire();
 
     /**
