@@ -37,7 +37,7 @@ public class HMACSignatureUtil {
 
             return Base64.getEncoder().encodeToString(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException | InvalidKeyException e) {
-            log.error(" Échec de génération de la signature HMAC: {}", e.getMessage());
+            log.error("Échec de génération de la signature HMAC: {}", e.getMessage());
             throw new IllegalStateException("Échec de génération de la signature HMAC", e);
         }
     }
@@ -51,7 +51,7 @@ public class HMACSignatureUtil {
             String expectedSignature = generateSignature(secretKey, data);
             return SecretComparisonUtil.matches(expectedSignature, providedSignature);
         } catch (Exception e) {
-            log.error(" Erreur de validation de signature: {}", e.getMessage());
+            log.error("Erreur de validation de signature: {}", e.getMessage());
             return false;
         }
     }

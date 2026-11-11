@@ -53,7 +53,7 @@ public class DocumentValidationServiceImpl implements DocumentValidationService 
             .defaultIfEmpty(0)
             .map(tentatives -> {
                 if (tentatives >= maxUploadAttempts) {
-                    log.warn(" Plafond de tentatives atteint - utilisateur {}, type {}, {} essais",
+                    log.warn("Plafond de tentatives atteint - utilisateur {}, type {}, {} essais",
                             userId, documentTypeCode, tentatives);
                     return new ValidationResult(false, String.format(
                             "Nombre maximum de tentatives atteint (%d). Contactez le support.",

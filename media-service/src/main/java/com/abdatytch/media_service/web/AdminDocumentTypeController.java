@@ -35,7 +35,7 @@ public class AdminDocumentTypeController {
             ServerWebExchange exchange) {
         
         String adminId = exchange.getAttribute("userId");
-        log.info(" Admin {} creating document type: {}", adminId, request.getCode());
+        log.info("Admin {} creating document type: {}", adminId, request.getCode());
         
         return documentTypeManagementService.createDocumentType(request, adminId);
     }
@@ -50,7 +50,7 @@ public class AdminDocumentTypeController {
             ServerWebExchange exchange) {
         
         String adminId = exchange.getAttribute("userId");
-        log.info(" Admin {} updating document type: {}", adminId, id);
+        log.info("Admin {} updating document type: {}", adminId, id);
         
         return documentTypeManagementService.updateDocumentType(id, request, adminId);
     }
@@ -64,7 +64,7 @@ public class AdminDocumentTypeController {
             ServerWebExchange exchange) {
         
         String adminId = exchange.getAttribute("userId");
-        log.info(" Admin {} deleting document type: {}", adminId, id);
+        log.info("Admin {} deleting document type: {}", adminId, id);
         
         return documentTypeManagementService.deleteDocumentType(id, adminId);
     }
@@ -147,7 +147,7 @@ public class AdminDocumentTypeController {
             ServerWebExchange exchange) {
         
         String adminId = exchange.getAttribute("userId");
-        log.info(" Admin {} removing document {} from role {}", adminId, documentTypeId, role);
+        log.info("Admin {} removing document {} from role {}", adminId, documentTypeId, role);
         
         return documentTypeManagementService.removeDocumentFromRole(documentTypeId, role, adminId);
     }

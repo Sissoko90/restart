@@ -65,7 +65,7 @@ public class ZipBombProtectionFilter implements WebFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        log.debug(" Checking for Zip Bomb: {} {}", method, request.getURI().getPath());
+        log.debug("Checking for Zip Bomb: {} {}", method, request.getURI().getPath());
 
         return checkZipBombAndContinue(exchange, chain, request);
     }
@@ -96,12 +96,12 @@ public class ZipBombProtectionFilter implements WebFilter, Ordered {
                 ZipBombCheckResult result = zipBombProtection.checkForZipBomb(bytes, filename);
 
                 if (!result.isSafe()) {
-                    log.warn(" ZIP BOMB BLOCKED at Gateway: {} - Path: {} - Reason: {}",
+                    log.warn("ZIP BOMB BLOCKED at Gateway: {} - Path: {} - Reason: {}",
                         filename, request.getURI().getPath(), result.reason());
                     return rejectRequest(exchange, result.reason());
                 }
 
-                log.debug(" ZIP file passed security check: {}", filename);
+                log.debug("ZIP file passed security check: {}", filename);
 
                 ServerHttpRequest mutatedRequest = new ServerHttpRequestDecorator(request) {
                     @Override

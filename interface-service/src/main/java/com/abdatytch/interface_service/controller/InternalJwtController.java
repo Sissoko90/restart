@@ -97,17 +97,17 @@ public class InternalJwtController {
 
         // Vérifier le secret interne (obligatoire)
         if (!SecretComparisonUtil.matches(internalSecret, secretHeader)) {
-            log.warn(" Tentative d'accès non autorisée à /internal/jwt/sign - Secret invalide");
+            log.warn("Tentative d'accès non autorisée à /internal/jwt/sign - Secret invalide");
             return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "Unauthorized - Invalid internal secret")));
         }
 
         // Log du service token si présent (pour audit)
         if (serviceToken != null) {
-            log.debug(" Service token reçu pour /internal/jwt/sign");
+            log.debug("Service token reçu pour /internal/jwt/sign");
         }
 
-        log.info(" Génération de JWT pour user: {} (project: {})",
+        log.info("Génération de JWT pour user: {} (project: {})",
                 request.getUserId(), request.getProjectId());
 
         return Mono.fromCallable(() -> {
@@ -135,7 +135,7 @@ public class InternalJwtController {
 
             return ResponseEntity.ok(response);
         }).onErrorResume(e -> {
-            log.error(" Erreur lors de la génération du token", e);
+            log.error("Erreur lors de la génération du token", e);
             return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Token generation failed")));
         });
@@ -151,7 +151,7 @@ public class InternalJwtController {
             @RequestBody RefreshTokenRequest request) {
 
         if (!SecretComparisonUtil.matches(internalSecret, secretHeader)) {
-            log.warn(" Tentative d'accès non autorisée à /internal/jwt/refresh");
+            log.warn("Tentative d'accès non autorisée à /internal/jwt/refresh");
             return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "Unauthorized")));
         }
@@ -190,7 +190,7 @@ public class InternalJwtController {
                     // propre. Un defaut introduit par cette correction meme, et
                     // trouve par le test ecrit pour elle.
                     if (type == null || !TYPES_DE_RAFRAICHISSEMENT.contains(type)) {
-                        log.warn(" Jeton de type '{}' refusé sur /internal/jwt/refresh", type);
+                        log.warn("Jeton de type '{}' refusé sur /internal/jwt/refresh", type);
                         return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                                 .body(Map.<String, Object>of("error", "Invalid refresh token")));
                     }
@@ -283,7 +283,7 @@ public class InternalJwtController {
                     // et peuvent lever sur une forme inattendue. Un 500 ici
                     // renseignerait sur la pile d'appels de l'autorite de
                     // signature.
-                    log.warn(" Vérification de jeton en échec : {}", e.getMessage());
+                    log.warn("Vérification de jeton en échec : {}", e.getMessage());
                     return Mono.just(ResponseEntity.ok(
                             Map.<String, Object>of("valid", false)));
                 });

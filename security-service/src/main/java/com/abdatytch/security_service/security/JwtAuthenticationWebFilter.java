@@ -112,7 +112,7 @@ public class JwtAuthenticationWebFilter implements WebFilter {
                             null,
                             List.of(new SimpleGrantedAuthority(normalizeRole(role))));
 
-                    log.debug(" JWT valide pour {} (rôle {})", claims.getSubject(), role);
+                    log.debug("JWT valide pour {} (rôle {})", claims.getSubject(), role);
 
                     return chain.filter(exchange)
                             .contextWrite(ReactiveSecurityContextHolder.withAuthentication(authentication));
@@ -120,7 +120,7 @@ public class JwtAuthenticationWebFilter implements WebFilter {
                 .onErrorResume(error -> {
                     // Token invalide : on poursuit sans authentification.
                     // Spring Security refusera l'accès aux routes protégées.
-                    log.warn(" JWT rejeté : {}", error.getMessage());
+                    log.warn("JWT rejeté : {}", error.getMessage());
                     return chain.filter(exchange);
                 });
     }

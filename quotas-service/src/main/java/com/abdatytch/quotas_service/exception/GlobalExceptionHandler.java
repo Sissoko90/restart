@@ -23,7 +23,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(QuotaExceededException.class)
     public Mono<ResponseEntity<Map<String, Object>>> handleQuotaExceeded(QuotaExceededException ex) {
-        log.warn(" {}", ex.getMessage());
+        log.warn("{}", ex.getMessage());
 
         Map<String, Object> body = baseBody(HttpStatus.TOO_MANY_REQUESTS,
                 QuotasConstants.ERROR_QUOTA_EXCEEDED, ex.getMessage());

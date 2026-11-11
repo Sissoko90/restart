@@ -40,7 +40,7 @@ public class ZipBombFilter implements WebFilter {
                 try {
                     long size = Long.parseLong(contentLength);
                     if (size > maxSize) {
-                        log.warn(" ZIP bomb potentiel détecté - Taille: {}MB (max: {}MB)",
+                        log.warn("ZIP bomb potentiel détecté - Taille: {}MB (max: {}MB)",
                                 size / 1024 / 1024, maxSize / 1024 / 1024);
                     }
                 } catch (NumberFormatException e) {

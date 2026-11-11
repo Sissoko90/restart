@@ -55,7 +55,7 @@ public class ProjectEventListener {
 
     @PostConstruct
     public void startConsuming() {
-        log.info(" Démarrage du consommateur Kafka pour les topics {} et {}",
+        log.info("Démarrage du consommateur Kafka pour les topics {} et {}",
                 QuotasConstants.TOPIC_PROJECT_CREATED, QuotasConstants.TOPIC_PROJECT_DELETED);
 
         ReceiverOptions<String, String> options =
@@ -69,10 +69,10 @@ public class ProjectEventListener {
                 .flatMap(this::handleRecord)
                 .retryWhen(Retry.backoff(5, Duration.ofSeconds(5))
                         .maxBackoff(Duration.ofSeconds(30))
-                        .doBeforeRetry(signal -> log.warn(" Reconnexion Kafka, tentative {}",
+                        .doBeforeRetry(signal -> log.warn("Reconnexion Kafka, tentative {}",
                                 signal.totalRetries() + 1)))
                 .onErrorResume(error -> {
-                    log.error(" Consommateur Kafka arrêté : {}. "
+                    log.error("Consommateur Kafka arrêté : {}. "
                     + "Les quotas ne seront plus mis à jour par événement.", error.getMessage());
                     return Mono.empty();
                 })
@@ -85,7 +85,7 @@ public class ProjectEventListener {
                     log.info(QuotasConstants.LOG_EVENT_RECEIVED, record.topic(), event.getProjectId());
 
                     if (event.getUserId() == null) {
-                        log.warn(" Événement {} sans userId (projet {}) - ignoré",
+                        log.warn("Événement {} sans userId (projet {}) - ignoré",
                                 record.topic(), event.getProjectId());
                         return Mono.<Void>empty();
                     }
@@ -101,11 +101,11 @@ public class ProjectEventListener {
                     // Message illisible : on acquitte pour ne pas bloquer la partition.
                     // Erreur de traitement : on n'acquitte pas, l'offset sera rejoué.
                     if (error instanceof com.fasterxml.jackson.core.JacksonException) {
-                        log.error(" Événement illisible sur {} - acquitté pour ne pas bloquer : {}",
+                        log.error("Événement illisible sur {} - acquitté pour ne pas bloquer : {}",
                                 record.topic(), error.getMessage());
                         record.receiverOffset().acknowledge();
                     } else {
-                        log.error(" Échec du traitement de l'événement {} : {}",
+                        log.error("Échec du traitement de l'événement {} : {}",
                                 record.topic(), error.getMessage());
                     }
                     return Mono.empty();

@@ -49,7 +49,7 @@ public class DocumentErasureService {
                 .concatMap(this::eraseDocument)
                 .count()
                 .map(Long::intValue)
-                .doOnSuccess(n -> log.info(" {} document(s) effacé(s) pour {}", n, userId));
+                .doOnSuccess(n -> log.info("{} document(s) effacé(s) pour {}", n, userId));
     }
 
     /**
@@ -67,7 +67,7 @@ public class DocumentErasureService {
                 .then(Mono.defer(() -> supprimerVignette(document)))
                 .then(Mono.defer(() -> mediaFileRepository.delete(document)))
                 .thenReturn(document)
-                .doOnSuccess(d -> log.info(" Document {} effacé (type {})",
+                .doOnSuccess(d -> log.info("Document {} effacé (type {})",
                         d.getId(), d.getDocumentTypeCode()));
     }
 
@@ -85,7 +85,7 @@ public class DocumentErasureService {
                     // Un échec ici est grave : le document resterait dans le
                     // stockage. On le signale fort et on laisse l'erreur remonter
                     // pour que l'événement soit rejoué plutôt qu'acquitté à tort.
-                    log.error(" Pièce justificative NON supprimée du stockage ({}) : {}",
+                    log.error("Pièce justificative NON supprimée du stockage ({}) : {}",
                             path, e.getMessage());
                     return Mono.error(e);
                 });
@@ -104,7 +104,7 @@ public class DocumentErasureService {
         }
         return storageService.deleteFile(thumbnail)
                 .onErrorResume(e -> {
-                    log.warn(" Vignette non supprimée ({}) : {}", thumbnail, e.getMessage());
+                    log.warn("Vignette non supprimée ({}) : {}", thumbnail, e.getMessage());
                     return Mono.empty();
                 });
     }

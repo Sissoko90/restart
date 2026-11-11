@@ -170,11 +170,11 @@ public class DocumentTypeValidationServiceImpl implements DocumentTypeValidation
                         "Champs obligatoires manquants pour '%s': %s", 
                         config.getDisplayName(),
                         String.join(", ", missingFields));
-                    log.warn(" Validation failed: {}", errorMessage);
+                    log.warn("Validation failed: {}", errorMessage);
                     return Mono.error(new IllegalArgumentException(errorMessage));
                 }
                 
-                log.debug(" Validation passed for document type: {}", documentTypeCode);
+                log.debug("Validation passed for document type: {}", documentTypeCode);
                 return Mono.empty();
             });
     }

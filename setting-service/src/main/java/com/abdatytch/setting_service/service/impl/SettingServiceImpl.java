@@ -221,7 +221,7 @@ public class SettingServiceImpl implements ISettingService {
     @Transactional
     public Mono<Void> deleteAllUserSettings(String userId) {
         return userSettingRepository.deleteByUserId(userId)
-                .doOnSuccess(unused -> log.info(" Toutes les préférences de l'utilisateur {} supprimées", userId));
+                .doOnSuccess(unused -> log.info("Toutes les préférences de l'utilisateur {} supprimées", userId));
     }
 
     private UserSettingResponse toResponse(UserSetting setting) {

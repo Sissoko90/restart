@@ -124,7 +124,7 @@ public class XssProtectionWebFilter implements WebFilter {
         }
 
         String clientIp = getClientIp(exchange);
-        log.warn(" Motif d'injection detecte dans {} depuis {} — signale, non bloque",
+        log.warn("Motif d'injection detecte dans {} depuis {} — signale, non bloque",
                 origine, clientIp);
 
         // La requete poursuit son chemin : voir le commentaire de classe sur la

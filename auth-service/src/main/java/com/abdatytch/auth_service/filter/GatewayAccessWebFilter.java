@@ -169,7 +169,7 @@ public class GatewayAccessWebFilter implements WebFilter {
         // 1. Vérifier l'IP source (protection contre accès direct)
         String clientIp = getClientIp(request);
         if (!isAllowedIp(clientIp)) {
-            log.warn(" Direct access blocked from IP: {} to {}", clientIp, requestURI);
+            log.warn("Direct access blocked from IP: {} to {}", clientIp, requestURI);
             return sendForbiddenResponse(exchange, requestURI,
                 "Direct access not allowed. Requests must go through Gateway.");
         }
@@ -199,14 +199,14 @@ public class GatewayAccessWebFilter implements WebFilter {
 
         // Vérifier que tous les headers HMAC sont présents
         if (timestamp == null || signature == null || requestId == null) {
-            log.warn(" Missing HMAC headers from IP: {} to {}", clientIp, requestURI);
+            log.warn("Missing HMAC headers from IP: {} to {}", clientIp, requestURI);
             return sendForbiddenResponse(exchange, requestURI,
                 "Missing required security headers. Requests must go through Gateway.");
         }
 
         // Valider timestamp (anti-replay)
         if (!hmacSignatureUtil.isTimestampValid(timestamp)) {
-            log.warn(" Expired or invalid timestamp from IP: {}", clientIp);
+            log.warn("Expired or invalid timestamp from IP: {}", clientIp);
             return sendForbiddenResponse(exchange, requestURI, "Request timestamp expired");
         }
 
@@ -216,11 +216,11 @@ public class GatewayAccessWebFilter implements WebFilter {
         );
 
         if (!hmacSignatureUtil.validateSignature(secretKey, signatureData, signature)) {
-            log.warn(" Invalid HMAC signature from IP: {}", clientIp);
+            log.warn("Invalid HMAC signature from IP: {}", clientIp);
             return sendForbiddenResponse(exchange, requestURI, "Invalid request signature");
         }
 
-        log.debug(" HMAC signature validated for {} {}", request.getMethod(), requestURI);
+        log.debug("HMAC signature validated for {} {}", request.getMethod(), requestURI);
         log.debug(AppConstants.RQ_AUTHORIZED, requestURI);
 
         // Requête autorisée - continuer la chaîne

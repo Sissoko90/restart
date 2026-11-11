@@ -44,7 +44,7 @@ public class XssProtectionFilter implements WebFilter {
         exchange.getRequest().getQueryParams().forEach((key, values) -> {
             for (String value : values) {
                 if (containsXss(value)) {
-                    log.warn(" XSS détecté dans paramètre '{}': {}", key, value);
+                    log.warn("XSS détecté dans paramètre '{}': {}", key, value);
                 }
             }
         });
@@ -53,7 +53,7 @@ public class XssProtectionFilter implements WebFilter {
         exchange.getRequest().getHeaders().forEach((key, values) -> {
             for (String value : values) {
                 if (containsXss(value)) {
-                    log.warn(" XSS détecté dans header '{}': {}", key, value);
+                    log.warn("XSS détecté dans header '{}': {}", key, value);
                 }
             }
         });

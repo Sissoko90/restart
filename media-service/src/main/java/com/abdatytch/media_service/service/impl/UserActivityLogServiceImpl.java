@@ -109,7 +109,7 @@ public class UserActivityLogServiceImpl implements UserActivityLogService {
                     .then(saveToDatabase(userId, documentId, "UPLOAD", ipAddress, userAgent, 
                         requestId, geoInfo.getFullLocation(), geoInfo.isSuspicious()));
             })
-            .doOnSuccess(v -> log.info(" Document upload logged - User: {}, Doc: {}, Type: {}",
+            .doOnSuccess(v -> log.info("Document upload logged - User: {}, Doc: {}, Type: {}",
                 userId, documentId, documentTypeCode))
             .then();
     }
@@ -210,7 +210,7 @@ public class UserActivityLogServiceImpl implements UserActivityLogService {
                     .then(saveToDatabase(userId, documentId, "SECURITY_INCIDENT", ipAddress, userAgent, 
                         requestId, geoInfo.getFullLocation(), true));
             })
-            .doOnSuccess(v -> log.warn(" Security incident logged - User: {}, Threat: {}, Severity: {}", 
+            .doOnSuccess(v -> log.warn("Security incident logged - User: {}, Threat: {}, Severity: {}", 
                 userId, threatType, severity))
             .then();
     }
@@ -236,7 +236,7 @@ public class UserActivityLogServiceImpl implements UserActivityLogService {
                     .then(saveToDatabase(userId, documentId, "UNAUTHORIZED_ACCESS", ipAddress, userAgent, 
                         requestId, geoInfo.getFullLocation(), true));
             })
-            .doOnSuccess(v -> log.warn(" Unauthorized access logged - User: {}, Doc: {}, Action: {}", 
+            .doOnSuccess(v -> log.warn("Unauthorized access logged - User: {}, Doc: {}, Action: {}", 
                 userId, documentId, attemptedAction))
             .then();
     }
@@ -362,7 +362,7 @@ public class UserActivityLogServiceImpl implements UserActivityLogService {
             try {
                 JOURNAL.info(objectMapper.writeValueAsString(logData));
             } catch (JsonProcessingException illisible) {
-                log.warn(" Enregistrement d'activite non serialisable ({}) : {}",
+                log.warn("Enregistrement d'activite non serialisable ({}) : {}",
                         logType, illisible.getMessage());
             }
         });

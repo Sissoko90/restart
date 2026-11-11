@@ -62,10 +62,10 @@ public class TokenRevocationChecker {
         this.subjectPrefix = subjectPrefix;
 
         if (!enabled) {
-            log.warn(" Vérification de révocation DÉSACTIVÉE : les jetons révoqués "
+            log.warn("Vérification de révocation DÉSACTIVÉE : les jetons révoqués "
                     + "resteront acceptés jusqu'à leur expiration naturelle.");
         } else if (failOpen) {
-            log.warn(" Vérification de révocation en mode fail-open : une panne Redis "
+            log.warn("Vérification de révocation en mode fail-open : une panne Redis "
                     + "laissera passer les jetons révoqués.");
         }
     }
@@ -88,7 +88,7 @@ public class TokenRevocationChecker {
         // Un jeton sans `jti` ne peut pas être révoqué individuellement : c'est une
         // rupture du contrat d'émission, on refuse plutôt que d'ignorer.
         if (tokenId == null || tokenId.isBlank()) {
-            log.warn(" Jeton sans identifiant `jti` : révocation impossible, jeton refusé.");
+            log.warn("Jeton sans identifiant `jti` : révocation impossible, jeton refusé.");
             return Mono.just(true);
         }
 
@@ -136,7 +136,7 @@ public class TokenRevocationChecker {
                 // refuse.
                 .defaultIfEmpty(!failOpen)
                 .onErrorResume(error -> {
-                    log.error(" Liste de révocation injoignable ({}). Jeton {}.",
+                    log.error("Liste de révocation injoignable ({}). Jeton {}.",
                             error.getMessage(), failOpen ? "ACCEPTÉ (fail-open)" : "refusé");
                     return Mono.just(!failOpen);
                 });

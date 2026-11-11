@@ -58,12 +58,12 @@ public class ForeignErasureRequestListener {
                 .flatMap(this::handle)
                 .retryWhen(Retry.fixedDelay(3, Duration.ofSeconds(5)))
                 .onErrorResume(e -> {
-                    log.error(" Enregistrement des demandes externes arrêté : {}", e.getMessage());
+                    log.error("Enregistrement des demandes externes arrêté : {}", e.getMessage());
                     return Mono.empty();
                 })
                 .subscribe();
 
-        log.info(" Enregistrement des demandes d'effacement externes sur {}",
+        log.info("Enregistrement des demandes d'effacement externes sur {}",
                 ErasureTopics.ERASURE_REQUESTED);
     }
 
@@ -73,7 +73,7 @@ public class ForeignErasureRequestListener {
                 .flatMap(this::enregistrerSiInconnue)
                 .doOnSuccess(v -> record.receiverOffset().acknowledge())
                 .onErrorResume(e -> {
-                    log.error(" Demande d'effacement non enregistrée, sera rejouée : {}",
+                    log.error("Demande d'effacement non enregistrée, sera rejouée : {}",
                             e.getMessage());
                     return Mono.empty();
                 });
@@ -97,7 +97,7 @@ public class ForeignErasureRequestListener {
                             event.requestedAt(), ZoneId.systemDefault()));
                     request.setRequestedBy(event.subjectId());
 
-                    log.info(" Demande d'effacement externe enregistrée : {} (porteur {})",
+                    log.info("Demande d'effacement externe enregistrée : {} (porteur {})",
                             requestId, event.subjectId());
 
                     return requestRepository.save(request).then();

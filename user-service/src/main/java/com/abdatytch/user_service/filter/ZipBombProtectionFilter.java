@@ -74,7 +74,7 @@ public class ZipBombProtectionFilter implements WebFilter, Ordered {
                 ZipBombCheckResult result = zipBombProtection.checkForZipBomb(bytes, filename);
 
                 if (!result.isSafe()) {
-                    log.warn(" ZIP BOMB BLOCKED in user-service: {} - Reason: {}", filename, result.reason());
+                    log.warn("ZIP BOMB BLOCKED in user-service: {} - Reason: {}", filename, result.reason());
                     return rejectRequest(exchange, result.reason());
                 }
 

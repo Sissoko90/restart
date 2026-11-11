@@ -167,7 +167,7 @@ public class JwtAuthenticationWebFilter implements WebFilter {
         try {
             // Vérifier qu'au moins une clé publique est disponible
             if (jwksKeyProvider.getDefaultPublicKey() == null) {
-                log.error(" No public key available for JWT validation");
+                log.error("No public key available for JWT validation");
                 exchange.getResponse().setStatusCode(HttpStatus.INTERNAL_SERVER_ERROR);
                 return exchange.getResponse().setComplete();
             }
@@ -182,7 +182,7 @@ public class JwtAuthenticationWebFilter implements WebFilter {
 
             // 2. Vérifier expiration explicitement
             if (claims.getExpiration() != null && claims.getExpiration().before(new java.util.Date())) {
-                log.warn(" Expired JWT token for path: {}", path);
+                log.warn("Expired JWT token for path: {}", path);
                 exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
                 exchange.getResponse().getHeaders().add("X-Error-Reason", "TOKEN_EXPIRED");
                 return exchange.getResponse().setComplete();
@@ -207,7 +207,7 @@ public class JwtAuthenticationWebFilter implements WebFilter {
                 .defaultIfEmpty(Boolean.TRUE)
                 .flatMap(isBlacklisted -> {
                     if (Boolean.TRUE.equals(isBlacklisted)) {
-                        log.warn(" Blacklisted token used for path: {}", path);
+                        log.warn("Blacklisted token used for path: {}", path);
                         exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
                         exchange.getResponse().getHeaders().add("X-Error-Reason", "TOKEN_REVOKED");
                         return exchange.getResponse().setComplete();
@@ -215,7 +215,7 @@ public class JwtAuthenticationWebFilter implements WebFilter {
 
                     // 4. Token valide - extraire informations
                     String userId = claims.getSubject();
-                    log.debug(" JWT validated for user: {}", userId);
+                    log.debug("JWT validated for user: {}", userId);
 
                     // Stocker les informations dans les attributs
                     exchange.getAttributes().put("userId", userId);
@@ -228,10 +228,10 @@ public class JwtAuthenticationWebFilter implements WebFilter {
                     String userRole = JwtClaimsReader.primaryRole(claims);
                     if (userRole != null) {
                         exchange.getAttributes().put("userRole", userRole);
-                        log.debug(" User role from validated claims: {}", userRole);
+                        log.debug("User role from validated claims: {}", userRole);
                     }
 
-                    log.info(" JWT valid for user: {} accessing path: {}", userId, path);
+                    log.info("JWT valid for user: {} accessing path: {}", userId, path);
 
                     // La propagation du contexte de securite, SANS laquelle ce
                     // service refusait TOUS ses endpoints.
@@ -268,22 +268,22 @@ public class JwtAuthenticationWebFilter implements WebFilter {
                 });
 
         } catch (ExpiredJwtException e) {
-            log.warn(" Expired JWT token: {}", e.getMessage());
+            log.warn("Expired JWT token: {}", e.getMessage());
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
             exchange.getResponse().getHeaders().add("X-Error-Reason", "TOKEN_EXPIRED");
             return exchange.getResponse().setComplete();
         } catch (SignatureException e) {
-            log.warn(" Invalid JWT signature: {}", e.getMessage());
+            log.warn("Invalid JWT signature: {}", e.getMessage());
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
             exchange.getResponse().getHeaders().add("X-Error-Reason", "INVALID_SIGNATURE");
             return exchange.getResponse().setComplete();
         } catch (MalformedJwtException e) {
-            log.warn(" Malformed JWT token: {}", e.getMessage());
+            log.warn("Malformed JWT token: {}", e.getMessage());
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
             exchange.getResponse().getHeaders().add("X-Error-Reason", "MALFORMED_TOKEN");
             return exchange.getResponse().setComplete();
         } catch (Exception e) {
-            log.error(" JWT validation error: {}", e.getMessage());
+            log.error("JWT validation error: {}", e.getMessage());
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
             exchange.getResponse().getHeaders().add("X-Error-Reason", "VALIDATION_ERROR");
             return exchange.getResponse().setComplete();

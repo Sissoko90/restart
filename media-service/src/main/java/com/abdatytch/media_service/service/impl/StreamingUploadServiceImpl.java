@@ -52,23 +52,23 @@ public class StreamingUploadServiceImpl implements StreamingUploadService {
                         outputStream.write(bytes);
                         DataBufferUtils.release(dataBuffer);
                     } catch (Exception e) {
-                        log.error(" Error writing chunk", e);
+                        log.error("Error writing chunk", e);
                         throw new RuntimeException(e);
                     }
                 })
                 .doOnComplete(() -> {
                     try {
                         outputStream.close();
-                        log.debug(" Stream writing completed");
+                        log.debug("Stream writing completed");
                     } catch (Exception e) {
-                        log.error(" Error closing output stream", e);
+                        log.error("Error closing output stream", e);
                     }
                 })
                 .doOnError(e -> {
                     try {
                         outputStream.close();
                     } catch (Exception ex) {
-                        log.error(" Error closing output stream on error", ex);
+                        log.error("Error closing output stream on error", ex);
                     }
                 })
                 .subscribeOn(Schedulers.boundedElastic())
@@ -85,17 +85,17 @@ public class StreamingUploadServiceImpl implements StreamingUploadService {
                         .build()
                 );
                 
-                log.info(" File streamed to MinIO: {}", sanitizedFileName);
+                log.info("File streamed to MinIO: {}", sanitizedFileName);
                 return sanitizedFileName;
                 
             } catch (Exception e) {
-                log.error(" Failed to stream file to MinIO: {}", sanitizedFileName, e);
+                log.error("Failed to stream file to MinIO: {}", sanitizedFileName, e);
                 throw new StorageException("Failed to stream upload file", e);
             } finally {
                 try {
                     inputStream.close();
                 } catch (Exception e) {
-                    log.error(" Error closing input stream", e);
+                    log.error("Error closing input stream", e);
                 }
             }
         }).subscribeOn(Schedulers.boundedElastic());

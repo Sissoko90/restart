@@ -28,7 +28,7 @@ public class DocumentTypeManagementServiceImpl implements DocumentTypeManagement
     
     @Override
     public Mono<DocumentTypeResponse> createDocumentType(CreateDocumentTypeRequest request, String adminId) {
-        log.info(" Admin {} creating document type: {}", adminId, request.getCode());
+        log.info("Admin {} creating document type: {}", adminId, request.getCode());
         
         return documentTypeConfigRepository.existsByCode(request.getCode())
             .flatMap(exists -> {
@@ -55,14 +55,14 @@ public class DocumentTypeManagementServiceImpl implements DocumentTypeManagement
                 config.setCreatedBy(adminId);
                 
                 return documentTypeConfigRepository.save(config)
-                    .doOnSuccess(saved -> log.info(" Document type created: {}", saved.getCode()))
+                    .doOnSuccess(saved -> log.info("Document type created: {}", saved.getCode()))
                     .map(this::toResponse);
             });
     }
     
     @Override
     public Mono<DocumentTypeResponse> updateDocumentType(String id, CreateDocumentTypeRequest request, String adminId) {
-        log.info(" Admin {} updating document type: {}", adminId, id);
+        log.info("Admin {} updating document type: {}", adminId, id);
         
         return documentTypeConfigRepository.findById(id)
             .switchIfEmpty(Mono.error(new MediaNotFoundException("Document type not found")))
@@ -81,14 +81,14 @@ public class DocumentTypeManagementServiceImpl implements DocumentTypeManagement
                 config.setLastModifiedBy(adminId);
                 
                 return documentTypeConfigRepository.save(config)
-                    .doOnSuccess(saved -> log.info(" Document type updated: {}", saved.getCode()))
+                    .doOnSuccess(saved -> log.info("Document type updated: {}", saved.getCode()))
                     .map(this::toResponse);
             });
     }
     
     @Override
     public Mono<Void> deleteDocumentType(String id, String adminId) {
-        log.info(" Admin {} deleting document type: {}", adminId, id);
+        log.info("Admin {} deleting document type: {}", adminId, id);
         
         return documentTypeConfigRepository.findById(id)
             .switchIfEmpty(Mono.error(new MediaNotFoundException("Document type not found")))
@@ -97,7 +97,7 @@ public class DocumentTypeManagementServiceImpl implements DocumentTypeManagement
                 config.setLastModifiedBy(adminId);
                 
                 return documentTypeConfigRepository.save(config)
-                    .doOnSuccess(saved -> log.info(" Document type deactivated: {}", saved.getCode()))
+                    .doOnSuccess(saved -> log.info("Document type deactivated: {}", saved.getCode()))
                     .then();
             });
     }
@@ -253,7 +253,7 @@ public class DocumentTypeManagementServiceImpl implements DocumentTypeManagement
                 return roleRequirementRepository
                     .deleteByDocumentTypeCodeAndUserRole(documentTypeCode, userRole);
             })
-            .doOnSuccess(v -> log.info(" Document removed from role"));
+            .doOnSuccess(v -> log.info("Document removed from role"));
     }
     
     @Override

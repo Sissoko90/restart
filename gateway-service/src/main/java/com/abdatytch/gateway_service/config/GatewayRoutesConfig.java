@@ -587,7 +587,7 @@ public class GatewayRoutesConfig {
             .timeout(delaiDeProxification)
             .transformDeferred(CircuitBreakerOperator.of(circuitBreaker))
             .onErrorResume(io.github.resilience4j.circuitbreaker.CallNotPermittedException.class, error -> {
-                log.warn(" Circuit Breaker [{}] is OPEN - rejecting request to {}",
+                log.warn("Circuit Breaker [{}] is OPEN - rejecting request to {}",
                     serviceName, request.path());
                 return ServerResponse.status(503)
                     .contentType(MediaType.APPLICATION_JSON)
@@ -629,7 +629,7 @@ public class GatewayRoutesConfig {
             WebClient webClient,
             String serviceName) {
 
-        log.debug(" Gateway forwarding: {} {} to {}", request.method(), request.uri(), serviceName);
+        log.debug("Gateway forwarding: {} {} to {}", request.method(), request.uri(), serviceName);
         // Le message qui annoncait « Adding X-Secret-Key header » a ete retire.
         //
         // Aucun code ne l'ajoutait : l'en-tete a ete sorti du protocole parce
@@ -652,7 +652,7 @@ public class GatewayRoutesConfig {
         Claims validatedClaims = validatedClaims(request);
         String userId = validatedClaims != null ? validatedClaims.getSubject() : null;
         if (userId != null) {
-            log.debug(" userId issu des claims validés: {}", userId);
+            log.debug("userId issu des claims validés: {}", userId);
         }
 
         String clientIp = clientIpResolver.resolve(request.exchange());
@@ -660,7 +660,7 @@ public class GatewayRoutesConfig {
         // Détecter si c'est une requête multipart
         String contentType = request.headers().firstHeader("Content-Type");
         boolean isMultipart = contentType != null && contentType.startsWith("multipart/");
-        log.debug(" Content-Type: {}, isMultipart: {}", contentType, isMultipart);
+        log.debug("Content-Type: {}, isMultipart: {}", contentType, isMultipart);
 
         // Résoudre l'instance du service via Consul Discovery
         return choixDInstance.pour(serviceName)
@@ -668,7 +668,7 @@ public class GatewayRoutesConfig {
                 // Construire l'URI complète avec l'instance résolue
                 String fullUri = instance.getUri().toString() + targetPath + queryString;
 
-                log.debug(" Proxification vers: {}", fullUri);
+                log.debug("Proxification vers: {}", fullUri);
 
                 // Proxifier la requête de manière réactive
                 return webClient
@@ -714,7 +714,7 @@ public class GatewayRoutesConfig {
                         String userRole = JwtClaimsReader.primaryRole(validatedClaims);
                         if (userRole != null) {
                             headers.set("X-User-Role", userRole);
-                            log.debug(" userRole issu des claims validés: {}", userRole);
+                            log.debug("userRole issu des claims validés: {}", userRole);
                         }
 
                         // Les services en aval décident de journalisation, de
@@ -760,7 +760,7 @@ public class GatewayRoutesConfig {
                             .defaultIfEmpty("")
                             .flatMap(responseBody -> {
                                 if (!response.statusCode().isError()) {
-                                    log.debug(" Success - {} {} - Status: {}",
+                                    log.debug("Success - {} {} - Status: {}",
                                         request.method(), request.uri(), statusCode);
                                 }
                                 return ServerResponse
@@ -772,7 +772,7 @@ public class GatewayRoutesConfig {
                     })
                     .onErrorResume(error -> {
                         // Gestion des erreurs de connexion ou timeout
-                        log.error(" Gateway unexpected error: {} - {} {}",
+                        log.error("Gateway unexpected error: {} - {} {}",
                             error.getMessage(), request.method(), request.uri(), error);
                         String errorJson = String.format(
                             "{\"timestamp\":\"%s\",\"status\":500,\"error\":\"Gateway Error\",\"message\":\"Erreur inattendue du Gateway: %s\",\"path\":\"%s\"}",

@@ -63,7 +63,7 @@ public class JwtServiceImpl implements IJwtService {
         this.authMetrics = authMetrics;
         this.jwksKeyProvider = jwksKeyProvider;
         this.interfaceServiceClient = interfaceServiceClient;
-        log.info(" JwtService initialisé - Utilise JWKS depuis interface-service");
+        log.info("JwtService initialisé - Utilise JWKS depuis interface-service");
     }
 
     /**

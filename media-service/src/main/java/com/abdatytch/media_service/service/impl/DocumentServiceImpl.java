@@ -100,12 +100,12 @@ public class DocumentServiceImpl implements DocumentService {
             String userAgent) {
 
         long startTime = System.currentTimeMillis();
-        log.info(" Upload request - User: {}, Role: {}, DocType: {}", userId, userRole, type.code());
+        log.info("Upload request - User: {}, Role: {}, DocType: {}", userId, userRole, type.code());
 
         return validationService.canUserUploadDocument(userId, userRole, type.code())
             .flatMap(validation -> {
                 if (!validation.canUpload()) {
-                    log.warn(" Upload validation failed: {}", validation.reason());
+                    log.warn("Upload validation failed: {}", validation.reason());
                     return Mono.error(new InvalidFileTypeException(validation.reason()));
                 }
 
@@ -154,7 +154,7 @@ public class DocumentServiceImpl implements DocumentService {
                         String mimeType = filePart.headers().getContentType() != null ?
                             filePart.headers().getContentType().toString() : "application/octet-stream";
 
-                        log.debug(" File details - Name: {}, Size: {} bytes, MIME: {}",
+                        log.debug("File details - Name: {}, Size: {} bytes, MIME: {}",
                             fileName, fileData.length, mimeType);
 
                         // Pipeline de validation et sécurité
@@ -167,13 +167,13 @@ public class DocumentServiceImpl implements DocumentService {
                     });
             })
             .doOnSuccess(response -> {
-                log.info(" Document uploaded successfully - ID: {}, Status: {}",
+                log.info("Document uploaded successfully - ID: {}, Status: {}",
                     response.getDocumentId(), response.getStatus());
                 long duration = System.currentTimeMillis() - startTime;
                 documentMetricsService.incrementUploadCounter();
                 documentMetricsService.recordUploadDuration(duration);
             })
-            .doOnError(error -> log.error(" Document upload failed", error));
+            .doOnError(error -> log.error("Document upload failed", error));
     }
 
     /**
@@ -236,7 +236,7 @@ public class DocumentServiceImpl implements DocumentService {
      */
     private Mono<ContexteEnvoi> verifierLeTypeMime(ContexteEnvoi ctx) {
         if (!isAllowedMimeType(ctx.mimeType)) {
-            log.warn(" Unsupported file type - MIME: {}, File: {}", ctx.mimeType, ctx.fileName);
+            log.warn("Unsupported file type - MIME: {}, File: {}", ctx.mimeType, ctx.fileName);
             return incrementUploadAttempt(ctx.userId, ctx.type.code(), ctx.currentAttempts)
                 .then(Mono.error(new InvalidFileTypeException(
                     "Type de fichier non autorisé: " + ctx.mimeType + ". Types acceptés: image/*, application/pdf, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document")));
@@ -277,7 +277,7 @@ public class DocumentServiceImpl implements DocumentService {
         return malwareDetectionService.scanFile(ctx.donnees, ctx.mimeType, ctx.fileName)
             .flatMap(scan -> {
                 if (!scan.passed()) {
-                    log.warn(" Security scan failed - Threats: {}", scan.threats());
+                    log.warn("Security scan failed - Threats: {}", scan.threats());
                     scan.threats().forEach(menace ->
                         documentMetricsService.incrementSecurityThreatCounter(menace.name())
                     );
@@ -299,10 +299,10 @@ public class DocumentServiceImpl implements DocumentService {
 
         final int tailleAvant = ctx.donnees.length;
         return imageCompressionService.compressImage(ctx.donnees)
-            .doOnSuccess(compressees -> log.info(" Image compressed: {} -> {} bytes",
+            .doOnSuccess(compressees -> log.info("Image compressed: {} -> {} bytes",
                 tailleAvant, compressees.length))
             .onErrorResume(e -> {
-                log.error(" Image compression failed: {}", e.getMessage());
+                log.error("Image compression failed: {}", e.getMessage());
                 return Mono.error(new StorageException("Échec de la compression d'image: " + e.getMessage()));
             })
             .map(compressees -> {
@@ -320,7 +320,7 @@ public class DocumentServiceImpl implements DocumentService {
     private Mono<ContexteEnvoi> calculerLEmpreinte(ContexteEnvoi ctx) {
         return malwareDetectionService.calculateFileHash(ctx.donnees)
             .onErrorResume(e -> {
-                log.error(" Hash calculation failed: {}", e.getMessage());
+                log.error("Hash calculation failed: {}", e.getMessage());
                 return Mono.error(new StorageException("Échec du calcul du hash: " + e.getMessage()));
             })
             .map(empreinte -> {
@@ -339,12 +339,12 @@ public class DocumentServiceImpl implements DocumentService {
     private Mono<ContexteEnvoi> analyserLaQualite(ContexteEnvoi ctx) {
         return analyzeDocumentQuality(ctx.donnees, ctx.mimeType)
             .onErrorResume(e -> {
-                log.error(" Quality analysis failed: {}", e.getMessage());
+                log.error("Quality analysis failed: {}", e.getMessage());
                 return Mono.error(new StorageException("Échec de l'analyse de qualité: " + e.getMessage()));
             })
             .flatMap(qualite -> {
                 if (!qualite.isReadable() || qualite.qualityScore() < 70.0) {
-                    log.warn(" Quality check FAILED - Score: {}, Readable: {}, Reason: {}",
+                    log.warn("Quality check FAILED - Score: {}, Readable: {}, Reason: {}",
                         qualite.qualityScore(), qualite.isReadable(), qualite.rejectionReason());
 
                     // L'illisibilite prime sur le score : c'est le signal le plus
@@ -360,7 +360,7 @@ public class DocumentServiceImpl implements DocumentService {
                         )));
                 }
 
-                log.info(" Quality check PASSED - Score: {}/100", qualite.qualityScore());
+                log.info("Quality check PASSED - Score: {}/100", qualite.qualityScore());
                 ctx.qualite = qualite;
                 return Mono.just(ctx);
             });
@@ -373,9 +373,9 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         return watermarkService.addWatermark(ctx.donnees, ctx.userId, ctx.type.code())
-            .doOnSuccess(filigranees -> log.info(" Watermark added"))
+            .doOnSuccess(filigranees -> log.info("Watermark added"))
             .onErrorResume(e -> {
-                log.error(" Watermark failed: {}", e.getMessage());
+                log.error("Watermark failed: {}", e.getMessage());
                 return Mono.error(new StorageException("Échec du watermark: " + e.getMessage()));
             })
             .map(filigranees -> {
@@ -387,9 +387,9 @@ public class DocumentServiceImpl implements DocumentService {
     /** 7. Chiffrement AES-256-GCM, a cle derivee par document. */
     private Mono<ContexteEnvoi> chiffrer(ContexteEnvoi ctx) {
         return unifiedEncryptionService.encryptDocument(ctx.donnees, ctx.userId, ctx.type.code())
-            .doOnSuccess(chiffrees -> log.info(" Document encrypted"))
+            .doOnSuccess(chiffrees -> log.info("Document encrypted"))
             .onErrorResume(e -> {
-                log.error(" Encryption failed: {}", e.getMessage());
+                log.error("Encryption failed: {}", e.getMessage());
                 return Mono.error(new StorageException("Échec du chiffrement: " + e.getMessage()));
             })
             .map(chiffrees -> {
@@ -428,12 +428,12 @@ public class DocumentServiceImpl implements DocumentService {
             .flatMap(donneesVignette -> {
                 String cheminVignette = buildStoragePath(ctx.userId, ctx.type.code(), ctx.empreinte) + "_thumb";
                 return storageService.uploadFileFromBytes(cheminVignette, donneesVignette, "image/jpeg")
-                    .doOnSuccess(t -> log.info(" Thumbnail generated"));
+                    .doOnSuccess(t -> log.info("Thumbnail generated"));
             })
             .map(java.util.Optional::of)
             .defaultIfEmpty(java.util.Optional.empty())
             .onErrorResume(e -> {
-                log.warn(" Thumbnail generation/upload failed (non-critical): {}", e.getMessage());
+                log.warn("Thumbnail generation/upload failed (non-critical): {}", e.getMessage());
                 return Mono.just(java.util.Optional.empty());
             })
             .map(chemin -> {
@@ -761,7 +761,7 @@ public class DocumentServiceImpl implements DocumentService {
                 requirement.setCurrentDocumentId(documentId);
                 // RÉINITIALISER le compteur à 0 en cas de succès
                 requirement.setUploadAttempts(0);
-                log.info(" Upload successful - Reset attempt counter to 0 for user: {}, docType: {}",
+                log.info("Upload successful - Reset attempt counter to 0 for user: {}, docType: {}",
                     userId, documentTypeCode);
                 return requirementRepository.save(requirement);
             })
@@ -780,7 +780,7 @@ public class DocumentServiceImpl implements DocumentService {
      */
     @Override
     public Mono<Flux<DataBuffer>> downloadDocument(String documentId, String userId) {
-        log.info(" Download request - Document: {}, User: {}", documentId, userId);
+        log.info("Download request - Document: {}, User: {}", documentId, userId);
         long debut = System.currentTimeMillis();
 
         return mediaFileRepository.findById(documentId)
@@ -1031,7 +1031,7 @@ public class DocumentServiceImpl implements DocumentService {
                         .then(logAccess(documentId, userId, "DELETE", null, null, null))
                         .then(mediaFileRepository.deleteById(documentId))
                 .onErrorResume(e -> {
-                    log.error(" Transaction failed for document deletion: {}", documentId, e);
+                    log.error("Transaction failed for document deletion: {}", documentId, e);
                     return Mono.error(new StorageException("Échec de la suppression du document", e));
                 });
             });
@@ -1103,14 +1103,14 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Deprecated
     public Mono<UserDocumentStatusResponse> getUserDocumentStatus(String userId, UserRole userRole) {
-        log.warn(" Deprecated method getUserDocumentStatus called - use DocumentRequirementService instead");
+        log.warn("Deprecated method getUserDocumentStatus called - use DocumentRequirementService instead");
         return Mono.empty();
     }
 
     @Override
     @Deprecated
     public Mono<UserDocumentStatusResponse> getMissingDocuments(String userId, UserRole userRole) {
-        log.warn(" Deprecated method getMissingDocuments called - use DocumentRequirementService instead");
+        log.warn("Deprecated method getMissingDocuments called - use DocumentRequirementService instead");
         return Mono.empty();
     }
 
@@ -1124,7 +1124,7 @@ public class DocumentServiceImpl implements DocumentService {
                 return mediaFileRepository.save(document);
             })
             .count()
-            .doOnSuccess(count -> log.info(" Updated {} expired documents", count));
+            .doOnSuccess(count -> log.info("Updated {} expired documents", count));
     }
 
     private Mono<Void> logAccess(String mediaId, String userId, String action,
@@ -1141,7 +1141,7 @@ public class DocumentServiceImpl implements DocumentService {
             .build();
 
         return accessLogRepository.save(accessLog)
-            .doOnSuccess(savedLog -> log.debug(" Access logged - Action: {}, User: {}", action, userId))
+            .doOnSuccess(savedLog -> log.debug("Access logged - Action: {}, User: {}", action, userId))
             .then();
     }
 
@@ -1151,8 +1151,8 @@ public class DocumentServiceImpl implements DocumentService {
 
         return mediaFileRepository.findByStatusOrderByCreatedAtAsc(DocumentStatus.UPLOADED)
             .map(this::mapToDocumentListResponse)
-            .doOnComplete(() -> log.info(" Pending documents fetched successfully"))
-            .doOnError(error -> log.error(" Error fetching pending documents: {}", error.getMessage()));
+            .doOnComplete(() -> log.info("Pending documents fetched successfully"))
+            .doOnError(error -> log.error("Error fetching pending documents: {}", error.getMessage()));
     }
 
     @Override
@@ -1179,13 +1179,13 @@ public class DocumentServiceImpl implements DocumentService {
 
         return documentsFlux
             .map(this::mapToDocumentListResponse)
-            .doOnComplete(() -> log.info(" All documents fetched successfully"))
-            .doOnError(error -> log.error(" Error fetching documents: {}", error.getMessage()));
+            .doOnComplete(() -> log.info("All documents fetched successfully"))
+            .doOnError(error -> log.error("Error fetching documents: {}", error.getMessage()));
     }
 
     @Override
     public Mono<java.util.Map<String, Object>> getDocumentStats() {
-        log.info(" Fetching document statistics");
+        log.info("Fetching document statistics");
 
         return Mono.zip(
             mediaFileRepository.count(),
@@ -1203,8 +1203,8 @@ public class DocumentServiceImpl implements DocumentService {
             stats.put("timestamp", java.time.LocalDateTime.now());
             return stats;
         })
-        .doOnSuccess(stats -> log.info(" Document statistics fetched: {}", stats))
-        .doOnError(error -> log.error(" Error fetching statistics: {}", error.getMessage()));
+        .doOnSuccess(stats -> log.info("Document statistics fetched: {}", stats))
+        .doOnError(error -> log.error("Error fetching statistics: {}", error.getMessage()));
     }
 
     private DocumentListResponse mapToDocumentListResponse(MediaFile mediaFile) {
@@ -1225,7 +1225,7 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public Mono<DocumentDetailResponse> getDocumentDetailsAdmin(String documentId) {
-        log.info(" Admin fetching document details - ID: {}", documentId);
+        log.info("Admin fetching document details - ID: {}", documentId);
 
         return mediaFileRepository.findById(documentId)
             .switchIfEmpty(Mono.error(new MediaNotFoundException("Document non trouvé")))
@@ -1246,13 +1246,13 @@ public class DocumentServiceImpl implements DocumentService {
                 .reviewedAt(document.getReviewedAt())
                 .rejectionReason(document.getRejectionReason())
                 .build())
-            .doOnSuccess(details -> log.info(" Document details fetched for admin"))
-            .doOnError(error -> log.error(" Error fetching document details: {}", error.getMessage()));
+            .doOnSuccess(details -> log.info("Document details fetched for admin"))
+            .doOnError(error -> log.error("Error fetching document details: {}", error.getMessage()));
     }
 
     @Override
     public Mono<Flux<DataBuffer>> downloadDocumentAdmin(String documentId) {
-        log.info(" Admin downloading document - ID: {}", documentId);
+        log.info("Admin downloading document - ID: {}", documentId);
         long debut = System.currentTimeMillis();
 
         return mediaFileRepository.findById(documentId)
@@ -1274,10 +1274,10 @@ public class DocumentServiceImpl implements DocumentService {
                             DefaultDataBufferFactory.sharedInstance.wrap(bytes)));
             })
             .doOnSuccess(data -> {
-                log.info(" Document downloaded by admin");
+                log.info("Document downloaded by admin");
                 documentMetricsService.recordDownloadDuration(System.currentTimeMillis() - debut);
             })
-            .doOnError(error -> log.error(" Error downloading document: {}", error.getMessage()));
+            .doOnError(error -> log.error("Error downloading document: {}", error.getMessage()));
     }
 
     /**
@@ -1291,7 +1291,7 @@ public class DocumentServiceImpl implements DocumentService {
      */
     @Override
     public Mono<Void> deleteDocumentAdmin(String documentId, String adminId) {
-        log.info(" Admin {} deleting document {}", adminId, documentId);
+        log.info("Admin {} deleting document {}", adminId, documentId);
 
         return mediaFileRepository.findById(documentId)
             .switchIfEmpty(Mono.error(new MediaNotFoundException("Document non trouvé")))
@@ -1303,9 +1303,9 @@ public class DocumentServiceImpl implements DocumentService {
                     .then(mediaFileRepository.deleteById(documentId))
             )
             .doOnSuccess(v -> {
-                log.info(" Document {} deleted by admin {}", documentId, adminId);
+                log.info("Document {} deleted by admin {}", documentId, adminId);
                 documentMetricsService.incrementDeletedCounter();
             })
-            .doOnError(error -> log.error(" Error deleting document: {}", error.getMessage()));
+            .doOnError(error -> log.error("Error deleting document: {}", error.getMessage()));
     }
 }

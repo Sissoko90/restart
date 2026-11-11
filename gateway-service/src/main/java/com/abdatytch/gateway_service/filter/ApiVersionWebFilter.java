@@ -47,7 +47,7 @@ public class ApiVersionWebFilter implements WebFilter {
         Matcher matcher = API_VERSION_PATTERN.matcher(path);
 
         if (!matcher.matches()) {
-            log.warn(" Invalid API path format: {}", path);
+            log.warn("Invalid API path format: {}", path);
             exchange.getResponse().setStatusCode(HttpStatus.BAD_REQUEST);
             return exchange.getResponse().setComplete();
         }
@@ -55,13 +55,13 @@ public class ApiVersionWebFilter implements WebFilter {
         int version = Integer.parseInt(matcher.group(1));
 
         if (version < MIN_SUPPORTED_VERSION || version > MAX_SUPPORTED_VERSION) {
-            log.warn(" Unsupported API version: v{} (supported: v{}-v{})",
+            log.warn("Unsupported API version: v{} (supported: v{}-v{})",
                 version, MIN_SUPPORTED_VERSION, MAX_SUPPORTED_VERSION);
             exchange.getResponse().setStatusCode(HttpStatus.NOT_FOUND);
             return exchange.getResponse().setComplete();
         }
 
-        log.debug(" API version v{} validated for path: {}", version, path);
+        log.debug("API version v{} validated for path: {}", version, path);
         return chain.filter(exchange);
     }
 }

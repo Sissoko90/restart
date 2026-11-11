@@ -86,12 +86,12 @@ public class JwksKeyProvider {
 
     @PostConstruct
     public void init() {
-        log.info(" Initialisation du JWKS Key Provider depuis: {}", jwksUrl);
-        log.info(" Chargement des clés en arrière-plan - le service démarre sans attendre l'autorité JWT");
+        log.info("Initialisation du JWKS Key Provider depuis: {}", jwksUrl);
+        log.info("Chargement des clés en arrière-plan - le service démarre sans attendre l'autorité JWT");
 
         refreshKeysWithRetry()
-            .doOnSuccess(count -> log.info(" JWKS initialisé: {} clés chargées depuis {}", count, jwksUrl))
-            .doOnError(e -> log.warn(" JWKS indisponible pour l'instant, nouvelle tentative périodique: {}", e.getMessage()))
+            .doOnSuccess(count -> log.info("JWKS initialisé: {} clés chargées depuis {}", count, jwksUrl))
+            .doOnError(e -> log.warn("JWKS indisponible pour l'instant, nouvelle tentative périodique: {}", e.getMessage()))
             // L'échec est attendu au démarrage : l'autorité JWT peut ne pas être
             // encore levée, et scheduledRefresh() reprendra. Il doit donc être
             // CONSOMMÉ ici.
@@ -127,7 +127,7 @@ public class JwksKeyProvider {
             if (key != null) {
                 return key;
             }
-            log.warn(" Clé publique inconnue pour kid={} - repli sur la clé par défaut", keyId);
+            log.warn("Clé publique inconnue pour kid={} - repli sur la clé par défaut", keyId);
         }
         return defaultKey;
     }
@@ -172,7 +172,7 @@ public class JwksKeyProvider {
             .map(this::parseJwks)
             .doOnSuccess(count -> {
                 lastRefreshTime = System.currentTimeMillis();
-                log.debug(" JWKS rafraîchi: {} clés chargées", count);
+                log.debug("JWKS rafraîchi: {} clés chargées", count);
             })
             // DEBUG, et non ERROR : cette méthode est appelée une fois par
             // tentative, et chaque tentative suivie d'un réessai est déjà
@@ -186,14 +186,14 @@ public class JwksKeyProvider {
             // faire croire que le service lui-même avait échoué — alors qu'il
             // écoutait et répondait. Un message de gravité ERROR doit désigner
             // quelque chose qui ne se réparera pas tout seul.
-            .doOnError(e -> log.debug(" Tentative de récupération JWKS échouée: {}", e.getMessage()));
+            .doOnError(e -> log.debug("Tentative de récupération JWKS échouée: {}", e.getMessage()));
     }
 
     @SuppressWarnings("unchecked")
     private int parseJwks(Map<String, Object> jwks) {
         List<Map<String, Object>> keys = (List<Map<String, Object>>) jwks.get("keys");
         if (keys == null || keys.isEmpty()) {
-            log.warn(" Le JWKS ne contient aucune clé");
+            log.warn("Le JWKS ne contient aucune clé");
             return 0;
         }
 
@@ -223,14 +223,14 @@ public class JwksKeyProvider {
                 if (firstKey == null) {
                     firstKey = publicKey;
                 }
-                log.debug(" Clé RSA chargée: kid={}", kid);
+                log.debug("Clé RSA chargée: kid={}", kid);
             } catch (Exception ex) {
-                log.error(" Échec du parsing d'une JWK: {}", ex.getMessage());
+                log.error("Échec du parsing d'une JWK: {}", ex.getMessage());
             }
         }
 
         if (refreshed.isEmpty()) {
-            log.warn(" Aucune clé RSA exploitable dans le JWKS - cache conservé en l'état");
+            log.warn("Aucune clé RSA exploitable dans le JWKS - cache conservé en l'état");
             return 0;
         }
 
@@ -256,8 +256,8 @@ public class JwksKeyProvider {
     @Scheduled(fixedDelayString = "${jwt.jwks.refresh-interval-seconds:300}000")
     public void scheduledRefresh() {
         refreshKeys().subscribe(
-            count -> log.debug(" Rafraîchissement JWKS planifié: {} clés", count),
-            error -> log.warn(" Rafraîchissement JWKS planifié en échec: {}", error.getMessage())
+            count -> log.debug("Rafraîchissement JWKS planifié: {} clés", count),
+            error -> log.warn("Rafraîchissement JWKS planifié en échec: {}", error.getMessage())
         );
     }
 

@@ -88,7 +88,7 @@ public class IpBlacklistWebFilter implements WebFilter {
                 .defaultIfEmpty(Boolean.FALSE)
                 .flatMap(blacklisted -> {
                     if (Boolean.TRUE.equals(blacklisted)) {
-                        log.warn(" Requête refusée — IP en liste noire : {} sur {}",
+                        log.warn("Requête refusée — IP en liste noire : {} sur {}",
                                 clientIp, exchange.getRequest().getPath().value());
                         return forbidden(exchange);
                     }
@@ -99,7 +99,7 @@ public class IpBlacklistWebFilter implements WebFilter {
                     // plateforme à tout le monde pour protéger contre quelques IP.
                     // Le compromis est l'inverse de celui de la révocation, où
                     // c'est l'identité elle-même qui est en cause.
-                    log.error(" Liste noire d'IP injoignable, requête acceptée : {}",
+                    log.error("Liste noire d'IP injoignable, requête acceptée : {}",
                             error.getMessage());
                     return chain.filter(exchange);
                 });

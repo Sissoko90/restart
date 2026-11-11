@@ -98,7 +98,7 @@ public class JwtWebFilter implements WebFilter {
         if (acceptedAudiences.isEmpty()) {
             // Signalé au démarrage : sinon la panne n'apparaît qu'au premier appel
             // authentifié, sous la forme d'un 401 sans explication.
-            log.error(" `jwt.audience` n'est pas configurée : TOUS les jetons seront refusés.");
+            log.error("`jwt.audience` n'est pas configurée : TOUS les jetons seront refusés.");
         }
     }
 
@@ -117,7 +117,7 @@ public class JwtWebFilter implements WebFilter {
             // Aucune authentification n'est établie : `authorizeExchange` refusera
             // ensuite l'accès. On ne court-circuite pas ici, car certains chemins
             // sont légitimement anonymes.
-            log.debug(" Aucun jeton présenté pour {} — l'autorisation tranchera", path);
+            log.debug("Aucun jeton présenté pour {} — l'autorisation tranchera", path);
             return chain.filter(exchange);
         }
 
@@ -154,7 +154,7 @@ public class JwtWebFilter implements WebFilter {
                                         ? null : claims.getIssuedAt().toInstant())
                         .flatMap(revoked -> {
                             if (Boolean.TRUE.equals(revoked)) {
-                                log.warn(" Jeton révoqué présenté par {} sur {}",
+                                log.warn("Jeton révoqué présenté par {} sur {}",
                                         claims.getSubject(), path);
                                 return unauthorized(exchange);
                             }
@@ -163,7 +163,7 @@ public class JwtWebFilter implements WebFilter {
                 .onErrorResume(e -> {
                     // Le détail reste dans les journaux : la réponse ne dit jamais
                     // POURQUOI le jeton est refusé, pour ne pas guider un attaquant.
-                    log.warn(" Jeton refusé sur {} : {}", path, e.getMessage());
+                    log.warn("Jeton refusé sur {} : {}", path, e.getMessage());
                     return unauthorized(exchange);
                 });
     }
@@ -178,7 +178,7 @@ public class JwtWebFilter implements WebFilter {
                 .map(SimpleGrantedAuthority::new)
                 .toList();
 
-        log.debug(" Jeton valide — sujet {}, rôles {}, chemin {}",
+        log.debug("Jeton valide — sujet {}, rôles {}, chemin {}",
                 claims.getSubject(), roles, path);
 
         UsernamePasswordAuthenticationToken authentication =

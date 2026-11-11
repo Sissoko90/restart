@@ -151,7 +151,7 @@ public class AdminController {
             @RequestBody AdminLoginRequest request,
             @RequestHeader(value = "User-Agent", required = false) String userAgent,
             ServerWebExchange exchange) {
-        log.info(" Tentative de connexion admin pour: {}", request.getEmail());
+        log.info("Tentative de connexion admin pour: {}", request.getEmail());
 
         // L'adresse vient du Gateway, jamais d'un en-tete fourni par l'appelant.
         // Elle alimente la geolocalisation et les alertes de securite : une
@@ -163,14 +163,14 @@ public class AdminController {
 
         return userRepository.findByEmail(request.getEmail())
             .switchIfEmpty(Mono.defer(() -> {
-                log.warn(" Tentative de connexion admin avec email inexistant: {}", request.getEmail());
+                log.warn("Tentative de connexion admin avec email inexistant: {}", request.getEmail());
                 return Mono.error(new RuntimeException("Identifiants invalides"));
             }))
             .flatMap(user -> validateAdminCredentials(user, request, ipAddress, userAgentStr))
             .flatMap(user -> validateTotpCode(user, request.getTotpCode()))
             .flatMap(this::generateAdminToken)
             .map(tokenData -> {
-                log.info(" Connexion admin réussie pour: {}", request.getEmail());
+                log.info("Connexion admin réussie pour: {}", request.getEmail());
                 return ResponseEntity.ok(Map.of(
                     "message", "Connexion admin réussie",
                     "accessToken", tokenData.get("accessToken"),
@@ -179,7 +179,7 @@ public class AdminController {
                     "role", "ADMIN"));
             })
             .onErrorResume(error -> {
-                log.error(" Échec de connexion admin pour {}: {}", request.getEmail(), error.getMessage());
+                log.error("Échec de connexion admin pour {}: {}", request.getEmail(), error.getMessage());
                 return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "Échec d'authentification", "message", error.getMessage())));
             });
@@ -262,7 +262,7 @@ public class AdminController {
                 if (Boolean.TRUE.equals(user.getTotpEnabled())) {
                     // Le secret a déjà été remis et le facteur est actif : le
                     // resservir rouvrirait exactement la faille corrigée ici.
-                    log.warn(" Enrôlement TOTP refusé pour {} : déjà actif", email);
+                    log.warn("Enrôlement TOTP refusé pour {} : déjà actif", email);
                     return Mono.just(ResponseEntity.status(HttpStatus.CONFLICT)
                             .body(Map.of("error", "Le second facteur est déjà actif. "
                     + "Passer par /maintenance/regenerate-totp pour le réinitialiser.")));
@@ -287,7 +287,7 @@ public class AdminController {
             // Identifiants faux comme compte inexistant donnent la même réponse :
             // distinguer les deux permettrait d'énumérer les comptes.
             .switchIfEmpty(Mono.fromCallable(() -> {
-                log.warn(" Enrôlement TOTP refusé pour {}", email);
+                log.warn("Enrôlement TOTP refusé pour {}", email);
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(Map.of("error", "Identifiants invalides"));
             }));
@@ -360,14 +360,14 @@ public class AdminController {
                         // Envoyer l'email critique avec toutes les infos
                         sendCriticalAlertEmail(user, maintenanceToken, ipAddress, userAgent);
 
-                        log.warn(" ALERTE CRITIQUE : 3 tentatives après confirmation pour admin {}. IP bloquée + Compte bloqué (24h)", user.getEmail());
+                        log.warn("ALERTE CRITIQUE : 3 tentatives après confirmation pour admin {}. IP bloquée + Compte bloqué (24h)", user.getEmail());
                     }
 
                     // Bloquer définitivement après 5 tentatives après confirmation
                     if (postAttempts >= 5) {
                         user.lockAccount(10080); // 7 jours
                         blockIpAddressInRedis(ipAddress);
-                        log.error(" BLOCAGE DÉFINITIF : 5 tentatives après confirmation pour admin {}", user.getEmail());
+                        log.error("BLOCAGE DÉFINITIF : 5 tentatives après confirmation pour admin {}", user.getEmail());
                     }
                 }
 
@@ -486,7 +486,7 @@ public class AdminController {
         //
         // Celui qui ecrit la ligne sait ce qu'il journalise ; le motif, lui,
         // devine. Le filet reste utile comme derniere barriere.
-        log.info(" Confirmation admin reçue - Action: {}, jeton {}",
+        log.info("Confirmation admin reçue - Action: {}, jeton {}",
                 action, SecretMasking.masquer(token));
 
         // Requete par jeton, et NON findAll() suivi d'un filtre en memoire.
@@ -564,7 +564,7 @@ public class AdminController {
             .switchIfEmpty(Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Map.of("error", "Token invalide"))))
             .onErrorResume(error -> {
-                log.error(" Erreur confirmation admin: {}", error.getMessage());
+                log.error("Erreur confirmation admin: {}", error.getMessage());
                 return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Erreur lors de la confirmation")));
             });
@@ -595,7 +595,7 @@ public class AdminController {
         if (ipAddress == null || ipAddress.isEmpty() || "unknown".equals(ipAddress)) {
             // Rien a bloquer : ce n'est pas une erreur, mais le journal doit le
             // dire, car l'appelant recevra « IP bloquée avec succès ».
-            log.warn(" IP invalide, impossible de bloquer: {}", ipAddress);
+            log.warn("IP invalide, impossible de bloquer: {}", ipAddress);
             return Mono.empty();
         }
 

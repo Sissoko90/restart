@@ -44,9 +44,9 @@ public class DeveloperErasurePublisher {
                         ErasureTopics.ERASURE_REQUESTED, event.subjectId(), json))
                 .flatMapMany(record -> erasureKafkaSender
                         .send(Mono.just(SenderRecord.create(record, event.requestId().toString()))))
-                .doOnNext(r -> log.info(" Demande d'effacement développeur {} publiée",
+                .doOnNext(r -> log.info("Demande d'effacement développeur {} publiée",
                         event.requestId()))
-                .doOnError(e -> log.error(" Publication impossible pour la demande {} : {}",
+                .doOnError(e -> log.error("Publication impossible pour la demande {} : {}",
                         event.requestId(), e.getMessage()))
                 .then();
     }

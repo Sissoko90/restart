@@ -151,7 +151,7 @@ public class BodyXssScannerWebFilter implements WebFilter {
                 .defaultIfEmpty(java.util.Optional.empty())
                 .flatMap(corpsEventuel -> {
                     if (corpsEventuel.isEmpty()) {
-                        log.debug(" Corps vide sur {} : rien a scanner", path);
+                        log.debug("Corps vide sur {} : rien a scanner", path);
                         return chain.filter(exchange);
                     }
                     DataBuffer dataBuffer = corpsEventuel.get();
@@ -163,7 +163,7 @@ public class BodyXssScannerWebFilter implements WebFilter {
 
                     // Vérifier la taille
                     if (bytes.length > MAX_BODY_SIZE) {
-                        log.warn(" Body size exceeds limit: {} bytes from IP: {}",
+                        log.warn("Body size exceeds limit: {} bytes from IP: {}",
                             bytes.length, getClientIp(exchange));
                         exchange.getResponse().setStatusCode(HttpStatus.BAD_REQUEST);
                         // Motif « corps trop volumineux », et non « xss-body » :
@@ -176,7 +176,7 @@ public class BodyXssScannerWebFilter implements WebFilter {
 
                     // Scanner pour XSS
                     if (containsXss(body)) {
-                        log.warn(" XSS attack detected in body from IP: {} on path: {}",
+                        log.warn("XSS attack detected in body from IP: {} on path: {}",
                             getClientIp(exchange), path);
                         log.debug("Malicious body sample: {}",
                             body.length() > 200 ? body.substring(0, 200) + "..." : body);
@@ -194,7 +194,7 @@ public class BodyXssScannerWebFilter implements WebFilter {
                                                         .getBytes()))));
                     }
 
-                    log.debug(" Body XSS scan passed for path: {}", path);
+                    log.debug("Body XSS scan passed for path: {}", path);
 
                     // Recréer la requête avec le body original
                     DataBuffer buffer = exchange.getResponse().bufferFactory().wrap(bytes);
@@ -210,7 +210,7 @@ public class BodyXssScannerWebFilter implements WebFilter {
                     return chain.filter(exchange.mutate().request(mutatedRequest).build());
                 })
                 .onErrorResume(error -> {
-                    log.error(" Error scanning body for XSS: {}", error.getMessage());
+                    log.error("Error scanning body for XSS: {}", error.getMessage());
                     // En cas d'erreur, laisser passer (fail-open)
                     return chain.filter(exchange);
                 });

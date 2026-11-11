@@ -45,7 +45,7 @@ public class GeoLocationService {
     @PostConstruct
     public void init() {
         if (!geoLocationEnabled) {
-            log.info(" GeoLocation is DISABLED");
+            log.info("GeoLocation is DISABLED");
             return;
         }
 
@@ -54,22 +54,22 @@ public class GeoLocationService {
             File cityDatabase = new File(cityDatabasePath);
             if (cityDatabase.exists()) {
                 cityDatabaseReader = new DatabaseReader.Builder(cityDatabase).build();
-                log.info(" GeoIP2 City database loaded successfully from: {}", cityDatabasePath);
+                log.info("GeoIP2 City database loaded successfully from: {}", cityDatabasePath);
             } else {
-                log.warn(" GeoIP2 City database not found at: {}. City info will be unavailable.", cityDatabasePath);
+                log.warn("GeoIP2 City database not found at: {}. City info will be unavailable.", cityDatabasePath);
             }
 
             // Charger ASN database
             File asnDatabase = new File(asnDatabasePath);
             if (asnDatabase.exists()) {
                 asnDatabaseReader = new DatabaseReader.Builder(asnDatabase).build();
-                log.info(" GeoIP2 ASN database loaded successfully from: {}", asnDatabasePath);
+                log.info("GeoIP2 ASN database loaded successfully from: {}", asnDatabasePath);
             } else {
-                log.warn(" GeoIP2 ASN database not found at: {}. ISP info will be unavailable.", asnDatabasePath);
+                log.warn("GeoIP2 ASN database not found at: {}. ISP info will be unavailable.", asnDatabasePath);
             }
 
         } catch (IOException e) {
-            log.error(" Failed to load GeoIP2 database: {}", e.getMessage());
+            log.error("Failed to load GeoIP2 database: {}", e.getMessage());
             geoLocationEnabled = false;
         }
     }
@@ -203,9 +203,9 @@ public class GeoLocationService {
                             info.setTimezone(cityResponse.getLocation().getTimeZone());
                         }
 
-                        log.debug(" IP {} resolved to city: {}, {}", ipAddress, info.getCity(), info.getCountry());
+                        log.debug("IP {} resolved to city: {}, {}", ipAddress, info.getCity(), info.getCountry());
                     } catch (Exception e) {
-                        log.debug(" Failed to get city for IP {}: {}", ipAddress, e.getMessage());
+                        log.debug("Failed to get city for IP {}: {}", ipAddress, e.getMessage());
                     }
                 }
 
@@ -224,14 +224,14 @@ public class GeoLocationService {
                             info.setIsp(org);
                         }
 
-                        log.debug(" IP {} resolved to ASN: {} ({})", ipAddress, info.getAsn(), info.getOrganization());
+                        log.debug("IP {} resolved to ASN: {} ({})", ipAddress, info.getAsn(), info.getOrganization());
                     } catch (Exception e) {
-                        log.debug(" Failed to get ASN for IP {}: {}", ipAddress, e.getMessage());
+                        log.debug("Failed to get ASN for IP {}: {}", ipAddress, e.getMessage());
                     }
                 }
 
             } catch (IOException e) {
-                log.debug(" Failed to resolve IP {}: {}", ipAddress, e.getMessage());
+                log.debug("Failed to resolve IP {}: {}", ipAddress, e.getMessage());
                 info.setCountryCode("UNKNOWN");
                 info.setCountry("Unknown");
             }

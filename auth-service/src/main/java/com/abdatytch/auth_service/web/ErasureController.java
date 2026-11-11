@@ -57,7 +57,7 @@ public class ErasureController {
     public Mono<ResponseEntity<DemandeEffacementResponse>> erasePersonalData() {
         return AppelantAuthentifie.identifiant()
                 .flatMap(subjectId -> {
-                    log.info(" Demande d'effacement par la personne elle-même : {}", subjectId);
+                    log.info("Demande d'effacement par la personne elle-même : {}", subjectId);
                     return erasureService.requestErasure(
                             subjectId, subjectId, ErasureReason.DEMANDE_DE_LA_PERSONNE);
                 })
@@ -84,7 +84,7 @@ public class ErasureController {
             @PathVariable String subjectId) {
         return AppelantAuthentifie.identifiant()
                 .flatMap(adminId -> {
-                    log.warn(" Effacement administratif de {} demandé par {}", subjectId, adminId);
+                    log.warn("Effacement administratif de {} demandé par {}", subjectId, adminId);
                     return erasureService.requestErasure(
                             subjectId, adminId, ErasureReason.DECISION_ADMINISTRATIVE);
                 })

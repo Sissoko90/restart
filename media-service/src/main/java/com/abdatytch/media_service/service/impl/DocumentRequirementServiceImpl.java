@@ -30,7 +30,7 @@ public class DocumentRequirementServiceImpl implements DocumentRequirementServic
     
     @Override
     public Mono<UserDocumentStatusResponse> getUserDocumentStatus(String userId, UserRole userRole) {
-        log.info(" Getting document status for user {} with role {}", userId, userRole);
+        log.info("Getting document status for user {} with role {}", userId, userRole);
         
         return initializeUserDocumentRequirements(userId, userRole)
             .then(buildDocumentStatusResponse(userId, userRole, false));
@@ -38,7 +38,7 @@ public class DocumentRequirementServiceImpl implements DocumentRequirementServic
     
     @Override
     public Mono<UserDocumentStatusResponse> getMissingDocuments(String userId, UserRole userRole) {
-        log.info(" Getting missing documents for user {} with role {}", userId, userRole);
+        log.info("Getting missing documents for user {} with role {}", userId, userRole);
         
         return initializeUserDocumentRequirements(userId, userRole)
             .then(buildDocumentStatusResponse(userId, userRole, true));
@@ -63,7 +63,7 @@ public class DocumentRequirementServiceImpl implements DocumentRequirementServic
                         newReq.setCreatedBy(userId);
                         
                         return userDocumentRequirementRepository.save(newReq)
-                            .doOnSuccess(saved -> log.debug(" Initialized requirement: {}", saved.getDocumentTypeCode()));
+                            .doOnSuccess(saved -> log.debug("Initialized requirement: {}", saved.getDocumentTypeCode()));
                     }))
             )
             .then();

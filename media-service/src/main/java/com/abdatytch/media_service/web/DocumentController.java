@@ -61,7 +61,7 @@ public class DocumentController {
         try {
             return UserRole.valueOf(role.replace("ROLE_", ""));
         } catch (IllegalArgumentException inconnu) {
-            log.warn(" Role inconnu dans le jeton : {} — traite comme USER", role);
+            log.warn("Role inconnu dans le jeton : {} — traite comme USER", role);
             return UserRole.USER;
         }
     }
@@ -86,12 +86,12 @@ public class DocumentController {
             @RequestPart(value = "description", required = false) String description,
             ServerWebExchange exchange) {
 
-        log.info(" Upload request - file: {}, type: {}, number: {}, category: {}",
+        log.info("Upload request - file: {}, type: {}, number: {}, category: {}",
             filePart.filename(), documentTypeCode, documentNumber, documentCategory);
 
         String userId = exchange.getAttribute("userId");
         if (userId == null) {
-            log.error(" No userId found in exchange attributes");
+            log.error("No userId found in exchange attributes");
             return Mono.error(new IllegalStateException("User ID not found"));
         }
 
@@ -131,8 +131,8 @@ public class DocumentController {
                 .validateRequiredFields(documentTypeCode, request)
                 .then(documentService.uploadDocument(
                     userId, userRole, type, filePart, request, ipAddress, userAgent)))
-            .doOnSuccess(response -> log.info(" Document uploaded - ID: {}", response.getDocumentId()))
-            .doOnError(error -> log.error(" Upload failed: {}", error.getMessage()));
+            .doOnSuccess(response -> log.info("Document uploaded - ID: {}", response.getDocumentId()))
+            .doOnError(error -> log.error("Upload failed: {}", error.getMessage()));
     }
 
     @GetMapping("/download/{documentId}")
@@ -172,11 +172,11 @@ public class DocumentController {
             userRole = roleStr != null ? UserRole.valueOf(roleStr.replace("ROLE_", "")) : UserRole.USER;
         }
 
-        log.info(" User {} fetching missing documents for role {}", userId, userRole);
+        log.info("User {} fetching missing documents for role {}", userId, userRole);
 
         return documentRequirementService.getMissingDocuments(userId, userRole)
-            .doOnSuccess(status -> log.info(" Missing documents returned: {} pending", status.getPending()))
-            .doOnError(error -> log.error(" Failed to fetch missing documents: {}", error.getMessage()));
+            .doOnSuccess(status -> log.info("Missing documents returned: {} pending", status.getPending()))
+            .doOnError(error -> log.error("Failed to fetch missing documents: {}", error.getMessage()));
     }
 
     @GetMapping("/requirements")
@@ -192,11 +192,11 @@ public class DocumentController {
             userRole = roleStr != null ? UserRole.valueOf(roleStr.replace("ROLE_", "")) : UserRole.USER;
         }
 
-        log.info(" User {} fetching document requirements for role {}", userId, userRole);
+        log.info("User {} fetching document requirements for role {}", userId, userRole);
 
         return documentRequirementService.getUserDocumentStatus(userId, userRole)
-            .doOnSuccess(status -> log.info(" Document requirements returned for user {}", userId))
-            .doOnError(error -> log.error(" Failed to fetch requirements: {}", error.getMessage()));
+            .doOnSuccess(status -> log.info("Document requirements returned for user {}", userId))
+            .doOnError(error -> log.error("Failed to fetch requirements: {}", error.getMessage()));
     }
 
     @DeleteMapping("/{documentId}")

@@ -83,7 +83,7 @@ public class GeoLocationWebFilter implements WebFilter {
                     return geoLocationService.getCountryCode(clientIp)
                         .defaultIfEmpty("inconnu")
                         .flatMap(countryCode -> {
-                            log.warn(" Blocked request from country: {} (IP: {}) on path: {}",
+                            log.warn("Blocked request from country: {} (IP: {}) on path: {}",
                                 countryCode, clientIp, path);
 
                             exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
@@ -101,12 +101,12 @@ public class GeoLocationWebFilter implements WebFilter {
                         });
                 }
 
-                log.debug(" GeoLocation check passed for IP: {}", clientIp);
+                log.debug("GeoLocation check passed for IP: {}", clientIp);
                 return chain.filter(exchange);
             })
             .onErrorResume(error -> {
                 // En cas d'erreur, laisser passer (fail-open) mais logger
-                log.error(" GeoLocation check error for IP {}: {}", clientIp, error.getMessage());
+                log.error("GeoLocation check error for IP {}: {}", clientIp, error.getMessage());
                 return chain.filter(exchange);
             });
     }

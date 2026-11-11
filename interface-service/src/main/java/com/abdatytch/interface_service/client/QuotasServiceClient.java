@@ -60,10 +60,10 @@ public class QuotasServiceClient {
                 .timeout(Duration.ofMillis(timeoutMs))
                 .map(response -> {
                     if (!response.isAllowed()) {
-                        log.info(" Quota projets atteint pour l'utilisateur {} : {}/{}",
+                        log.info("Quota projets atteint pour l'utilisateur {} : {}/{}",
                                 userId, response.getUsed(), response.getLimit());
                     } else if (response.isWarning()) {
-                        log.warn(" Utilisateur {} à {}% de son quota projets",
+                        log.warn("Utilisateur {} à {}% de son quota projets",
                                 userId, response.getUsagePercent());
                     }
                     return response.isAllowed();
@@ -77,7 +77,7 @@ public class QuotasServiceClient {
      */
     @SuppressWarnings("unused")
     private Mono<Boolean> allowOnFailure(UUID userId, Throwable error) {
-        log.warn(" quotas-service injoignable pour l'utilisateur {} ({}) - création autorisée par défaut",
+        log.warn("quotas-service injoignable pour l'utilisateur {} ({}) - création autorisée par défaut",
                 userId, error.getMessage());
         return Mono.just(true);
     }

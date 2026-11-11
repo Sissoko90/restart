@@ -139,9 +139,9 @@ public class DocumentEventPublisherImpl implements DocumentEventPublisher {
                 return kafkaSender.send(Mono.just(SenderRecord.create(record, event.getEventId())))
                     .next();
             })
-            .doOnSuccess(result -> log.info(" Event published - type: {}, documentId: {}, userId: {}",
+            .doOnSuccess(result -> log.info("Event published - type: {}, documentId: {}, userId: {}",
                 event.getEventType(), event.getDocumentId(), event.getUserId()))
-            .doOnError(error -> log.error(" Failed to publish event - type: {}, documentId: {}",
+            .doOnError(error -> log.error("Failed to publish event - type: {}, documentId: {}",
                 event.getEventType(), event.getDocumentId(), error))
             .then()
             .onErrorResume(error -> Mono.empty()); // Ne pas bloquer si Kafka est down

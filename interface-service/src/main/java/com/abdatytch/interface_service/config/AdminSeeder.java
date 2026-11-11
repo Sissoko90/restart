@@ -81,21 +81,21 @@ public class AdminSeeder implements CommandLineRunner {
     }
 
     private void seedAdminUser() {
-        log.info(" Vérification de l'utilisateur ADMIN par défaut...");
+        log.info("Vérification de l'utilisateur ADMIN par défaut...");
 
         // Vérifier si l'admin existe déjà
         if (userRepository.findByPhoneNumber(adminPhone).block() != null) {
-            log.info(" Utilisateur ADMIN existe déjà avec le téléphone: {}", adminPhone);
+            log.info("Utilisateur ADMIN existe déjà avec le téléphone: {}", adminPhone);
             return;
         }
 
         if (userRepository.findByEmail(adminEmail).block() != null) {
-            log.info(" Utilisateur ADMIN existe déjà avec l'email: {}", adminEmail);
+            log.info("Utilisateur ADMIN existe déjà avec l'email: {}", adminEmail);
             return;
         }
 
         try {
-            log.info(" Création de l'utilisateur ADMIN par défaut...");
+            log.info("Création de l'utilisateur ADMIN par défaut...");
 
             // Générer un secret TOTP unique pour l'admin
             String totpSecret = totpService.generateTotpSecret();
@@ -120,28 +120,28 @@ public class AdminSeeder implements CommandLineRunner {
             User savedAdmin = userRepository.save(admin).block();
 
             if (savedAdmin != null) {
-                log.info(" Utilisateur ADMIN créé dans interface-service avec ID: {}", savedAdmin.getId());
-                log.info(" ADMIN par défaut créé avec succès!");
-                log.info(" Téléphone: {}", admin.getPhoneNumber());
-                log.info(" Email: {}", admin.getEmail());
+                log.info("Utilisateur ADMIN créé dans interface-service avec ID: {}", savedAdmin.getId());
+                log.info("ADMIN par défaut créé avec succès!");
+                log.info("Téléphone: {}", admin.getPhoneNumber());
+                log.info("Email: {}", admin.getEmail());
                 // Le mot de passe n'est PAS journalisé, même tronqué : les
                 // journaux partent vers Loki, sont conservés et relus. Quatre
                 // caractères d'un mot de passe administrateur réduisent
                 // sensiblement l'effort d'une attaque par force brute.
-                log.info(" Mot de passe: celui de ADMIN_DEFAULT_PASSWORD");
+                log.info("Mot de passe: celui de ADMIN_DEFAULT_PASSWORD");
                 // Le secret TOTP n'est PAS journalisé, même tronqué : c'est la
                 // graine du second facteur du compte administrateur, et les
                 // journaux partent vers Loki où ils sont conservés et relus.
                 // Huit caractères en révèlent 40 bits sur 160.
                 // // L'enrôlement se fait par GET /admin/totp/qr-code, après
                 // authentification par mot de passe.
-                log.info(" Secret TOTP généré — enrôlement via GET /admin/totp/qr-code");
+                log.info("Secret TOTP généré — enrôlement via GET /admin/totp/qr-code");
                 log.warn("IMPORTANT: Changez le mot de passe par défaut en production!");
                 log.warn("IMPORTANT: Configurez l'authentification TOTP avec le secret ci-dessus!");
             }
 
         } catch (Exception e) {
-            log.error(" Erreur lors de la création de l'utilisateur ADMIN: {}", e.getMessage(), e);
+            log.error("Erreur lors de la création de l'utilisateur ADMIN: {}", e.getMessage(), e);
         }
     }
 

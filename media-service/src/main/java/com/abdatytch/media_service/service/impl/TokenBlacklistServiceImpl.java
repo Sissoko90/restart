@@ -30,11 +30,11 @@ public class TokenBlacklistServiceImpl implements TokenBlacklistService {
             .set(key, "revoked", ttl)
             .doOnSuccess(success -> {
                 if (Boolean.TRUE.equals(success)) {
-                    log.info(" Token blacklisted for {} seconds", ttl.getSeconds());
+                    log.info("Token blacklisted for {} seconds", ttl.getSeconds());
                 }
             })
             .onErrorResume(e -> {
-                log.error(" Failed to blacklist token", e);
+                log.error("Failed to blacklist token", e);
                 return Mono.just(false);
             });
     }
@@ -62,7 +62,7 @@ public class TokenBlacklistServiceImpl implements TokenBlacklistService {
             // accepter quelqu'un dont on ne sait plus s'il a le droit.
             .defaultIfEmpty(true)
             .onErrorResume(e -> {
-                log.error(" Failed to check token blacklist", e);
+                log.error("Failed to check token blacklist", e);
                 // En cas d'erreur Redis, on refuse par sécurité
                 return Mono.just(true);
             });
@@ -75,7 +75,7 @@ public class TokenBlacklistServiceImpl implements TokenBlacklistService {
         return redisTemplate.delete(key)
             .map(count -> count > 0)
             .onErrorResume(e -> {
-                log.error(" Failed to remove token from blacklist", e);
+                log.error("Failed to remove token from blacklist", e);
                 return Mono.just(false);
             });
     }

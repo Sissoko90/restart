@@ -62,7 +62,7 @@ public class FileReactiveController {
         return currentAuthentication()
                 .filter(authentication -> isOwnerOrAdmin(authentication, userId))
                 .switchIfEmpty(Mono.defer(() -> {
-                    log.warn(" Accès refusé au fichier d'autrui : demandé={}, fichier={}",
+                    log.warn("Accès refusé au fichier d'autrui : demandé={}, fichier={}",
                             userId, filename);
                     // 404 et non 403 : un 403 confirmerait au demandeur que ce
                     // répertoire existe, et permettrait d'énumérer les comptes.
@@ -137,7 +137,7 @@ public class FileReactiveController {
         Path filePath = root.resolve(userId).resolve(filename).normalize();
 
         if (!filePath.startsWith(root)) {
-            log.warn(" Tentative de traversée de chemin refusée : userId={}, filename={}",
+            log.warn("Tentative de traversée de chemin refusée : userId={}, filename={}",
                     userId, filename);
             return null;
         }

@@ -64,11 +64,11 @@ public class ClientIpResolver {
                 } catch (IllegalArgumentException e) {
                     // Une entrée illisible ne doit pas élargir la confiance :
                     // on l'ignore, on la signale, et on continue.
-                    log.error(" Plage de proxy de confiance invalide, ignorée : '{}'", trimmed);
+                    log.error("Plage de proxy de confiance invalide, ignorée : '{}'", trimmed);
                 }
             }
         }
-        log.info(" ClientIpResolver : {} plage(s) de proxy de confiance. "
+        log.info("ClientIpResolver : {} plage(s) de proxy de confiance. "
                     + "X-Forwarded-For {}.", trustedProxies.size(),
                 trustedProxies.isEmpty() ? "sera IGNORÉ" : "sera honoré depuis ces plages");
     }

@@ -32,7 +32,7 @@ public class FileNameSanitizer {
         }
 
         if (!sanitized.equals(fileName)) {
-            log.debug(" Filename sanitized: {} -> {}", fileName, sanitized);
+            log.debug("Filename sanitized: {} -> {}", fileName, sanitized);
         }
 
         return sanitized;

@@ -45,13 +45,13 @@ public class CacheServiceImpl implements CacheService {
             .map(value -> objectMapper.convertValue(value, type))
             .doOnSuccess(value -> {
                 if (value != null) {
-                    log.debug(" Cache HIT: {}", key);
+                    log.debug("Cache HIT: {}", key);
                 } else {
-                    log.debug(" Cache MISS: {}", key);
+                    log.debug("Cache MISS: {}", key);
                 }
             })
             .onErrorResume(e -> {
-                log.warn(" Redis error on GET {}: {}", key, e.getMessage());
+                log.warn("Redis error on GET {}: {}", key, e.getMessage());
                 return Mono.empty();
             });
     }
@@ -72,11 +72,11 @@ public class CacheServiceImpl implements CacheService {
             .set(fullKey, value, ttl)
             .doOnSuccess(success -> {
                 if (Boolean.TRUE.equals(success)) {
-                    log.debug(" Cache SET: {} (TTL: {}s)", key, ttl.getSeconds());
+                    log.debug("Cache SET: {} (TTL: {}s)", key, ttl.getSeconds());
                 }
             })
             .onErrorResume(e -> {
-                log.warn(" Redis error on SET {}: {}", key, e.getMessage());
+                log.warn("Redis error on SET {}: {}", key, e.getMessage());
                 return Mono.just(false);
             });
     }
@@ -92,11 +92,11 @@ public class CacheServiceImpl implements CacheService {
             .map(count -> count > 0)
             .doOnSuccess(deleted -> {
                 if (Boolean.TRUE.equals(deleted)) {
-                    log.debug(" Cache DELETE: {}", key);
+                    log.debug("Cache DELETE: {}", key);
                 }
             })
             .onErrorResume(e -> {
-                log.warn(" Redis error on DELETE {}: {}", key, e.getMessage());
+                log.warn("Redis error on DELETE {}: {}", key, e.getMessage());
                 return Mono.just(false);
             });
     }
@@ -111,9 +111,9 @@ public class CacheServiceImpl implements CacheService {
         return redisTemplate.keys(fullPattern)
             .flatMap(redisTemplate::delete)
             .reduce(0L, Long::sum)
-            .doOnSuccess(count -> log.debug(" Cache DELETE pattern {}: {} keys", pattern, count))
+            .doOnSuccess(count -> log.debug("Cache DELETE pattern {}: {} keys", pattern, count))
             .onErrorResume(e -> {
-                log.warn(" Redis error on DELETE pattern {}: {}", pattern, e.getMessage());
+                log.warn("Redis error on DELETE pattern {}: {}", pattern, e.getMessage());
                 return Mono.just(0L);
             });
     }
@@ -127,7 +127,7 @@ public class CacheServiceImpl implements CacheService {
         String fullKey = keyPrefix + key;
         return redisTemplate.hasKey(fullKey)
             .onErrorResume(e -> {
-                log.warn(" Redis error on EXISTS {}: {}", key, e.getMessage());
+                log.warn("Redis error on EXISTS {}: {}", key, e.getMessage());
                 return Mono.just(false);
             });
     }

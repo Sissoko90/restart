@@ -160,10 +160,10 @@ public class GatewaySignatureFilter implements WebFilter, Ordered {
             mutatedRequest = mutatedRequest.mutate()
                 .header("X-Admin-Secret", adminSecretKey)
                 .build();
-            log.debug(" Added X-Admin-Secret for admin endpoint: {}", originalPath);
+            log.debug("Added X-Admin-Secret for admin endpoint: {}", originalPath);
         }
 
-        log.debug(" Added HMAC signature for {} {} -> {} (requestId: {})", method, originalPath, targetPath, requestId);
+        log.debug("Added HMAC signature for {} {} -> {} (requestId: {})", method, originalPath, targetPath, requestId);
 
         return chain.filter(exchange.mutate().request(mutatedRequest).build());
     }

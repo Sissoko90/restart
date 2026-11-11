@@ -28,13 +28,13 @@ public class DocumentQualityServiceImpl implements DocumentQualityService {
     @Override
     public Mono<QualityAnalysisResult> analyzeImageQuality(byte[] imageData, String mimeType) {
         return Mono.fromCallable(() -> {
-            log.debug(" Analyzing image quality - Size: {} bytes, MIME: {}", imageData.length, mimeType);
+            log.debug("Analyzing image quality - Size: {} bytes, MIME: {}", imageData.length, mimeType);
             
             try (ByteArrayInputStream bis = new ByteArrayInputStream(imageData)) {
                 BufferedImage image = ImageIO.read(bis);
                 
                 if (image == null) {
-                    log.warn(" Failed to read image - possibly corrupted");
+                    log.warn("Failed to read image - possibly corrupted");
                     return new QualityAnalysisResult(
                         0.0,
                         false,
@@ -46,7 +46,7 @@ public class DocumentQualityServiceImpl implements DocumentQualityService {
                 int width = image.getWidth();
                 int height = image.getHeight();
                 
-                log.debug(" Image dimensions: {}x{}", width, height);
+                log.debug("Image dimensions: {}x{}", width, height);
                 
                 double qualityScore = 100.0;
                 StringBuilder rejectionReasons = new StringBuilder();
@@ -58,7 +58,7 @@ public class DocumentQualityServiceImpl implements DocumentQualityService {
                         "Résolution insuffisante (%dx%d, minimum requis: %dx%d). ",
                         width, height, MIN_WIDTH, MIN_HEIGHT
                     ));
-                    log.warn(" Resolution too low: {}x{}", width, height);
+                    log.warn("Resolution too low: {}x{}", width, height);
                 }
                 
                 // 2. Détecter le flou avec variance de Laplacien
@@ -69,7 +69,7 @@ public class DocumentQualityServiceImpl implements DocumentQualityService {
                         "Image floue détectée (variance Laplacien: %.2f, minimum: %.2f). ",
                         laplacianVar, MIN_LAPLACIAN_VARIANCE
                     ));
-                    log.warn(" Blurry image detected - Laplacian variance: {}", laplacianVar);
+                    log.warn("Blurry image detected - Laplacian variance: {}", laplacianVar);
                 }
                 
                 // 3. Analyser le contraste
@@ -80,7 +80,7 @@ public class DocumentQualityServiceImpl implements DocumentQualityService {
                         "Contraste insuffisant (%.1f, minimum: %d). ",
                         contrastScore, MIN_CONTRAST_THRESHOLD
                     ));
-                    log.warn(" Low contrast detected: {}", contrastScore);
+                    log.warn("Low contrast detected: {}", contrastScore);
                 }
                 
                 // 4. Vérifier ratio d'aspect (détection de documents tronqués)
@@ -91,7 +91,7 @@ public class DocumentQualityServiceImpl implements DocumentQualityService {
                         "Ratio d'aspect anormal (%.2f) - Document possiblement tronqué. ",
                         aspectRatio
                     ));
-                    log.warn(" Abnormal aspect ratio: {}", aspectRatio);
+                    log.warn("Abnormal aspect ratio: {}", aspectRatio);
                 }
                 
                 // 5. Analyser la luminosité (trop sombre ou trop clair)
@@ -102,13 +102,13 @@ public class DocumentQualityServiceImpl implements DocumentQualityService {
                         "Luminosité inadéquate (%.1f) - Document trop %s. ",
                         brightness, brightness < 30 ? "sombre" : "clair"
                     ));
-                    log.warn(" Poor brightness: {}", brightness);
+                    log.warn("Poor brightness: {}", brightness);
                 }
                 
                 boolean isReadable = qualityScore >= MIN_QUALITY_SCORE;
                 String rejectionReason = isReadable ? null : rejectionReasons.toString().trim();
                 
-                log.info(" Image quality analysis completed - Score: {}, Readable: {}", 
+                log.info("Image quality analysis completed - Score: {}, Readable: {}", 
                     qualityScore, isReadable);
                 
                 return new QualityAnalysisResult(
@@ -121,7 +121,7 @@ public class DocumentQualityServiceImpl implements DocumentQualityService {
                 );
                 
             } catch (Exception e) {
-                log.error(" Error analyzing image quality", e);
+                log.error("Error analyzing image quality", e);
                 return new QualityAnalysisResult(
                     0.0,
                     false,
@@ -137,7 +137,7 @@ public class DocumentQualityServiceImpl implements DocumentQualityService {
     @Override
     public Mono<QualityAnalysisResult> analyzePdfQuality(byte[] pdfData) {
         return Mono.fromCallable(() -> {
-            log.debug(" Analyzing PDF quality - Size: {} bytes", pdfData.length);
+            log.debug("Analyzing PDF quality - Size: {} bytes", pdfData.length);
             
             // Pour une implémentation complète, utiliser Apache PDFBox
             // Ici, implémentation simplifiée basée sur la taille
@@ -149,7 +149,7 @@ public class DocumentQualityServiceImpl implements DocumentQualityService {
             if (pdfData.length < 1024) { // < 1KB
                 qualityScore = 0;
                 rejectionReasons.append("PDF trop petit ou corrompu. ");
-                log.warn(" PDF too small: {} bytes", pdfData.length);
+                log.warn("PDF too small: {} bytes", pdfData.length);
             }
             
             // 2. Vérifier signature PDF
@@ -158,7 +158,7 @@ public class DocumentQualityServiceImpl implements DocumentQualityService {
                 if (!header.equals("%PDF")) {
                     qualityScore = 0;
                     rejectionReasons.append("Signature PDF invalide. ");
-                    log.warn(" Invalid PDF signature: {}", header);
+                    log.warn("Invalid PDF signature: {}", header);
                 }
             }
             
@@ -167,13 +167,13 @@ public class DocumentQualityServiceImpl implements DocumentQualityService {
             if (estimatedPages == 0) {
                 qualityScore -= 50;
                 rejectionReasons.append("Impossible de détecter les pages du PDF. ");
-                log.warn(" Cannot detect PDF pages");
+                log.warn("Cannot detect PDF pages");
             }
             
             boolean isReadable = qualityScore >= MIN_QUALITY_SCORE;
             String rejectionReason = isReadable ? null : rejectionReasons.toString().trim();
             
-            log.info(" PDF quality analysis completed - Score: {}, Pages: {}, Readable: {}", 
+            log.info("PDF quality analysis completed - Score: {}, Pages: {}, Readable: {}", 
                 qualityScore, estimatedPages, isReadable);
             
             return new QualityAnalysisResult(
@@ -230,7 +230,7 @@ public class DocumentQualityServiceImpl implements DocumentQualityService {
         double mean = sum / count;
         double variance = (sumSquares / count) - (mean * mean);
         
-        log.debug(" Laplacian variance: {}", variance);
+        log.debug("Laplacian variance: {}", variance);
         return variance;
     }
 

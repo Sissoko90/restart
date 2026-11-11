@@ -49,7 +49,7 @@ public class NettyServerConfig {
         int availableProcessors = Runtime.getRuntime().availableProcessors();
         int effectiveWorkerThreads = workerThreads > 0 ? workerThreads : availableProcessors * 2;
 
-        log.info(" Configuration Netty:");
+        log.info("Configuration Netty:");
         log.info("- CPU disponibles: {}", availableProcessors);
         log.info("- Worker threads: {}", effectiveWorkerThreads);
         log.info("- Backlog: {}", backlog);

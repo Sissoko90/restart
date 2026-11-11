@@ -28,12 +28,12 @@ public class DocumentTypeSeeder implements CommandLineRunner {
     
     @Override
     public void run(String... args) {
-        log.info(" Starting document types seeding...");
+        log.info("Starting document types seeding...");
         
         seedDocumentTypes()
             .then(seedRoleAssignments())
-            .doOnSuccess(v -> log.info(" Document types seeding completed"))
-            .doOnError(e -> log.error(" Error seeding document types: {}", e.getMessage()))
+            .doOnSuccess(v -> log.info("Document types seeding completed"))
+            .doOnError(e -> log.error("Error seeding document types: {}", e.getMessage()))
             .subscribe();
     }
     
@@ -42,7 +42,7 @@ public class DocumentTypeSeeder implements CommandLineRunner {
             .flatMap(docType -> 
                 documentTypeConfigRepository.findByCode(docType.getCode())
                     .switchIfEmpty(documentTypeConfigRepository.save(docType)
-                        .doOnSuccess(saved -> log.info(" Created document type: {}", saved.getCode())))
+                        .doOnSuccess(saved -> log.info("Created document type: {}", saved.getCode())))
                     .then()
             )
             .then();
@@ -58,7 +58,7 @@ public class DocumentTypeSeeder implements CommandLineRunner {
                 .flatMap(exists -> {
                     if (!exists) {
                         return roleRequirementRepository.save(assignment)
-                            .doOnSuccess(saved -> log.info(" Assigned {} to {} (mandatory: {})", 
+                            .doOnSuccess(saved -> log.info("Assigned {} to {} (mandatory: {})", 
                                 saved.getDocumentTypeCode(), 
                                 saved.getUserRole(), 
                                 saved.getMandatory()))

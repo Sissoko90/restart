@@ -43,7 +43,7 @@ public class LocalRateLimiter {
     /** @return {@code true} si la requête est autorisée. */
     public boolean tryConsume(String key, int limit) {
         if (buckets.size() >= MAX_TRACKED_KEYS) {
-            log.warn(" Cache du limiteur local saturé ({} clés) — remise à zéro", buckets.size());
+            log.warn("Cache du limiteur local saturé ({} clés) — remise à zéro", buckets.size());
             buckets.clear();
         }
         return buckets.computeIfAbsent(key + ":" + limit, ignored -> newBucket(limit))

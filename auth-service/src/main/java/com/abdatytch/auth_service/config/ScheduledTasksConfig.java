@@ -95,9 +95,9 @@ public class ScheduledTasksConfig {
      * inaperçue — c'est exactement ce qui s'est produit ici.
      */
     private void souscrire(String description, Mono<Void> purge) {
-        log.info(" Purge : {}", description);
-        purge.doOnSuccess(v -> log.info(" Purge terminée : {}", description))
-                .doOnError(e -> log.error(" Purge échouée ({}) : {}", description, e.getMessage()))
+        log.info("Purge : {}", description);
+        purge.doOnSuccess(v -> log.info("Purge terminée : {}", description))
+                .doOnError(e -> log.error("Purge échouée ({}) : {}", description, e.getMessage()))
                 .onErrorComplete()
                 .subscribe();
     }

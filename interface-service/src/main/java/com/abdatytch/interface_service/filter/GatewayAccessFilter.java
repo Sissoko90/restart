@@ -98,7 +98,7 @@ public class GatewayAccessFilter implements WebFilter {
 
         // Autoriser les endpoints publics
         if (isPublicEndpoint(path)) {
-            log.debug(" Accès public autorisé: {}", path);
+            log.debug("Accès public autorisé: {}", path);
             return chain.filter(exchange);
         }
 
@@ -106,10 +106,10 @@ public class GatewayAccessFilter implements WebFilter {
         if (CheminInterne.correspond(path)) {
             String pair = adresseDuPair(exchange);
             if (!PrivateNetworks.contient(pair)) {
-                log.warn(" Appel interne refusé — pair non privé {} sur {}", pair, path);
+                log.warn("Appel interne refusé — pair non privé {} sur {}", pair, path);
                 return accesRefuse(exchange, "Accès direct interdit. Utilisez le Gateway.");
             }
-            log.debug(" Appel interne autorisé depuis {} : {}", pair, path);
+            log.debug("Appel interne autorisé depuis {} : {}", pair, path);
             return chain.filter(exchange);
         }
 
@@ -119,7 +119,7 @@ public class GatewayAccessFilter implements WebFilter {
         String requestId = exchange.getRequest().getHeaders().getFirst("X-Gateway-Request-Id");
 
         if (timestamp == null || signature == null || requestId == null) {
-            log.warn(" ACCÈS DIRECT BLOQUÉ - Headers Gateway manquants: {} (IP: {})",
+            log.warn("ACCÈS DIRECT BLOQUÉ - Headers Gateway manquants: {} (IP: {})",
                     path, getClientIp(exchange));
             return accesRefuse(exchange, "Accès direct interdit. Utilisez le Gateway.");
         }
@@ -131,16 +131,16 @@ public class GatewayAccessFilter implements WebFilter {
             long timeDiff = Math.abs(currentTime - requestTime);
 
             if (timeDiff > 5000) { // 5 secondes max (comme dans le Gateway)
-                log.warn(" ACCÈS BLOQUÉ - Timestamp expiré: {} (diff: {}ms)", path, timeDiff);
+                log.warn("ACCÈS BLOQUÉ - Timestamp expiré: {} (diff: {}ms)", path, timeDiff);
                 return accesRefuse(exchange, "Requête expirée");
             }
         } catch (NumberFormatException e) {
-            log.warn(" ACCÈS BLOQUÉ - Timestamp invalide: {}", path);
+            log.warn("ACCÈS BLOQUÉ - Timestamp invalide: {}", path);
             return accesRefuse(exchange, "Timestamp invalide");
         }
 
         // DEBUG: Headers Gateway reçus
-        log.debug(" Headers Gateway reçus pour {}", path);
+        log.debug("Headers Gateway reçus pour {}", path);
 
         // Vérifier la signature HMAC
         if (!verifyHmacSignature(exchange, timestamp, signature)) {
@@ -149,7 +149,7 @@ public class GatewayAccessFilter implements WebFilter {
             // tentatives entre elles et evite d'ecrire un justificatif brut
             // dans les journaux. verifyHmacSignature a deja journalise le
             // detail ; cette ligne ne garde que l'adresse.
-            log.warn(" Signature Gateway invalide — pair {} sur {}",
+            log.warn("Signature Gateway invalide — pair {} sur {}",
                     adresseDuPair(exchange), path);
             return accesRefuse(exchange, "Signature Gateway invalide");
         }
@@ -157,12 +157,12 @@ public class GatewayAccessFilter implements WebFilter {
         // SÉCURITÉ RENFORCÉE : Vérifier que la requête vient vraiment du Gateway
         if (!isRequestFromGateway(exchange)) {
             String clientIp = getClientIp(exchange);
-            log.warn(" ACCÈS DIRECT DÉTECTÉ - IP: {} - Path: {} - Tentative de contournement",
+            log.warn("ACCÈS DIRECT DÉTECTÉ - IP: {} - Path: {} - Tentative de contournement",
                     clientIp, path);
             return accesRefuse(exchange, "Accès direct interdit - Utilisez le Gateway");
         }
 
-        log.debug(" Accès Gateway autorisé: {} (Request-ID: {})", path, requestId);
+        log.debug("Accès Gateway autorisé: {} (Request-ID: {})", path, requestId);
         return chain.filter(exchange);
     }
 
@@ -252,14 +252,14 @@ public class GatewayAccessFilter implements WebFilter {
                 // Ce qui reste suffit au diagnostic : le chemin et la methode
                 // signes, plus une empreinte de la valeur recue pour correler
                 // des tentatives entre elles.
-                log.warn(" Signature Gateway invalide sur {} {} — reçue {}",
+                log.warn("Signature Gateway invalide sur {} {} — reçue {}",
                     method, path, SecretMasking.masquer(receivedSignature));
             }
 
             return isValid;
 
         } catch (Exception e) {
-            log.error(" Erreur lors de la vérification HMAC: {}", e.getMessage());
+            log.error("Erreur lors de la vérification HMAC: {}", e.getMessage());
             return false;
         }
     }
@@ -293,7 +293,7 @@ public class GatewayAccessFilter implements WebFilter {
         // absence de valeur probante doit etre dite plutot que supposee.
         String gatewayHeader = exchange.getRequest().getHeaders().getFirst("X-Gateway-Source");
         if (!"spring-cloud-gateway".equals(gatewayHeader)) {
-            log.debug(" Header X-Gateway-Source manquant ou invalide: {}", gatewayHeader);
+            log.debug("Header X-Gateway-Source manquant ou invalide: {}", gatewayHeader);
             return false;
         }
 
@@ -320,7 +320,7 @@ public class GatewayAccessFilter implements WebFilter {
         // du connecte, et il n'est pas forgeable.
         String adressePair = adresseDuPair(exchange);
         if (!PrivateNetworks.contient(adressePair)) {
-            log.debug(" Appel direct refusé, pair TCP hors réseau privé: {}", adressePair);
+            log.debug("Appel direct refusé, pair TCP hors réseau privé: {}", adressePair);
             return false;
         }
 

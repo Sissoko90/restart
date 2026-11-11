@@ -92,7 +92,7 @@ public class ZipBombProtection {
 
     private ZipBombCheckResult analyzeZipContent(byte[] data, String filename, int depth) {
         if (depth > maxNestedDepth) {
-            log.warn(" ZIP BOMB DETECTED: Max nested depth exceeded for file: {}", filename);
+            log.warn("ZIP BOMB DETECTED: Max nested depth exceeded for file: {}", filename);
             return ZipBombCheckResult.zipBomb("Maximum nested archive depth exceeded (" + maxNestedDepth + ")");
         }
 
@@ -108,7 +108,7 @@ public class ZipBombProtection {
                 entryCount++;
 
                 if (entryCount > maxEntries) {
-                    log.warn(" ZIP BOMB DETECTED: Too many entries ({}) in file: {}", entryCount, filename);
+                    log.warn("ZIP BOMB DETECTED: Too many entries ({}) in file: {}", entryCount, filename);
                     return ZipBombCheckResult.zipBomb("Too many entries in archive (" + entryCount + " > " + maxEntries + ")");
                 }
 
@@ -121,7 +121,7 @@ public class ZipBombProtection {
 
                         long maxBytes = maxUncompressedSizeMb * 1024 * 1024;
                         if (totalUncompressedSize > maxBytes) {
-                            log.warn(" ZIP BOMB DETECTED: Uncompressed size exceeds limit for file: {} (>{} MB)",
+                            log.warn("ZIP BOMB DETECTED: Uncompressed size exceeds limit for file: {} (>{} MB)",
                                 filename, maxUncompressedSizeMb);
                             return ZipBombCheckResult.zipBomb("Uncompressed size exceeds maximum (" + maxUncompressedSizeMb + " MB)");
                         }
@@ -129,7 +129,7 @@ public class ZipBombProtection {
                         if (compressedSize > 0) {
                             double ratio = (double) totalUncompressedSize / compressedSize;
                             if (ratio > maxCompressionRatio) {
-                                log.warn(" ZIP BOMB DETECTED: Compression ratio {} exceeds limit {} for file: {}",
+                                log.warn("ZIP BOMB DETECTED: Compression ratio {} exceeds limit {} for file: {}",
                                     String.format("%.2f", ratio), maxCompressionRatio, filename);
                                 return ZipBombCheckResult.zipBomb("Compression ratio too high (" +
                                     String.format("%.2f", ratio) + " > " + maxCompressionRatio + ")");
@@ -153,14 +153,14 @@ public class ZipBombProtection {
 
             if (compressedSize > 0 && totalUncompressedSize > 0) {
                 double finalRatio = (double) totalUncompressedSize / compressedSize;
-                log.debug(" ZIP analysis for {}: compressed={} bytes, uncompressed={} bytes, ratio={}, entries={}",
+                log.debug("ZIP analysis for {}: compressed={} bytes, uncompressed={} bytes, ratio={}, entries={}",
                     filename, compressedSize, totalUncompressedSize, String.format("%.2f", finalRatio), entryCount);
             }
 
             return ZipBombCheckResult.safe();
 
         } catch (IOException e) {
-            log.error(" Error analyzing ZIP file {}: {}", filename, e.getMessage());
+            log.error("Error analyzing ZIP file {}: {}", filename, e.getMessage());
             return ZipBombCheckResult.error("Failed to analyze archive: " + e.getMessage());
         }
     }

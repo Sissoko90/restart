@@ -59,7 +59,7 @@ public class ReactiveKafkaConsumerConfig {
         props.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, maxPollInterval);
         props.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, heartbeatInterval);
 
-        log.info(" Kafka consumer configured:");
+        log.info("Kafka consumer configured:");
         log.info("- Bootstrap: {}", bootstrapServers);
         log.info("- Group ID: {}", groupId);
         log.info("- Auto offset reset: {}", autoOffsetReset);

@@ -61,19 +61,19 @@ public class AdminSecretFilter implements WebFilter {
 
             // Vérifier si le header est présent
             if (providedSecret == null || providedSecret.isEmpty()) {
-                log.warn(" Tentative d'accès admin sans header X-Admin-Secret - IP: {}",
+                log.warn("Tentative d'accès admin sans header X-Admin-Secret - IP: {}",
                         exchange.getRequest().getRemoteAddress());
                 return sendUnauthorized(exchange);
             }
 
             // Vérifier si la clé correspond
             if (!SecretComparisonUtil.matches(adminSecretKey, providedSecret)) {
-                log.warn(" Tentative d'accès admin avec clé invalide - IP: {}",
+                log.warn("Tentative d'accès admin avec clé invalide - IP: {}",
                         exchange.getRequest().getRemoteAddress());
                 return sendUnauthorized(exchange);
             }
 
-            log.debug(" Admin secret validé pour: {}", path);
+            log.debug("Admin secret validé pour: {}", path);
         }
 
         return chain.filter(exchange);

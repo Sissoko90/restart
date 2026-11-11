@@ -91,16 +91,16 @@ public class MaintenanceSeeder implements CommandLineRunner {
             return;
         }
 
-        log.info(" Vérification de l'utilisateur MAINTENANCE par défaut...");
+        log.info("Vérification de l'utilisateur MAINTENANCE par défaut...");
 
         // Vérifier si l'utilisateur maintenance existe déjà
         if (userRepository.findByPhoneNumber(maintenancePhone).block() != null) {
-            log.info(" Utilisateur MAINTENANCE existe déjà avec le téléphone: {}", maintenancePhone);
+            log.info("Utilisateur MAINTENANCE existe déjà avec le téléphone: {}", maintenancePhone);
             return;
         }
 
         try {
-            log.info(" Création de l'utilisateur MAINTENANCE par défaut...");
+            log.info("Création de l'utilisateur MAINTENANCE par défaut...");
 
             // Générer un secret TOTP unique pour la maintenance
             String totpSecret = totpService.generateTotpSecret();
@@ -124,9 +124,9 @@ public class MaintenanceSeeder implements CommandLineRunner {
             User savedMaintenance = userRepository.save(maintenance).block();
 
             if (savedMaintenance != null) {
-                log.info(" Utilisateur MAINTENANCE créé dans interface-service avec ID: {}", savedMaintenance.getId());
-                log.info(" MAINTENANCE par défaut créé avec succès!");
-                log.info(" Téléphone: {}", maintenance.getPhoneNumber());
+                log.info("Utilisateur MAINTENANCE créé dans interface-service avec ID: {}", savedMaintenance.getId());
+                log.info("MAINTENANCE par défaut créé avec succès!");
+                log.info("Téléphone: {}", maintenance.getPhoneNumber());
                 // Le mot de passe n'est PAS journalisé, pas même tronqué. Les
                 // quatre premiers caractères retirent déjà l'essentiel de
                 // l'entropie d'un mot de passe choisi par un humain, et ces
@@ -136,10 +136,10 @@ public class MaintenanceSeeder implements CommandLineRunner {
                 // Au passage, substring(0, 4) lançait une exception sur un mot
                 // de passe de moins de quatre caractères, ce qui faisait
                 // échouer la création du compte dans le catch en aval.
-                log.info(" Mot de passe : celui de MAINTENANCE_PASSWORD");
+                log.info("Mot de passe : celui de MAINTENANCE_PASSWORD");
                 // Le secret TOTP n'est PAS journalisé : c'est la graine du second
                 // facteur, et les journaux partent vers Loki où ils sont conservés.
-                log.info(" Secret TOTP généré pour le compte de maintenance");
+                log.info("Secret TOTP généré pour le compte de maintenance");
                 // L'adresse du COMPTE, et non un litteral.
                 //
                 // C'etait une seconde adresse ecrite en dur, distincte de celle
@@ -151,13 +151,13 @@ public class MaintenanceSeeder implements CommandLineRunner {
                 String maskedQrUrl = totpService.generateQrCodeUrl(
                         maintenanceEmail, totpSecret, "Restart Maintenance");
                 maskedQrUrl = maskedQrUrl.replaceAll("secret=[A-Z2-7]+", "secret=****");
-                log.info(" QR Code URL: {}", maskedQrUrl);
+                log.info("QR Code URL: {}", maskedQrUrl);
                 log.warn("IMPORTANT: Configurez l'authentification TOTP avec le secret ci-dessus!");
                 log.warn("IMPORTANT: Conservez ce secret en lieu sûr!");
             }
 
         } catch (Exception e) {
-            log.error(" Erreur lors de la création de l'utilisateur MAINTENANCE: {}", e.getMessage(), e);
+            log.error("Erreur lors de la création de l'utilisateur MAINTENANCE: {}", e.getMessage(), e);
         }
     }
 }

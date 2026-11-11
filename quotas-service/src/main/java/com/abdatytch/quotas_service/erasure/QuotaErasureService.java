@@ -43,7 +43,7 @@ public class QuotaErasureService {
                         supprimerSiPresent(consumptionRepository.existsById(subjectId),
                                 () -> consumptionRepository.deleteById(subjectId)))
                 .map(t -> t.getT1() + t.getT2())
-                .doOnSuccess(n -> log.info(" {} ligne(s) de quota effacée(s) pour {}",
+                .doOnSuccess(n -> log.info("{} ligne(s) de quota effacée(s) pour {}",
                         n, subjectId));
     }
 

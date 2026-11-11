@@ -61,7 +61,7 @@ public class DeveloperErasureController {
                 .map(SecurityContext::getAuthentication)
                 .map(Authentication::getName)
                 .flatMap(developerId -> {
-                    log.info(" Effacement demandé par le développeur {}", developerId);
+                    log.info("Effacement demandé par le développeur {}", developerId);
 
                     UserErasureRequestedEvent event = UserErasureRequestedEvent.of(
                             developerId, ErasureReason.DEMANDE_DE_LA_PERSONNE);

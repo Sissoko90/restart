@@ -81,7 +81,7 @@ public class ZipBombFilter implements WebFilter {
 
                 try {
                     if (isZipBomb(zipData)) {
-                        log.warn(" ZipBomb détecté depuis IP: {} - Path: {}",
+                        log.warn("ZipBomb détecté depuis IP: {} - Path: {}",
                                 getClientIp(exchange),
                                 exchange.getRequest().getPath());
                         return blockRequest(exchange, "ZipBomb détecté");
@@ -115,7 +115,7 @@ public class ZipBombFilter implements WebFilter {
             // refuse en 413, et non propage en 500. La taille d'une requete est
             // le fait de l'appelant.
             .onErrorResume(DataBufferLimitException.class, e -> {
-                log.warn(" Archive trop volumineuse refusée depuis IP: {}",
+                log.warn("Archive trop volumineuse refusée depuis IP: {}",
                         getClientIp(exchange));
                 exchange.getResponse().setStatusCode(HttpStatus.PAYLOAD_TOO_LARGE);
                 return exchange.getResponse().setComplete();

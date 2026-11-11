@@ -110,7 +110,7 @@ public class RedisRateLimitWebFilter implements WebFilter {
                         : assurerExpiration(redisKey).thenReturn(count))
                 .flatMap(count -> {
                     if (count > limit) {
-                        log.warn(" Plafond atteint pour {} sur {} ({}/{})",
+                        log.warn("Plafond atteint pour {} sur {} ({}/{})",
                                 clientIp, path, count, limit);
                         return signaler(clientIp, "rate-limit:" + normalizePath(path))
                                 .then(tooManyRequests(exchange, limit));
@@ -121,12 +121,12 @@ public class RedisRateLimitWebFilter implements WebFilter {
                     return chain.filter(exchange);
                 })
                 .onErrorResume(error -> {
-                    log.error(" Redis injoignable pour la limitation de débit, repli local : {}",
+                    log.error("Redis injoignable pour la limitation de débit, repli local : {}",
                             error.getMessage());
                     if (fallbackLimiter.tryConsume(clientIp + ":" + normalizePath(path), limit)) {
                         return chain.filter(exchange);
                     }
-                    log.warn(" Plafond local atteint pour {} sur {}", clientIp, path);
+                    log.warn("Plafond local atteint pour {} sur {}", clientIp, path);
                     return tooManyRequests(exchange, limit);
                 });
     }

@@ -182,7 +182,7 @@ public class AccountErasureService implements IAccountErasureService {
                 // defendable sur le chemin d'une obligation legale.
                 .defaultIfEmpty(0)
                 .flatMap(effaces -> {
-                    log.info(" Effacement local terminé pour {} — {} enregistrement(s)",
+                    log.info("Effacement local terminé pour {} — {} enregistrement(s)",
                             subjectId, effaces);
                     return erasurePublisher.publishRequested(
                             new UserErasureRequestedEvent(

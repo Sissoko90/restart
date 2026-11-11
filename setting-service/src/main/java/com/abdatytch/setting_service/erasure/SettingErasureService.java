@@ -34,6 +34,6 @@ public class SettingErasureService {
                         ? Mono.just(0)
                         : userSettingRepository.deleteByUserId(subjectId)
                                 .thenReturn(preferences.size()))
-                .doOnSuccess(n -> log.info(" {} préférence(s) effacée(s) pour {}", n, subjectId));
+                .doOnSuccess(n -> log.info("{} préférence(s) effacée(s) pour {}", n, subjectId));
     }
 }

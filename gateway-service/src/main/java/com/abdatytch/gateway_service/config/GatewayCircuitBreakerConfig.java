@@ -53,14 +53,14 @@ public class GatewayCircuitBreakerConfig {
         // Event listeners pour monitoring
         circuitBreaker.getEventPublisher()
             .onStateTransition(event ->
-                log.warn(" Circuit Breaker [auth-service] state changed: {} -> {}",
+                log.warn("Circuit Breaker [auth-service] state changed: {} -> {}",
                     event.getStateTransition().getFromState(),
                     event.getStateTransition().getToState()))
             .onFailureRateExceeded(event ->
-                log.error(" Circuit Breaker [auth-service] failure rate exceeded: {}%",
+                log.error("Circuit Breaker [auth-service] failure rate exceeded: {}%",
                     event.getFailureRate()))
             .onSlowCallRateExceeded(event ->
-                log.warn(" Circuit Breaker [auth-service] slow call rate exceeded: {}%",
+                log.warn("Circuit Breaker [auth-service] slow call rate exceeded: {}%",
                     event.getSlowCallRate()));
 
         return circuitBreaker;
@@ -88,7 +88,7 @@ public class GatewayCircuitBreakerConfig {
 
         circuitBreaker.getEventPublisher()
             .onStateTransition(event ->
-                log.warn(" Circuit Breaker [user-service] state changed: {} -> {}",
+                log.warn("Circuit Breaker [user-service] state changed: {} -> {}",
                     event.getStateTransition().getFromState(),
                     event.getStateTransition().getToState()));
 

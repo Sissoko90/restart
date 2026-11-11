@@ -23,13 +23,13 @@ public class DocumentExpirationScheduler {
 
     @Scheduled(cron = "${scheduler.expiration.cron:0 0 2 * * *}")
     public void markExpiredDocuments() {
-        log.info(" Starting document expiration check...");
+        log.info("Starting document expiration check...");
 
         LocalDate today = LocalDate.now();
 
         mediaFileRepository.findByExpiryDateBeforeAndStatus(today, DocumentStatus.APPROVED)
             .flatMap(document -> {
-                log.info(" Marking document as EXPIRED - documentId: {}, userId: {}, expiryDate: {}",
+                log.info("Marking document as EXPIRED - documentId: {}, userId: {}, expiryDate: {}",
                     document.getId(), document.getUserId(), document.getExpiryDate());
 
                 document.setStatus(DocumentStatus.EXPIRED);
@@ -38,18 +38,18 @@ public class DocumentExpirationScheduler {
             .count()
             .doOnSuccess(count -> {
                 if (count > 0) {
-                    log.info(" Marked {} document(s) as EXPIRED", count);
+                    log.info("Marked {} document(s) as EXPIRED", count);
                 } else {
-                    log.debug(" No expired documents found");
+                    log.debug("No expired documents found");
                 }
             })
-            .doOnError(error -> log.error(" Failed to mark expired documents", error))
+            .doOnError(error -> log.error("Failed to mark expired documents", error))
             .subscribe();
     }
 
     @Scheduled(cron = "0 0 3 * * *") // 3h du matin tous les jours
     public void cleanupSoftDeletedDocuments() {
-        log.info(" Starting soft-deleted documents cleanup...");
+        log.info("Starting soft-deleted documents cleanup...");
 
         LocalDate cutoffDate = LocalDate.now().minusDays(90); // 90 jours de rétention
 
@@ -57,7 +57,7 @@ public class DocumentExpirationScheduler {
             .filter(doc -> doc.getDeletedAt() != null)
             .filter(doc -> doc.getDeletedAt().toLocalDate().isBefore(cutoffDate))
             .flatMap(document -> {
-                log.info(" Permanently deleting document - documentId: {}, deletedAt: {}",
+                log.info("Permanently deleting document - documentId: {}, deletedAt: {}",
                     document.getId(), document.getDeletedAt());
 
                 return mediaFileRepository.delete(document);
@@ -65,12 +65,12 @@ public class DocumentExpirationScheduler {
             .count()
             .doOnSuccess(count -> {
                 if (count > 0) {
-                    log.info(" Permanently deleted {} document(s)", count);
+                    log.info("Permanently deleted {} document(s)", count);
                 } else {
-                    log.debug(" No documents to permanently delete");
+                    log.debug("No documents to permanently delete");
                 }
             })
-            .doOnError(error -> log.error(" Failed to cleanup soft-deleted documents", error))
+            .doOnError(error -> log.error("Failed to cleanup soft-deleted documents", error))
             .subscribe();
     }
 }

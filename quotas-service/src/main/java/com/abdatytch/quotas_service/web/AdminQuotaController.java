@@ -40,7 +40,7 @@ public class AdminQuotaController {
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Remettre à zéro la consommation d'un utilisateur")
     public Mono<QuotaStatusResponse> reset(@PathVariable String userId) {
-        log.warn(" Remise à zéro de la consommation demandée pour l'utilisateur {}", userId);
+        log.warn("Remise à zéro de la consommation demandée pour l'utilisateur {}", userId);
         return quotaService.resetConsumption(userId);
     }
 }

@@ -75,9 +75,9 @@ public class StorageServiceImpl implements StorageService {
                 minioClient.makeBucket(
                     MakeBucketArgs.builder().bucket(bucketName).build()
                 );
-                log.info(" Bucket créé: {}", bucketName);
+                log.info("Bucket créé: {}", bucketName);
             } else {
-                log.info(" Bucket existe déjà: {}", bucketName);
+                log.info("Bucket existe déjà: {}", bucketName);
             }
             return null;
         })
@@ -109,7 +109,7 @@ public class StorageServiceImpl implements StorageService {
                                 .build()
                         );
                         
-                        log.info(" Fichier uploadé sur MinIO: {}", sanitizedFileName);
+                        log.info("Fichier uploadé sur MinIO: {}", sanitizedFileName);
                         return sanitizedFileName;
                     }
                 })
@@ -121,7 +121,7 @@ public class StorageServiceImpl implements StorageService {
     
     private Mono<String> uploadFileFallback(String fileName, Flux<DataBuffer> fileData, 
                                              String contentType, long fileSize, Throwable t) {
-        log.warn(" MinIO indisponible, utilisation du stockage local chiffré pour: {}", fileName);
+        log.warn("MinIO indisponible, utilisation du stockage local chiffré pour: {}", fileName);
         
         return DataBufferUtils.join(fileData)
             .flatMap(dataBuffer -> {
@@ -131,7 +131,7 @@ public class StorageServiceImpl implements StorageService {
                 
                 //  Utiliser le stockage chiffré
                 return unifiedEncryptionService.encryptAndSaveToFallback(fileName, bytes)
-                    .doOnSuccess(path -> log.info(" Fichier chiffré et sauvegardé en fallback: {}", path));
+                    .doOnSuccess(path -> log.info("Fichier chiffré et sauvegardé en fallback: {}", path));
             });
     }
 
@@ -142,7 +142,7 @@ public class StorageServiceImpl implements StorageService {
         String sanitizedPath = FileNameSanitizer.sanitize(path);
         
         return Mono.fromCallable(() -> {
-            log.debug(" Uploading file from bytes to MinIO: {} ({} bytes)", sanitizedPath, content.length);
+            log.debug("Uploading file from bytes to MinIO: {} ({} bytes)", sanitizedPath, content.length);
 
             try (ByteArrayInputStream inputStream = new ByteArrayInputStream(content)) {
                 minioClient.putObject(
@@ -154,11 +154,11 @@ public class StorageServiceImpl implements StorageService {
                                 .build()
                 );
 
-                log.info(" File uploaded successfully from bytes: {}", sanitizedPath);
+                log.info("File uploaded successfully from bytes: {}", sanitizedPath);
                 return sanitizedPath;
 
             } catch (Exception e) {
-                log.error(" Failed to upload file from bytes to MinIO: {}", path, e);
+                log.error("Failed to upload file from bytes to MinIO: {}", path, e);
                 throw new StorageException("Failed to upload file from bytes", e);
             }
         })
@@ -168,11 +168,11 @@ public class StorageServiceImpl implements StorageService {
     
     private Mono<String> uploadFileFromBytesFallback(String path, byte[] content, 
                                                        String contentType, Throwable t) {
-        log.warn(" MinIO indisponible, utilisation du stockage local chiffré pour: {}", path);
+        log.warn("MinIO indisponible, utilisation du stockage local chiffré pour: {}", path);
         
         //  Utiliser le stockage chiffré
         return unifiedEncryptionService.encryptAndSaveToFallback(path, content)
-            .doOnSuccess(savedPath -> log.info(" File encrypted and saved to fallback: {}", savedPath));
+            .doOnSuccess(savedPath -> log.info("File encrypted and saved to fallback: {}", savedPath));
     }
 
     @Override
@@ -187,7 +187,7 @@ public class StorageServiceImpl implements StorageService {
                         .build())) {
                 
                 byte[] bytes = stream.readAllBytes();
-                log.info(" Fichier téléchargé depuis MinIO: {}", fileName);
+                log.info("Fichier téléchargé depuis MinIO: {}", fileName);
                 return bytes;
             }
         })
@@ -197,15 +197,15 @@ public class StorageServiceImpl implements StorageService {
     }
     
     private Mono<byte[]> downloadFileFallback(String fileName, Throwable t) {
-        log.warn(" MinIO indisponible, tentative de récupération depuis stockage local: {}", fileName);
+        log.warn("MinIO indisponible, tentative de récupération depuis stockage local: {}", fileName);
         return Mono.fromCallable(() -> {
             Path fallbackPath = Paths.get(fallbackStoragePath, fileName);
             if (Files.exists(fallbackPath)) {
                 byte[] bytes = Files.readAllBytes(fallbackPath);
-                log.info(" Fichier récupéré depuis stockage local: {}", fileName);
+                log.info("Fichier récupéré depuis stockage local: {}", fileName);
                 return bytes;
             } else {
-                log.error(" Fichier introuvable en local: {}", fileName);
+                log.error("Fichier introuvable en local: {}", fileName);
                 throw new StorageException("Fichier introuvable: " + fileName);
             }
         }).subscribeOn(Schedulers.boundedElastic());
@@ -223,7 +223,7 @@ public class StorageServiceImpl implements StorageService {
                         .object(fileName)
                         .build()
                 );
-                log.info(" Fichier supprimé de MinIO: {}", fileName);
+                log.info("Fichier supprimé de MinIO: {}", fileName);
             } catch (Exception e) {
                 throw new StorageException("Échec de la suppression du fichier: " + fileName, e);
             }
@@ -234,16 +234,16 @@ public class StorageServiceImpl implements StorageService {
     }
     
     private Mono<Void> deleteFileFallback(String fileName, Throwable t) {
-        log.warn(" MinIO indisponible, suppression du fichier local: {}", fileName);
+        log.warn("MinIO indisponible, suppression du fichier local: {}", fileName);
         return Mono.fromRunnable(() -> {
             try {
                 Path fallbackPath = Paths.get(fallbackStoragePath, fileName);
                 if (Files.exists(fallbackPath)) {
                     Files.delete(fallbackPath);
-                    log.info(" Fichier local supprimé: {}", fileName);
+                    log.info("Fichier local supprimé: {}", fileName);
                 }
             } catch (Exception e) {
-                log.error(" Erreur suppression fichier local: {}", fileName, e);
+                log.error("Erreur suppression fichier local: {}", fileName, e);
             }
         }).subscribeOn(Schedulers.boundedElastic()).then();
     }

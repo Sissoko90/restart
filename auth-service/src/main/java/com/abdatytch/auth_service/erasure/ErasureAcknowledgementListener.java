@@ -64,12 +64,12 @@ public class ErasureAcknowledgementListener {
                 .flatMap(this::handle)
                 .retryWhen(Retry.fixedDelay(3, Duration.ofSeconds(5)))
                 .onErrorResume(e -> {
-                    log.error(" Consommateur d'accusés d'effacement arrêté : {}", e.getMessage());
+                    log.error("Consommateur d'accusés d'effacement arrêté : {}", e.getMessage());
                     return Mono.empty();
                 })
                 .subscribe();
 
-        log.info(" Écoute des accusés d'effacement sur {}", ErasureTopics.ERASURE_COMPLETED);
+        log.info("Écoute des accusés d'effacement sur {}", ErasureTopics.ERASURE_COMPLETED);
     }
 
     private Mono<Void> handle(ReceiverRecord<String, String> record) {
@@ -82,7 +82,7 @@ public class ErasureAcknowledgementListener {
                     // Perdre un accusé fausserait le registre dans le sens le plus
                     // dangereux — une demande paraîtrait inachevée alors qu'elle
                     // l'est, ou l'inverse.
-                    log.error(" Accusé d'effacement non enregistré : {}", e.getMessage());
+                    log.error("Accusé d'effacement non enregistré : {}", e.getMessage());
                     return Mono.empty();
                 });
     }
@@ -109,7 +109,7 @@ public class ErasureAcknowledgementListener {
                     ack.setRecordsErased(event.recordsErased());
                     ack.setDetails(event.details());
 
-                    log.info(" {} a effacé {} enregistrement(s) pour la demande {}",
+                    log.info("{} a effacé {} enregistrement(s) pour la demande {}",
                             event.service(), event.recordsErased(), requestId);
 
                     return acknowledgementRepository.save(ack)
@@ -127,7 +127,7 @@ public class ErasureAcknowledgementListener {
                 .flatMap(recus -> requestRepository.findById(requestId))
                 .flatMap(request -> {
                     request.setCompletedAt(LocalDateTime.now());
-                    log.info(" Demande d'effacement {} terminée — tous les services ont accusé",
+                    log.info("Demande d'effacement {} terminée — tous les services ont accusé",
                             requestId);
                     return requestRepository.save(request);
                 })

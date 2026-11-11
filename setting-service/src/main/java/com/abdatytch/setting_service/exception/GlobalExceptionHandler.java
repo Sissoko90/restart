@@ -23,14 +23,14 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(SettingNotFoundException.class)
     public Mono<ResponseEntity<Map<String, Object>>> handleNotFound(SettingNotFoundException ex) {
-        log.warn(" {}", ex.getMessage());
+        log.warn("{}", ex.getMessage());
         return Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(body(HttpStatus.NOT_FOUND, SettingsConstants.ERROR_SETTING_NOT_FOUND, ex.getMessage())));
     }
 
     @ExceptionHandler(InvalidSettingValueException.class)
     public Mono<ResponseEntity<Map<String, Object>>> handleInvalidValue(InvalidSettingValueException ex) {
-        log.warn(" {}", ex.getMessage());
+        log.warn("{}", ex.getMessage());
         return Mono.just(ResponseEntity.badRequest()
                 .body(body(HttpStatus.BAD_REQUEST, SettingsConstants.ERROR_INVALID_VALUE, ex.getMessage())));
     }

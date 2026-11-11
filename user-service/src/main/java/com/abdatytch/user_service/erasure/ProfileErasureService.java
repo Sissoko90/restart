@@ -73,7 +73,7 @@ public class ProfileErasureService {
         return userRepository.findByAuthUserId(authUserId)
                 .flatMap(this::eraseUserAndProfile)
                 .defaultIfEmpty(0)
-                .doOnSuccess(n -> log.info(" Effacement du profil {} — {} enregistrement(s)",
+                .doOnSuccess(n -> log.info("Effacement du profil {} — {} enregistrement(s)",
                         authUserId, n));
     }
 
@@ -136,7 +136,7 @@ public class ProfileErasureService {
                     // Un fichier introuvable n'est pas un échec : c'est le
                     // résultat recherché. En revanche il faut le savoir, car
                     // un échec réel laisserait la photographie accessible.
-                    log.warn(" Photographie non supprimée ({}) : {}", pictureUrl, e.getMessage());
+                    log.warn("Photographie non supprimée ({}) : {}", pictureUrl, e.getMessage());
                     return Mono.empty();
                 })
                 .then();

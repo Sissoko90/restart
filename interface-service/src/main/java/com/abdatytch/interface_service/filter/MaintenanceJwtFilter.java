@@ -77,7 +77,7 @@ public class MaintenanceJwtFilter implements WebFilter, Ordered {
 
         String authHeader = exchange.getRequest().getHeaders().getFirst("Authorization");
         if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
-            log.warn(" Accès maintenance sans token sur {}", path);
+            log.warn("Accès maintenance sans token sur {}", path);
             return deny(exchange, HttpStatus.UNAUTHORIZED, "Token de maintenance requis");
         }
 
@@ -99,7 +99,7 @@ public class MaintenanceJwtFilter implements WebFilter, Ordered {
                 .defaultIfEmpty(Boolean.FALSE)
                 .flatMap(valid -> {
                     if (!Boolean.TRUE.equals(valid)) {
-                        log.warn(" Token de maintenance invalide ou révoqué sur {}", path);
+                        log.warn("Token de maintenance invalide ou révoqué sur {}", path);
                         return deny(exchange, HttpStatus.UNAUTHORIZED, "Token de maintenance invalide");
                     }
 
@@ -107,17 +107,17 @@ public class MaintenanceJwtFilter implements WebFilter, Ordered {
                     // la maintenance : on exige explicitement le type dédié.
                     String tokenType = jwtService.extractClaim(token, "type");
                     if (!MAINTENANCE_TOKEN_TYPE.equals(tokenType)) {
-                        log.warn(" Token de type '{}' refusé sur {} (type '{}' attendu)",
+                        log.warn("Token de type '{}' refusé sur {} (type '{}' attendu)",
                                 tokenType, path, MAINTENANCE_TOKEN_TYPE);
                         return deny(exchange, HttpStatus.FORBIDDEN, "Token de maintenance requis");
                     }
 
-                    log.info(" Accès maintenance autorisé sur {}", path);
+                    log.info("Accès maintenance autorisé sur {}", path);
                     return chain.filter(exchange);
                 })
                 .onErrorResume(error -> {
                     // Échouer fermé : aucune erreur de validation ne doit laisser passer
-                    log.error(" Erreur de validation du token de maintenance sur {} : {}",
+                    log.error("Erreur de validation du token de maintenance sur {} : {}",
                             path, error.getMessage());
                     return deny(exchange, HttpStatus.UNAUTHORIZED, "Token de maintenance invalide");
                 });

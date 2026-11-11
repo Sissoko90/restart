@@ -79,7 +79,7 @@ public class DevKeyManagementController {
     @PostMapping("/admin/keys/rotate")
     @PreAuthorize("hasRole('ADMIN')")
     public Mono<ResponseEntity<Map<String, Object>>> rotateKeys() {
-        log.info(" Manual dev key rotation requested");
+        log.info("Manual dev key rotation requested");
 
         return keyRotationService.rotateKeys()
                 .then(Mono.fromCallable(() -> {
@@ -116,7 +116,7 @@ public class DevKeyManagementController {
                             .body(reponse));
                 })
                 .onErrorResume(e -> {
-                    log.error(" Dev key rotation failed", e);
+                    log.error("Dev key rotation failed", e);
                     Map<String, Object> error = new LinkedHashMap<>();
                     error.put("status", "error");
                     error.put("message", "Dev key rotation failed: " + e.getMessage());
@@ -153,7 +153,7 @@ public class DevKeyManagementController {
     @DeleteMapping("/admin/keys/expired")
     @PreAuthorize("hasRole('ADMIN')")
     public Mono<ResponseEntity<Map<String, Object>>> cleanupExpiredKeys() {
-        log.info(" Manual dev key cleanup requested");
+        log.info("Manual dev key cleanup requested");
 
         return keyRotationService.cleanupExpiredKeys()
                 .map(removed -> {

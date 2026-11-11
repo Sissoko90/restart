@@ -70,7 +70,7 @@ public class RoleAuthorizationWebFilter implements WebFilter {
             Object claimsObj = exchange.getAttribute("claims");
             
             if (claimsObj == null) {
-                log.warn(" Admin access denied - No JWT claims found for path: {}", path);
+                log.warn("Admin access denied - No JWT claims found for path: {}", path);
                 return writeForbiddenResponse(exchange, "Accès refusé - Authentification requise");
             }
 
@@ -113,14 +113,14 @@ public class RoleAuthorizationWebFilter implements WebFilter {
                     // administrateur authentifie se voyait refuser l'acces aux
                     // documents, faute d'une lecture correcte du claim `roles`.
                     String roleDeLAppelant = JwtClaimsReader.primaryRole(claims);
-                    log.warn(" Admin access denied - User role: {} for path: {}",
+                    log.warn("Admin access denied - User role: {} for path: {}",
                         roleDeLAppelant, path);
                     return writeForbiddenResponse(exchange, "Accès refusé");
                 }
 
-                log.debug(" Admin access granted on path: {}", path);
+                log.debug("Admin access granted on path: {}", path);
             } catch (Exception e) {
-                log.error(" Error checking admin role", e);
+                log.error("Error checking admin role", e);
                 return writeForbiddenResponse(exchange, "Accès refusé - Erreur de vérification des permissions");
             }
         }

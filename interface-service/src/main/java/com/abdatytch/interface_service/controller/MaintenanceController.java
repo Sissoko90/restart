@@ -135,13 +135,13 @@ public class MaintenanceController {
             @RequestBody MaintenanceAuthRequest request) {
         // Vérifier le secret admin
         if (!SecretComparisonUtil.matches(adminSecretKey, adminSecret)) {
-            log.warn(" Tentative d'accès maintenance avec secret admin invalide");
+            log.warn("Tentative d'accès maintenance avec secret admin invalide");
             return refus();
         }
 
         // Vérifier la clé dure de maintenance
         if (!SecretComparisonUtil.matches(maintenanceSecretKey, maintenanceKey)) {
-            log.warn(" Tentative d'accès maintenance avec clé dure invalide");
+            log.warn("Tentative d'accès maintenance avec clé dure invalide");
             return refus();
         }
 
@@ -150,7 +150,7 @@ public class MaintenanceController {
             .flatMap(user -> {
                 // Vérifier le mot de passe
                 if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-                    log.warn(" Tentative d'accès maintenance avec mot de passe incorrect pour {}", request.getPhoneNumber());
+                    log.warn("Tentative d'accès maintenance avec mot de passe incorrect pour {}", request.getPhoneNumber());
                     return refus();
                 }
 
@@ -158,7 +158,7 @@ public class MaintenanceController {
                 return totpService.validateTotpCode(user.getTotpSecret(), request.getTotpCode())
                     .flatMap(totpValid -> {
                         if (!totpValid) {
-                            log.warn(" Tentative d'accès maintenance avec TOTP incorrect pour {}", request.getPhoneNumber());
+                            log.warn("Tentative d'accès maintenance avec TOTP incorrect pour {}", request.getPhoneNumber());
                             return refus();
                         }
 
@@ -178,7 +178,7 @@ public class MaintenanceController {
                             user.getPhoneNumber()
                         );
 
-                        log.info(" Accès maintenance accordé pour {}", user.getPhoneNumber());
+                        log.info("Accès maintenance accordé pour {}", user.getPhoneNumber());
 
                         Map<String, String> response = new HashMap<>();
                         response.put("token", maintenanceToken);
@@ -196,7 +196,7 @@ public class MaintenanceController {
             // de maintenance — sur l'endpoint le plus privilegie de la
             // plateforme.
             .switchIfEmpty(Mono.defer(() -> {
-                log.warn(" Tentative d'accès maintenance sur un numéro inconnu");
+                log.warn("Tentative d'accès maintenance sur un numéro inconnu");
                 return refus();
             }))
             // Une panne reste une panne, et ne se deguise plus en refus.
@@ -208,7 +208,7 @@ public class MaintenanceController {
             // lui dit que le probleme n'est pas chez lui. Et le message, lui,
             // reste dans le journal.
             .onErrorResume(e -> {
-                log.error(" Erreur lors de l'authentification de maintenance : {}",
+                log.error("Erreur lors de l'authentification de maintenance : {}",
                         e.getMessage(), e);
                 Map<String, String> corps = Map.of("error", "Erreur interne");
                 return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -302,7 +302,7 @@ public class MaintenanceController {
         return userRepository.findByEmail(adminEmail)
             .flatMap(user -> {
                 if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-                    log.warn(" Consultation TOTP refusée : mot de passe admin incorrect");
+                    log.warn("Consultation TOTP refusée : mot de passe admin incorrect");
                     Map<String, Object> errorMap = new HashMap<>();
                     errorMap.put("error", "Mot de passe incorrect");
                     return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorMap));
@@ -317,7 +317,7 @@ public class MaintenanceController {
                     config.put("qrCodeUrl", qrCodeUrl);
                 }
 
-                log.info(" Configuration TOTP consultée pour {}", user.getEmail());
+                log.info("Configuration TOTP consultée pour {}", user.getEmail());
                 return Mono.just(ResponseEntity.ok(config));
             })
             .switchIfEmpty(Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -348,7 +348,7 @@ public class MaintenanceController {
 
                 user.setTotpSecret(newTotpSecret);
 
-                log.info(" TOTP admin régénéré pour {}", user.getEmail());
+                log.info("TOTP admin régénéré pour {}", user.getEmail());
 
                 Map<String, Object> successMap = new java.util.HashMap<>();
                 successMap.put("message", "TOTP régénéré avec succès");
@@ -426,7 +426,7 @@ public class MaintenanceController {
                 user.setAdminConfirmationToken(null);
                 user.setAdminConfirmationExpiresAt(null);
 
-                log.info(" Compte admin débloqué pour {}", user.getEmail());
+                log.info("Compte admin débloqué pour {}", user.getEmail());
 
                 return userRepository.save(user)
                     .thenReturn(ResponseEntity.ok(Map.of(

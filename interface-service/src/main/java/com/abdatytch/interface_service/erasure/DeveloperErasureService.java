@@ -76,7 +76,7 @@ public class DeveloperErasureService {
 
         return supprimerProjets(developerId)
                 .flatMap(projets -> effacerIdentite(developerId).map(compte -> projets + compte))
-                .doOnSuccess(n -> log.info(" Effacement développeur {} — {} enregistrement(s)",
+                .doOnSuccess(n -> log.info("Effacement développeur {} — {} enregistrement(s)",
                         subjectId, n));
     }
 

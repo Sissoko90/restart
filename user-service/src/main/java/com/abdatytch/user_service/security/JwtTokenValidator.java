@@ -70,7 +70,7 @@ public class JwtTokenValidator {
     public JwtTokenValidator(JwksKeyProvider jwksKeyProvider, TokenBlacklistService tokenBlacklistService) {
         this.jwksKeyProvider = jwksKeyProvider;
         this.tokenBlacklistService = tokenBlacklistService;
-        log.info(" JwtTokenValidator initialized with JWKS support");
+        log.info("JwtTokenValidator initialized with JWKS support");
     }
 
     public Mono<Claims> validateTokenReactive(String token) {

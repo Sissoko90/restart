@@ -43,12 +43,12 @@ public class RetentionPurgeScheduler {
     @Scheduled(cron = "${scheduler.cleanup.audit-logs.cron:0 0 4 * * SUN}")
     public void purgerJournauxDAudit() {
         LocalDateTime limite = LocalDateTime.now().minusDays(auditLogsDays);
-        log.info(" Purge des journaux d'audit antérieurs au {}", limite);
+        log.info("Purge des journaux d'audit antérieurs au {}", limite);
 
         auditLogRepository.deleteByTimestampBefore(limite)
                 .count()
-                .doOnSuccess(n -> log.info(" {} journal/journaux d'audit purgé(s)", n))
-                .doOnError(e -> log.error(" Purge des journaux d'audit échouée : {}",
+                .doOnSuccess(n -> log.info("{} journal/journaux d'audit purgé(s)", n))
+                .doOnError(e -> log.error("Purge des journaux d'audit échouée : {}",
                         e.getMessage()))
                 .onErrorComplete()
                 // La souscription est ce qui déclenche réellement la suppression.

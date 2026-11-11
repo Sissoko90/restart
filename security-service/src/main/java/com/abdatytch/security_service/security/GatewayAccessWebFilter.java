@@ -117,7 +117,7 @@ public class GatewayAccessWebFilter implements WebFilter, Ordered {
         // projet — mais le service refuse de servir, et le dit en ERROR parce
         // que cela ne se reparera pas tout seul.
         if (gatewaySecretKey == null || gatewaySecretKey.isBlank()) {
-            log.error(" Aucun secret de passerelle configure : toute requete est refusee");
+            log.error("Aucun secret de passerelle configure : toute requete est refusee");
             return forbidden(exchange, "Service mal configure");
         }
 
@@ -147,7 +147,7 @@ public class GatewayAccessWebFilter implements WebFilter, Ordered {
         // pour une decision de securite.
         String adresse = GatewayClientIp.pairTcp(exchange);
         if (!("localhost".equals(adresse) || PrivateNetworks.contient(adresse))) {
-            log.warn(" Acces direct bloque depuis {} sur {}", adresse, path);
+            log.warn("Acces direct bloque depuis {} sur {}", adresse, path);
             return forbidden(exchange, "Requete hors Gateway");
         }
 
@@ -156,12 +156,12 @@ public class GatewayAccessWebFilter implements WebFilter, Ordered {
         String requestId = request.getHeaders().getFirst("X-Gateway-Request-Id");
 
         if (timestamp == null || signature == null || requestId == null) {
-            log.warn(" Accès direct bloqué (en-têtes Gateway absents) sur {}", path);
+            log.warn("Accès direct bloqué (en-têtes Gateway absents) sur {}", path);
             return forbidden(exchange, "Requête hors Gateway : en-têtes de signature absents");
         }
 
         if (!hmacSignatureUtil.isTimestampValid(timestamp)) {
-            log.warn(" Horodatage expiré ou invalide sur {}", path);
+            log.warn("Horodatage expiré ou invalide sur {}", path);
             return forbidden(exchange, "Horodatage de requête expiré");
         }
 
@@ -169,7 +169,7 @@ public class GatewayAccessWebFilter implements WebFilter, Ordered {
                 timestamp, path, request.getMethod().name(), requestId);
 
         if (!hmacSignatureUtil.validateSignature(gatewaySecretKey, signatureData, signature)) {
-            log.warn(" Signature HMAC invalide sur {}", path);
+            log.warn("Signature HMAC invalide sur {}", path);
             return forbidden(exchange, "Signature de requête invalide");
         }
 

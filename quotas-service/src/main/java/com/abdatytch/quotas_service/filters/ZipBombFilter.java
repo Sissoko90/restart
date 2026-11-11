@@ -43,7 +43,7 @@ public class ZipBombFilter implements WebFilter {
         // Implémentation simplifiée - vérification basique
         Long contentLength = exchange.getRequest().getHeaders().getContentLength();
         if (contentLength != null && contentLength > 50 * 1024 * 1024) { // 50MB max
-            log.warn(" Fichier ZIP trop volumineux: {} bytes", contentLength);
+            log.warn("Fichier ZIP trop volumineux: {} bytes", contentLength);
             return blockRequest(exchange);
         }
 

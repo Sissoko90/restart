@@ -60,19 +60,19 @@ public class ErasureRequestListener {
                 .flatMap(this::handle)
                 .retryWhen(Retry.fixedDelay(3, Duration.ofSeconds(5)))
                 .onErrorResume(e -> {
-                    log.error(" Consommateur d'effacement arrêté : {}", e.getMessage());
+                    log.error("Consommateur d'effacement arrêté : {}", e.getMessage());
                     return Mono.empty();
                 })
                 .subscribe();
 
-        log.info(" Écoute des demandes d'effacement sur {}", ErasureTopics.ERASURE_REQUESTED);
+        log.info("Écoute des demandes d'effacement sur {}", ErasureTopics.ERASURE_REQUESTED);
     }
 
     private Mono<Void> handle(ReceiverRecord<String, String> record) {
         return Mono.fromCallable(() ->
                         objectMapper.readValue(record.value(), UserErasureRequestedEvent.class))
                 .flatMap(event -> {
-                    log.info(" Effacement demandé pour {} (demande {})",
+                    log.info("Effacement demandé pour {} (demande {})",
                             event.subjectId(), event.requestId());
 
                     return erasureService.erase(event.subjectId())
@@ -82,7 +82,7 @@ public class ErasureRequestListener {
                 .onErrorResume(e -> {
                     // Pas d'acquittement : l'événement sera relivré. Un effacement
                     // manqué en silence est exactement ce qu'il faut éviter.
-                    log.error(" Effacement non traité, l'événement sera rejoué : {}",
+                    log.error("Effacement non traité, l'événement sera rejoué : {}",
                             e.getMessage());
                     return Mono.empty();
                 });
@@ -98,7 +98,7 @@ public class ErasureRequestListener {
                         ErasureTopics.ERASURE_COMPLETED, event.requestId().toString(), json))
                 .flatMapMany(record -> reactiveKafkaSender
                         .send(Mono.just(SenderRecord.create(record, event.requestId().toString()))))
-                .doOnNext(r -> log.info(" Accusé d'effacement émis pour la demande {}",
+                .doOnNext(r -> log.info("Accusé d'effacement émis pour la demande {}",
                         event.requestId()))
                 .then();
     }

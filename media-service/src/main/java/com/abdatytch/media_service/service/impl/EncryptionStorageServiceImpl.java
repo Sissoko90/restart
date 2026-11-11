@@ -69,11 +69,11 @@ public class EncryptionStorageServiceImpl implements EncryptionStorageService {
                 Files.createDirectories(filePath.getParent());
                 Files.write(filePath, combined);
                 
-                log.info(" File encrypted and saved: {}", fileName);
+                log.info("File encrypted and saved: {}", fileName);
                 return fileName;
                 
             } catch (Exception e) {
-                log.error(" Failed to encrypt and save file: {}", fileName, e);
+                log.error("Failed to encrypt and save file: {}", fileName, e);
                 throw new StorageException("Encryption failed", e);
             }
         }).subscribeOn(Schedulers.boundedElastic());
@@ -102,11 +102,11 @@ public class EncryptionStorageServiceImpl implements EncryptionStorageService {
                 cipher.init(Cipher.DECRYPT_MODE, secretKey, spec);
                 byte[] decryptedData = cipher.doFinal(encryptedData);
                 
-                log.info(" File decrypted: {}", fileName);
+                log.info("File decrypted: {}", fileName);
                 return decryptedData;
                 
             } catch (Exception e) {
-                log.error(" Failed to decrypt file: {}", fileName, e);
+                log.error("Failed to decrypt file: {}", fileName, e);
                 throw new StorageException("Decryption failed", e);
             }
         }).subscribeOn(Schedulers.boundedElastic());
@@ -118,9 +118,9 @@ public class EncryptionStorageServiceImpl implements EncryptionStorageService {
             try {
                 Path filePath = Paths.get(fallbackStoragePath, fileName + ".enc");
                 Files.deleteIfExists(filePath);
-                log.info(" Encrypted file deleted: {}", fileName);
+                log.info("Encrypted file deleted: {}", fileName);
             } catch (IOException e) {
-                log.error(" Failed to delete encrypted file: {}", fileName, e);
+                log.error("Failed to delete encrypted file: {}", fileName, e);
             }
         }).subscribeOn(Schedulers.boundedElastic()).then();
     }
@@ -129,12 +129,12 @@ public class EncryptionStorageServiceImpl implements EncryptionStorageService {
         if (encryptionKeyBase64 != null && !encryptionKeyBase64.isEmpty()) {
             byte[] decodedKey = Base64.getDecoder().decode(encryptionKeyBase64);
             secretKey = new SecretKeySpec(decodedKey, "AES");
-            log.info(" Encryption key loaded from configuration");
+            log.info("Encryption key loaded from configuration");
         } else {
             KeyGenerator keyGen = KeyGenerator.getInstance("AES");
             keyGen.init(256);
             secretKey = keyGen.generateKey();
-            log.warn(" Generated temporary encryption key - configure storage.encryption.key in production!");
+            log.warn("Generated temporary encryption key - configure storage.encryption.key in production!");
         }
     }
 }

@@ -96,14 +96,14 @@ public class DevKeyRotationServiceImpl implements IDevKeyRotationService {
     public void init() {
         try {
             loadInitialKeys();
-            log.info(" Dev Key Rotation Service initialized with key ID: {}", currentKeyId);
+            log.info("Dev Key Rotation Service initialized with key ID: {}", currentKeyId);
 
             if (rotationEnabled) {
-                log.info(" Dev automatic key rotation enabled (interval: {} days, grace period: {} days)",
+                log.info("Dev automatic key rotation enabled (interval: {} days, grace period: {} days)",
                     rotationIntervalDays, gracePeriodDays);
             }
         } catch (Exception e) {
-            log.error(" Failed to initialize Dev Key Rotation Service", e);
+            log.error("Failed to initialize Dev Key Rotation Service", e);
             throw new RuntimeException("Failed to initialize Dev Key Rotation Service", e);
         }
     }
@@ -163,7 +163,7 @@ public class DevKeyRotationServiceImpl implements IDevKeyRotationService {
         );
         keyCache.put(currentKeyId, keyInfo);
 
-        log.info(" Dev RSA key pair loaded with ID: {}", currentKeyId);
+        log.info("Dev RSA key pair loaded with ID: {}", currentKeyId);
     }
 
     private static boolean estRenseigne(String valeur) {
@@ -328,7 +328,7 @@ public class DevKeyRotationServiceImpl implements IDevKeyRotationService {
         }
 
         return Mono.fromCallable(() -> {
-            log.info(" Starting dev key rotation...");
+            log.info("Starting dev key rotation...");
 
             KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
             keyGen.initialize(RSA_KEY_SIZE, new SecureRandom());
@@ -339,7 +339,7 @@ public class DevKeyRotationServiceImpl implements IDevKeyRotationService {
             KeyPairInfo oldKeyInfo = keyCache.get(currentKeyId);
             if (oldKeyInfo != null) {
                 oldKeyInfo.expiresAt = Instant.now().plus(Duration.ofDays(gracePeriodDays));
-                log.info(" Old dev key {} will expire at {}", currentKeyId, oldKeyInfo.expiresAt);
+                log.info("Old dev key {} will expire at {}", currentKeyId, oldKeyInfo.expiresAt);
             }
 
             KeyPairInfo newKeyInfo = new KeyPairInfo(
@@ -356,7 +356,7 @@ public class DevKeyRotationServiceImpl implements IDevKeyRotationService {
             currentPrivateKey = newKeyPair.getPrivate();
             currentPublicKey = newKeyPair.getPublic();
 
-            log.info(" Dev key rotation completed. New key ID: {}, Old key ID: {}", newKeyId, oldKeyId);
+            log.info("Dev key rotation completed. New key ID: {}, Old key ID: {}", newKeyId, oldKeyId);
 
             return newKeyId;
         })
@@ -370,7 +370,7 @@ public class DevKeyRotationServiceImpl implements IDevKeyRotationService {
                 .set(REDIS_CURRENT_KEY_ID, newKeyId)
                 .then()
         )
-        .doOnError(e -> log.error(" Dev key rotation failed", e));
+        .doOnError(e -> log.error("Dev key rotation failed", e));
     }
 
     @Override
@@ -420,7 +420,7 @@ public class DevKeyRotationServiceImpl implements IDevKeyRotationService {
                 if (keyInfo.expiresAt != null && keyInfo.expiresAt.isBefore(now)) {
                     iterator.remove();
                     removed++;
-                    log.info(" Removed expired dev key: {}", entry.getKey());
+                    log.info("Removed expired dev key: {}", entry.getKey());
                 }
             }
 
@@ -431,12 +431,12 @@ public class DevKeyRotationServiceImpl implements IDevKeyRotationService {
     @Scheduled(cron = "0 0 0 * * ?")
     public void checkAndRotateIfNeeded() {
         if (isRotationNeeded()) {
-            log.info(" Automatic dev key rotation triggered");
+            log.info("Automatic dev key rotation triggered");
             rotateKeys()
                 .then(cleanupExpiredKeys())
                 .subscribe(
-                    removed -> log.info(" Dev cleanup completed, removed {} expired keys", removed),
-                    error -> log.error(" Scheduled dev rotation/cleanup failed", error)
+                    removed -> log.info("Dev cleanup completed, removed {} expired keys", removed),
+                    error -> log.error("Scheduled dev rotation/cleanup failed", error)
                 );
         }
     }
