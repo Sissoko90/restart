@@ -130,5 +130,6 @@ public class DocumentTypeConfig extends BaseEntity {
      * de produit invisible pour tout acheteur. market-service a besoin de
      * montrer ces photos ; il ne les detient pas, et ne doit pas les detenir.
      */
+    @Builder.Default
     private Boolean signableSansProprietaire = false;
 }

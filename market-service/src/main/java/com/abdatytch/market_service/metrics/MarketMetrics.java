@@ -52,6 +52,20 @@ public class MarketMetrics {
 
     private final MeterRegistry registre;
 
+    /**
+     * L'unique instance du chronometre, enregistree ici et nulle part
+     * ailleurs.
+     *
+     * <p>Micrometer rend le meter DEJA enregistre pour un identifiant donne
+     * et <b>ignore</b> la configuration du second appel. Deux
+     * {@code Timer.builder(DUREE_CATALOGUE)} dans cette classe — un au
+     * constructeur, un a l'accesseur — faisaient donc gagner le premier :
+     * poser {@code publishPercentileHistogram()} sur le second n'avait
+     * aucun effet, sans la moindre erreur pour le dire. Un seul
+     * enregistrement supprime la question.
+     */
+    private final Timer dureeCatalogue;
+
     private final AtomicInteger boutiquesEnAttente = new AtomicInteger();
     private final AtomicInteger produitsEnAttente = new AtomicInteger();
     private final AtomicInteger avisEnAttente = new AtomicInteger();
@@ -76,8 +90,9 @@ public class MarketMetrics {
         Counter.builder(PHOTOS_NON_SIGNEES)
                 .description("Photos rattachees que media-service n'a pas pu signer")
                 .register(registre);
-        Timer.builder(DUREE_CATALOGUE)
-                .description("Duree de rendu d'une page de catalogue")
+        this.dureeCatalogue = Timer.builder(DUREE_CATALOGUE)
+                .description("Temps de rendu d'une page de catalogue, bout en bout")
+                .publishPercentileHistogram()
                 .register(registre);
     }
 
@@ -105,8 +120,40 @@ public class MarketMetrics {
         }
     }
 
+    /**
+     * Le chronometre de rendu d'une page de catalogue.
+     *
+     * <h3>{@code publishPercentileHistogram} n'est pas un reglage de confort</h3>
+     *
+     * Un {@code Timer} ordinaire publie trois series : {@code _count},
+     * {@code _sum} et {@code _max}. Il ne publie <b>aucun</b>
+     * {@code _bucket} — et {@code histogram_quantile} ne travaille que sur des
+     * buckets.
+     *
+     * <p>Mesure du 2026-11-13 sur le service en marche : le panneau
+     * « Rendu d'une page de catalogue (centiles) » demandait trois centiles sur
+     * {@code market_catalogue_duree_seconds_bucket}, et l'alerte
+     * {@code CatalogueRalenti} comparait le centile 95 du jour a celui de la
+     * veille sur la meme serie. Cette serie n'existait pas. Le panneau affichait
+     * « No data », et surtout l'alerte ne pouvait <b>jamais</b> se declencher :
+     * {@code histogram_quantile} sur un ensemble vide ne rend rien, et une
+     * regle qui ne rend rien ne passe jamais a {@code firing}.
+     *
+     * <p>Le garde-fou {@code MetriquesDesAlertesTest} ne l'avait pas vu parce
+     * qu'il verifie qu'un NOM de metrique existe dans le code, pas son mode de
+     * publication. Un nom present et des buckets absents se lisent pareil pour
+     * lui. C'est la raison d'etre du test ajoute le meme jour, qui exige qu'une
+     * metrique interrogee en {@code _bucket} soit declaree avec un histogramme.
+     *
+     * <h3>Ce que cela coute</h3>
+     *
+     * Les buckets par defaut de Micrometer multiplient les series de cette
+     * metrique. C'est le prix d'un centile : une moyenne
+     * ({@code _sum / _count}) ne dit rien de la minorite d'utilisateurs qui
+     * attend, et c'est elle qu'un catalogue ralenti fait fuir.
+     */
     public Timer dureeDuCatalogue() {
-        return registre.timer(DUREE_CATALOGUE);
+        return dureeCatalogue;
     }
 
     /** Mis a jour par le releveur periodique, pas a chaque requete. */

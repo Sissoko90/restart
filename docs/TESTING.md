@@ -206,3 +206,56 @@ tomber **toute** la couverture à zéro, sans erreur ni avertissement.
 
 Le second argument, `-XX:+AllowRedefinitionToAddDeleteMethods`, est requis par
 BlockHound sur JDK 13+.
+
+---
+
+## 9. Les garde-fous structurels
+
+Une famille de tests de ce dépôt ne teste pas du comportement : elle lit le
+**dépôt lui-même** et refuse une forme. Ils existent parce que chacun d'eux
+correspond à un défaut réellement survenu, qu'aucun test ordinaire n'aurait
+attrapé — le code était juste, c'est son *branchement* qui ne l'était pas.
+
+| Garde-fou | Ce qu'il refuse |
+|---|---|
+| `MetriquesDesAlertesTest` | une alerte ou un panneau sur une métrique que rien n'émet ; une métrique définie sans appelant ; un centile sur une métrique sans histogramme |
+| `AnnotationsResilienceInertesTest` | une annotation Resilience4j nouvelle, puisque rien ne la tisse |
+| `AppelsSortantsBornesTest` | un appel sortant sans délai maximal |
+| `ModuleLivrableTest` | un module qui compile mais ne peut pas démarrer |
+| `ValeursInjecteesResolublesTest` | un `@Value` sans défaut et sans source déclarée |
+| `AucunCorpsHtmlEnJavaTest` | du balisage composé en Java |
+| `RoutageCoherentTest`, `CheminCibleTest` | une route déclarée qui ne route rien |
+| `RegleDeVisibiliteUniqueTest` | un second détenteur de la règle de visibilité |
+
+### La règle qui les gouverne : lire la structure, pas le texte
+
+Un garde-fou qui cherche une chaîne de caractères est satisfait par **sa propre
+documentation**. Ce dépôt l'a payé plusieurs fois :
+
+- un commentaire de POM qui contenait l'artefact exigé ;
+- un test qui comptait des routes YAML sans voir leur indentation ;
+- un garde-fou qui trouvait sa correspondance dans sa propre javadoc ;
+- le 2026-11-13, le garde-fou des centiles acceptait
+  `publishPercentileHistogram` **mentionné dans la javadoc** de la métrique qui
+  ne le portait pas — puis, une fois le Java dépouillé, acceptait le nom de la
+  métrique trouvé dans un **commentaire YAML**.
+
+D'où `SourcesDuDepot.sansCommentairesJava`, un automate qui retire les
+commentaires sans toucher aux chaînes — `/*` apparaît dans les littéraux de
+chemin, et une regex avalerait tout le code jusqu'au prochain `*/`.
+
+### Un garde-fou qu'on n'a pas vu échouer ne prouve rien
+
+Chaque garde-fou ajouté ici est **soumis à mutation** : on casse volontairement
+ce qu'il surveille, on vérifie qu'il rougit, on restaure. Trois des quatre
+mutations passées le 2026-11-13 ont tué leur garde-fou du premier coup ; la
+quatrième l'a traversé, et c'est elle qui a révélé la lecture par commentaire.
+
+### Attention à la normalisation
+
+Micrometer convertit un nom Java en nom Prometheus en remplaçant les points par
+des soulignés. **L'opération n'est pas réversible** : `user_service.users.creation.duration`
+devient `user_service_users_creation_duration`, et le chemin inverse donne
+`user.service.users.creation.duration`, qui n'existe pas. Un garde-fou doit
+normaliser dans le sens qui ne perd rien — du code vers la métrique — sans quoi
+il accuse une métrique parfaitement déclarée.

@@ -329,7 +329,7 @@ class ProjectServiceImplTest {
                     .verifyComplete();
 
             // Le compteur etait declare et jamais incremente.
-            verify(metriques).incrementProjectCreated(PORTEUR.toString());
+            verify(metriques).incrementProjectCreated();
         }
     }
 
@@ -356,7 +356,7 @@ class ProjectServiceImplTest {
                     .isFalse();
             verify(depot, never()).delete(any());
             verify(depot, never()).deleteById(any(UUID.class));
-            verify(metriques).incrementProjectDeleted(PORTEUR.toString());
+            verify(metriques).incrementProjectDeleted();
         }
 
         /**

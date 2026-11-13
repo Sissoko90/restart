@@ -1,5 +1,6 @@
 package com.abdatytch.commons.observability;
 
+import com.abdatytch.commons.plateforme.SourcesDuDepot;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -145,6 +147,28 @@ class MetriquesDesAlertesTest {
      * verifiant rien.
      */
     private static final int PLANCHER_CLASSES_DE_METRIQUES = 4;
+
+    /**
+     * Les annotations qui font appeler une methode par le cadre d'execution.
+     *
+     * <p>Exiger un appelant dans le depot pour une methode annotee ainsi est un
+     * faux positif : c'est Spring qui l'appelle.
+     */
+    private static final List<String> ANNOTATIONS_DE_CYCLE_DE_VIE = List.of(
+            "@PostConstruct", "@PreDestroy", "@Scheduled", "@EventListener",
+            "@Bean", "@Override");
+
+    /** La methode qui commence a {@code debut} porte-t-elle une telle annotation. */
+    private static boolean appeleeParLeCadre(String code, int debut) {
+        // Les deux cents caracteres qui precedent : assez pour couvrir les
+        // annotations et la javadoc courte, pas assez pour attraper celles de
+        // la methode d'avant.
+        String avant = code.substring(Math.max(0, debut - 200), debut);
+        return ANNOTATIONS_DE_CYCLE_DE_VIE.stream().anyMatch(avant::contains);
+    }
+
+    /** Le garde-fou se garde : sans methodes extraites, il ne verifie rien. */
+    private static final int PLANCHER_METHODES_DE_METRIQUES = 20;
 
     /** Identifiants candidats dans une expression PromQL, etiquettes deja retirees. */
     private static final Pattern METRIQUE = Pattern.compile("\\b([a-z][a-z0-9_]{3,})\\b");
@@ -307,59 +331,129 @@ class MetriquesDesAlertesTest {
     class ChaqueMetriqueAUnAppelant {
 
         /**
-         * Une metrique definie et jamais incrementee n'existe pas a l'execution.
+         * Une metrique definie et jamais alimentee n'existe pas a l'execution.
          *
-         * <p>Micrometer ne cree la serie qu'au premier appel : une methode
-         * {@code recordXxx} que personne n'appelle ne produit aucune metrique,
-         * donc aucun panneau et aucune alerte. Mesure au moment d'ecrire ce
-         * test : {@code recordTokenRevocation} etait dans ce cas, et
-         * {@code recordAccountLockout} etait appele depuis un seul des quatre
-         * chemins qui verrouillent.
+         * <h3>Ce que ce controle regardait, et pourquoi c'etait trop etroit</h3>
+         *
+         * Il ne lisait qu'un fichier — {@code AuthMetrics} — et ne cherchait
+         * que les methodes nommees {@code recordXxx}. La javadoc du controle de
+         * CLASSE le disait deja : « un garde-fou pose sur un seul module ne dit
+         * rien des dix autres ».
+         *
+         * <p>Il a fallu un onzieme module pour le payer. {@code MarketMetrics}
+         * est bien injectee — donc le controle de classe passait — mais TROIS
+         * de ses cinq methodes n'avaient aucun appelant : {@code horsPortee},
+         * {@code photosNonSignees} et {@code dureeDuCatalogue}. Toutes trois
+         * etaient visees par une alerte ou un panneau.
+         *
+         * <h3>Enregistrer a l'avance aggrave le probleme</h3>
+         *
+         * Micrometer ne cree la serie qu'au premier appel. Une classe qui
+         * enregistre ses compteurs dans son constructeur — ce que fait
+         * {@code MarketMetrics}, pour pouvoir alerter sur zero — rend la serie
+         * VISIBLE a zero. Le panneau affiche alors une ligne plate que rien ne
+         * distingue d'une absence d'incident.
+         *
+         * <h3>Toutes les methodes publiques, et pas seulement recordXxx</h3>
+         *
+         * Une classe de metriques n'a pas d'autre raison d'exposer une methode
+         * publique que d'alimenter une serie. Imposer un prefixe de nom ferait
+         * dependre le garde-fou d'une convention, et c'est precisement la
+         * convention qui a change d'un module a l'autre.
          */
         @Test
-        @DisplayName("aucune methode recordXxx d'AuthMetrics n'est orpheline")
+        @DisplayName("aucune methode d'aucune classe de metriques n'est orpheline")
         void aucuneMetriqueDefinieNEstOrpheline() throws IOException {
-            Path racine = racineDuDepot();
-            Path source = racine.resolve(
-                    "auth-service/src/main/java/com/abdatytch/auth_service/metrics/AuthMetrics.java");
-            assertThat(source)
-                    .withFailMessage("AuthMetrics introuvable : ce garde-fou serait vert "
-                            + "sans rien verifier")
-                    .exists();
+            List<Path> classes = classesDeMetriques();
+            assertThat(classes)
+                    .withFailMessage("aucune classe de metriques trouvee : ce garde-fou "
+                            + "serait vert sans rien verifier")
+                    .hasSizeGreaterThanOrEqualTo(PLANCHER_CLASSES_DE_METRIQUES);
 
-            Set<String> definies = new TreeSet<>();
-            Matcher m = Pattern.compile("public void (record[A-Za-z]+)\\s*\\(")
-                    .matcher(Files.readString(source));
-            while (m.find()) {
-                definies.add(m.group(1));
-            }
-            assertThat(definies)
-                    .withFailMessage("aucune methode extraite d'AuthMetrics : analyse cassee")
-                    .hasSizeGreaterThanOrEqualTo(8);
+            // Les methodes publiques, hors constructeur. Une methode publique
+            // d'une classe de metriques n'a qu'un usage : alimenter une serie.
+            Pattern methode = Pattern.compile(
+                    "public\\s+(?!class|record|enum|static\\s+final)"
+                    + "[\\w<>,.\\[\\]\\s]+?\\s(\\w+)\\s*\\(");
 
-            String sourcesAuth = concatenerSources(
-                    racine.resolve("auth-service/src/main/java"));
+            Map<String, Set<String>> orphelinesParClasse = new TreeMap<>();
+            int examinees = 0;
 
-            Set<String> orphelines = new TreeSet<>();
-            for (String methode : definies) {
-                // Un seul appel suffit, mais il doit venir d'ailleurs que de la
-                // definition : on compte les occurrences de « .methode( ».
-                if (!sourcesAuth.contains("." + methode + "(")) {
-                    orphelines.add(methode);
+            for (Path source : classes) {
+                String nomDeClasse = source.getFileName().toString()
+                        .replace(".java", "");
+                String code = Files.readString(source);
+
+                Set<String> definies = new TreeSet<>();
+                Matcher m = methode.matcher(code);
+                while (m.find()) {
+                    String nom = m.group(1);
+                    // Le constructeur porte le nom de la classe.
+                    if (nom.equals(nomDeClasse)) {
+                        continue;
+                    }
+                    // Une methode de CYCLE DE VIE est appelee par le cadre
+                    // d'execution, pas par du code du depot. L'exiger appelee
+                    // ferait un faux positif sur @PostConstruct — mesure sur
+                    // MetriquesDeSecurite.init, qui enregistre ses jauges au
+                    // demarrage et que personne n'appelle a la main.
+                    if (appeleeParLeCadre(code, m.start())) {
+                        continue;
+                    }
+                    definies.add(nom);
+                }
+                examinees += definies.size();
+
+                // Le module qui porte cette classe, et lui seul : une metrique
+                // s'alimente depuis le detenteur de la regle metier.
+                Path module = source;
+                while (module != null && !Files.exists(module.resolve("pom.xml"))) {
+                    module = module.getParent();
+                }
+                if (module == null) {
+                    continue;
+                }
+                String sourcesDuModule = concatenerSources(module.resolve("src/main/java"));
+
+                Set<String> orphelines = new TreeSet<>();
+                for (String nom : definies) {
+                    // On compte les appels VENUS D'AILLEURS : la definition
+                    // elle-meme ne compte pas, d'ou le retrait du fichier.
+                    String ailleurs = sourcesDuModule.replace(code, "");
+                    if (!ailleurs.contains("." + nom + "(")) {
+                        orphelines.add(nom);
+                    }
+                }
+                if (!orphelines.isEmpty()) {
+                    orphelinesParClasse.put(nomDeClasse, orphelines);
                 }
             }
 
-            assertThat(orphelines)
+            assertThat(examinees)
+                    .withFailMessage("%d methodes extraites : l'analyse est cassee",
+                            examinees)
+                    .isGreaterThanOrEqualTo(PLANCHER_METHODES_DE_METRIQUES);
+
+            assertThat(orphelinesParClasse)
                     .withFailMessage("""
-                            Ces metriques sont DEFINIES et jamais incrementees : %s
+                            Ces metriques sont DEFINIES et jamais alimentees :
 
-                            Micrometer ne cree la serie qu'au premier appel. Une metrique \
-                            jamais incrementee n'apparait pas sur /actuator/prometheus, donc \
-                            son panneau reste vide et son alerte ne se declenche jamais — \
-                            sans que rien ne distingue cela d'une absence d'incident.
+                            %s
 
-                            Soit l'appeler depuis le detenteur de la regle, soit la retirer.""",
-                            orphelines)
+                            Micrometer ne cree la serie qu'au premier appel — et quand \
+                            la classe l'enregistre a l'avance, la serie existe a ZERO, \
+                            ce qui est pire : le panneau affiche une ligne plate que \
+                            rien ne distingue d'une absence d'incident, et l'alerte ne \
+                            se declenche jamais.
+
+                            Mesure du 2026-11-13 : trois des cinq metriques de \
+                            MarketMetrics etaient dans ce cas — horsPortee, \
+                            photosNonSignees et dureeDuCatalogue — toutes trois visees \
+                            par une alerte ou un panneau.
+
+                            Soit l'appeler depuis le detenteur de la regle, soit la \
+                            retirer, soit retirer le panneau et l'alerte qui la visent.""",
+                            orphelinesParClasse)
                     .isEmpty();
         }
 
@@ -451,6 +545,173 @@ class MetriquesDesAlertesTest {
                 }
             }
             return false;
+        }
+    }
+
+    @Nested
+    @DisplayName("Chaque centile interroge a bien des buckets")
+    class CentilesEtBuckets {
+
+        /**
+         * <h2>Un nom qui existe ne dit pas que la serie existe</h2>
+         *
+         * Les deux tests ci-dessus verifient qu'une metrique INTERROGEE est
+         * emise quelque part. Pour y arriver ils normalisent le suffixe :
+         * {@code market_catalogue_duree_seconds_bucket} devient
+         * {@code market_catalogue_duree}, qui est bien declare. Le fantome
+         * n'en est donc pas un — et pourtant la serie interrogee n'existe pas.
+         *
+         * <p>Un {@code Timer} Micrometer publie {@code _count}, {@code _sum} et
+         * {@code _max}. Il ne publie de {@code _bucket} que si on le lui
+         * demande, par {@code publishPercentileHistogram()} dans le code ou par
+         * {@code management.metrics.distribution.percentiles-histogram} dans la
+         * configuration. Sans cela, {@code histogram_quantile} travaille sur un
+         * ensemble vide.
+         *
+         * <h2>Le panneau se voit, l'alerte ne se voit pas</h2>
+         *
+         * Un panneau sans buckets affiche « No data » : quelqu'un finira par le
+         * remarquer. Une ALERTE sans buckets ne passe jamais a {@code firing},
+         * parce qu'une expression qui ne rend aucune serie ne declenche rien.
+         * Elle reste verte, pour toujours, et sa verdeur se lit comme une
+         * absence d'incident.
+         *
+         * <p>Mesure du 2026-11-13 : le panneau « Rendu d'une page de catalogue
+         * (centiles) » et l'alerte {@code CatalogueRalenti} portaient tous deux
+         * sur {@code market_catalogue_duree_seconds_bucket}. Le chronometre
+         * etait enregistre sans histogramme, a deux endroits de la meme classe
+         * — et Micrometer, qui rend le meter deja enregistre, ignorait la
+         * configuration du second.
+         */
+        @Test
+        @DisplayName("toute metrique interrogee en _bucket est declaree avec un histogramme")
+        void toutBucketInterrogeExiste() throws IOException {
+            // Lecture du texte BRUT, et non du resultat de metriquesDe(...) :
+            // cette extraction-la normalise les suffixes, donc elle a deja
+            // transforme `..._seconds_bucket` en `...` et perdu precisement ce
+            // que ce test cherche.
+            Map<String, List<String>> interrogees = bucketsInterroges();
+
+            assertThat(interrogees)
+                    .withFailMessage("""
+                            Aucune expression du depot n'interroge de _bucket.
+
+                            Ce test ne prouverait plus rien. Soit les centiles ont                             disparu des tableaux de bord et des alertes, soit                             l'extraction des metriques ne les reconnait plus.""")
+                    .isNotEmpty();
+
+            String sourcesDuDepot = sourcesDeMetriques();
+            String configurationDuDepot = configurationDObservabilite();
+
+            Map<String, List<String>> sansHistogramme = new TreeMap<>();
+            for (Map.Entry<String, List<String>> entree : interrogees.entrySet()) {
+                if (!publieUnHistogramme(entree.getKey(), sourcesDuDepot, configurationDuDepot)) {
+                    sansHistogramme.put(entree.getKey(), entree.getValue());
+                }
+            }
+
+            assertThat(sansHistogramme)
+                    .withFailMessage("""
+                            Ces metriques sont interrogees en _bucket et n'en publient AUCUN :
+
+                            %s
+
+                            Un Timer Micrometer publie _count, _sum et _max. Les buckets                             demandent publishPercentileHistogram() a la declaration, ou la                             clef management.metrics.distribution.percentiles-histogram en                             configuration.
+
+                            Le panneau affichera « No data ». L'alerte, elle, ne se                             declenchera JAMAIS : une expression qui ne rend aucune serie ne                             passe pas a firing, et son vert permanent se lit comme une                             absence d'incident.
+
+                            Soit declarer l'histogramme, soit remplacer le centile par une                             expression que la metrique peut rendre — par exemple                             _sum / _count pour une moyenne.""".formatted(
+                            rendreLisible(sansHistogramme)))
+                    .isEmpty();
+        }
+
+        /**
+         * Cette metrique Prometheus est-elle declaree avec un histogramme ?
+         *
+         * <h3>La normalisation va dans UN SEUL sens</h3>
+         *
+         * Micrometer convertit le nom Java en nom Prometheus en remplacant les
+         * points par des soulignes. L'operation n'est pas reversible : un nom
+         * Java peut contenir des soulignes. Reconstruire le litteral en
+         * remplacant les soulignes par des points donne
+         * {@code user.service.users.creation.duration} la ou le code ecrit
+         * {@code user_service.users.creation.duration} — et le garde-fou
+         * accuse une metrique parfaitement declaree.
+         *
+         * <p>C'est l'erreur qu'a faite la premiere version de ce test, le jour
+         * meme ou il a ete ecrit. On normalise donc dans le sens qui ne perd
+         * rien : chaque litteral des sources est converti en nom Prometheus,
+         * puis compare.
+         */
+        private boolean publieUnHistogramme(String racine, String sources, String configuration) {
+            // La CLEF, et non une sous-chaine : « r2dbc.query » apparait dans
+            // une phrase sans y etre un reglage. On exige donc le nom suivi de
+            // deux-points et d'une valeur vraie.
+            for (String forme : List.of(racine, racine.replace('_', '.'))) {
+                if (Pattern.compile("(?m)^\\s*\"?\\[?" + Pattern.quote(forme)
+                        + "\\]?\"?\\s*:\\s*(?:true|yes)\\s*$")
+                        .matcher(configuration).find()) {
+                    return true;
+                }
+            }
+
+            Matcher litteraux = Pattern.compile("\"([a-z][a-zA-Z0-9_.]{3,})\"").matcher(sources);
+            while (litteraux.find()) {
+                if (!enNomPrometheus(litteraux.group(1)).equals(racine)) {
+                    continue;
+                }
+                if (histogrammeDansLInstruction(sources, litteraux.start())) {
+                    return true;
+                }
+                // Le litteral peut n'etre que la valeur d'une constante, et la
+                // declaration vivre ailleurs : on suit la constante.
+                for (String constante : constantesPortant(litteraux.group(1), sources)) {
+                    int usage = sources.indexOf(constante);
+                    while (usage >= 0) {
+                        if (histogrammeDansLInstruction(sources, usage)) {
+                            return true;
+                        }
+                        usage = sources.indexOf(constante, usage + 1);
+                    }
+                }
+            }
+            return false;
+        }
+
+        /** La conversion que fait Micrometer : les points deviennent des soulignes. */
+        private String enNomPrometheus(String litteralJava) {
+            return litteralJava.replace('.', '_');
+        }
+
+        /** Les constantes Java dont la valeur est ce litteral. */
+        private Set<String> constantesPortant(String litteral, String sources) {
+            Set<String> noms = new LinkedHashSet<>();
+            Matcher m = Pattern.compile(
+                    "\\b([A-Z][A-Z0-9_]{2,})\\s*=\\s*\"" + Pattern.quote(litteral) + "\"")
+                    .matcher(sources);
+            while (m.find()) {
+                noms.add(m.group(1));
+            }
+            return noms;
+        }
+
+        /**
+         * L'instruction qui contient cette position demande-t-elle un
+         * histogramme ?
+         *
+         * <p>Bornee a l'instruction — d'un point-virgule au suivant — et non au
+         * fichier : une classe qui declare dix metriques dont une seule porte
+         * un histogramme ne doit pas les faire toutes passer.
+         */
+        private boolean histogrammeDansLInstruction(String sources, int position) {
+            int fin = sources.indexOf(';', position);
+            if (fin < 0) {
+                fin = sources.length();
+            }
+            int debut = sources.lastIndexOf(';', position);
+            String instruction = sources.substring(Math.max(debut, 0), fin);
+            return instruction.contains("publishPercentileHistogram")
+                    || instruction.contains("serviceLevelObjectives")
+                    || instruction.contains("percentilesHistogram");
         }
     }
 
@@ -776,6 +1037,140 @@ class MetriquesDesAlertesTest {
                     .sorted()
                     .toList();
         }
+    }
+
+    /**
+     * Le YAML sans ses commentaires.
+     *
+     * <p>Le {@code #} n'est reconnu qu'en debut de ligne ou precede d'une
+     * espace : {@code #} colle a un caractere fait partie d'une valeur, par
+     * exemple une couleur hexadecimale dans un tableau de bord.
+     */
+    private static String sansCommentairesYaml(String yaml) {
+        StringBuilder sortie = new StringBuilder(yaml.length());
+        for (String ligne : yaml.split("\n", -1)) {
+            int diese = -1;
+            for (int i = 0; i < ligne.length(); i++) {
+                if (ligne.charAt(i) == '#' && (i == 0 || Character.isWhitespace(ligne.charAt(i - 1)))) {
+                    diese = i;
+                    break;
+                }
+            }
+            sortie.append(diese < 0 ? ligne : ligne.substring(0, diese)).append('\n');
+        }
+        return sortie.toString();
+    }
+
+    /**
+     * Les metriques interrogees en {@code _bucket}, par fichier.
+     *
+     * <p>Lit le TEXTE des regles et des tableaux de bord, sans passer par
+     * {@code metriquesDe(...)} : celle-ci normalise les suffixes pour comparer
+     * des racines, ce qui est juste pour son objet et detruit le signal ici.
+     *
+     * @return racine de la metrique vers les fichiers qui l'interrogent
+     */
+    private static Map<String, List<String>> bucketsInterroges() throws IOException {
+        Pattern bucket = Pattern.compile("\\b([a-z][a-z0-9_]*)_bucket\\b");
+        Map<String, List<String>> trouvees = new TreeMap<>();
+        Path racine = racineDuDepot();
+        for (Path depart : List.of(racine.resolve("observability"))) {
+            if (!Files.isDirectory(depart)) {
+                continue;
+            }
+            try (Stream<Path> fichiers = Files.walk(depart)) {
+                for (Path p : fichiers
+                        .filter(x -> x.toString().endsWith(".yml")
+                                || x.toString().endsWith(".yaml")
+                                || x.toString().endsWith(".json"))
+                        .toList()) {
+                    Matcher m = bucket.matcher(Files.readString(p));
+                    while (m.find()) {
+                        trouvees.computeIfAbsent(racineDeLaMetrique(m.group(1) + "_bucket"),
+                                cle -> new ArrayList<>())
+                                .add(racine.relativize(p).toString());
+                    }
+                }
+            }
+        }
+        trouvees.values().forEach(liste -> {
+            List<String> uniques = liste.stream().distinct().toList();
+            liste.clear();
+            liste.addAll(uniques);
+        });
+        return trouvees;
+    }
+
+    /**
+     * Toutes les sources de production du depot, concatenees.
+     *
+     * <p>Et non les seules classes {@code *Metrics} : un chronometre peut etre
+     * declare dans le service qui le mesure, et le restreindre aux classes de
+     * metriques creerait un angle mort exactement la ou le defaut est le plus
+     * probable — une metrique posee a la hate, hors du detenteur habituel.
+     */
+    private static String sourcesDeMetriques() throws IOException {
+        StringBuilder tout = new StringBuilder();
+        try (Stream<Path> fichiers = Files.walk(racineDuDepot())) {
+            for (Path p : fichiers
+                    .filter(x -> x.toString().contains("/src/main/java/"))
+                    .filter(x -> x.toString().endsWith(".java"))
+                    .toList()) {
+                // Les COMMENTAIRES sont retires. Sans cela, la javadoc qui
+                // explique pourquoi une metrique porte un histogramme suffit a
+                // faire croire qu'elle en porte un : l'instruction decoupee
+                // d'un point-virgule au suivant englobe le bloc de
+                // documentation qui la precede.
+                //
+                // Mesure du 2026-11-13 : la mutation qui retirait
+                // publishPercentileHistogram() du code de MarketMetrics
+                // laissait ce test VERT, parce que la javadoc juste au-dessus
+                // nommait la methode. C'est le defaut que decrit la javadoc de
+                // SourcesDuDepot — « un autre qui trouvait sa correspondance
+                // dans sa propre javadoc ».
+                tout.append(SourcesDuDepot.sansCommentairesJava(Files.readString(p)))
+                        .append('\n');
+            }
+        }
+        return tout.toString();
+    }
+
+    /**
+     * Toute la configuration d'observabilite du depot, concatenee.
+     *
+     * <p>Un histogramme peut etre demande sans toucher au code, par
+     * {@code management.metrics.distribution.percentiles-histogram.<nom>}.
+     * Ignorer cette voie ferait echouer le garde-fou sur une metrique
+     * parfaitement configuree.
+     */
+    private static String configurationDObservabilite() throws IOException {
+        StringBuilder tout = new StringBuilder();
+        Path racine = racineDuDepot();
+        for (Path depart : List.of(racine.resolve("config-repo"), racine)) {
+            if (!Files.isDirectory(depart)) {
+                continue;
+            }
+            try (Stream<Path> fichiers = Files.walk(depart, depart.equals(racine) ? 3 : 10)) {
+                for (Path p : fichiers
+                        .filter(x -> !x.toString().contains("/target/"))
+                        .filter(x -> x.toString().endsWith(".yml")
+                                || x.toString().endsWith(".yaml")
+                                || x.toString().endsWith(".properties"))
+                        .toList()) {
+                    // Les commentaires YAML partent, pour la meme raison que
+                    // ceux du Java : la mutation qui retirait
+                    // « r2dbc.query: true » laissait ce test vert, parce que le
+                    // commentaire juste au-dessus EXPLIQUAIT pourquoi la clef
+                    // etait la, et nommait donc la metrique.
+                    String contenu = sansCommentairesYaml(Files.readString(p));
+                    if (contenu.contains("percentiles-histogram")
+                            || contenu.contains("percentilesHistogram")) {
+                        tout.append(contenu).append('\n');
+                    }
+                }
+            }
+        }
+        return tout.toString();
     }
 
     private static String concatenerSources(Path racine) throws IOException {

@@ -6,8 +6,32 @@ import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
 
 /**
- * Métriques pour l'interface-service
- * Collecte les métriques de création/gestion des projets pour Grafana
+ * Metriques d'interface-service.
+ *
+ * <h2>AUCUNE ETIQUETTE NE PORTE L'IDENTIFIANT D'UNE PERSONNE</h2>
+ *
+ * Trois compteurs portaient {@code .tag("user_id", userId)}. Deux consequences,
+ * et la premiere est la plus grave :
+ *
+ * <ul>
+ *   <li>une metrique est conservee longtemps et exportee largement. Y inscrire
+ *       qui a cree un projet ou qui s'est connecte en fait un <b>journal
+ *       d'activite personnel</b>, hors de toute duree de conservation ;</li>
+ *   <li>la CARDINALITE est illimitee : une serie temporelle par compte. Cent
+ *       mille comptes font cent mille series pour un seul compteur, et c'est
+ *       ainsi qu'un Prometheus tombe.</li>
+ * </ul>
+ *
+ * <p>Le nombre de projets crees se lit sans savoir par qui. Qui l'a fait est
+ * une question d'AUDIT, et le journal d'audit existe pour cela — avec sa duree
+ * de conservation et son controle d'acces.
+ *
+ * <h2>Trois methodes ont ete retirees : elles n'avaient aucun appelant</h2>
+ *
+ * {@code startProjectCreationTimer}, {@code stopProjectCreationTimer} et
+ * {@code recordDatabaseQueryTime}. Leurs series n'etaient interrogees par aucun
+ * panneau ni aucune alerte. Trouvees par la generalisation de
+ * {@code MetriquesDesAlertesTest}, qui ne regardait jusque-la qu'AuthMetrics.
  */
 @Component
 public class ProjectMetrics {
@@ -27,17 +51,14 @@ public class ProjectMetrics {
     private static final String KAFKA_EVENT_FAILED_COUNTER = "interface.kafka.event.failed.total";
 
     // Timers
-    private static final String PROJECT_CREATION_TIMER = "interface.project.creation.duration";
     private static final String USER_REGISTRATION_TIMER = "interface.user.registration.duration";
-    private static final String DATABASE_QUERY_TIMER = "interface.database.query.duration";
 
     /**
      * Incrémente le compteur de projets créés
      */
-    public void incrementProjectCreated(String userId) {
+    public void incrementProjectCreated() {
         Counter.builder(PROJECT_CREATED_COUNTER)
                 .description("Nombre total de projets créés")
-                .tag("user_id", userId)
                 .register(meterRegistry)
                 .increment();
     }
@@ -45,10 +66,9 @@ public class ProjectMetrics {
     /**
      * Incrémente le compteur de projets supprimés
      */
-    public void incrementProjectDeleted(String userId) {
+    public void incrementProjectDeleted() {
         Counter.builder(PROJECT_DELETED_COUNTER)
                 .description("Nombre total de projets supprimés")
-                .tag("user_id", userId)
                 .register(meterRegistry)
                 .increment();
     }
@@ -66,10 +86,9 @@ public class ProjectMetrics {
     /**
      * Incrémente le compteur de connexions utilisateur
      */
-    public void incrementUserLogin(String userId) {
+    public void incrementUserLogin() {
         Counter.builder(USER_LOGIN_COUNTER)
                 .description("Nombre total de connexions utilisateur")
-                .tag("user_id", userId)
                 .register(meterRegistry)
                 .increment();
     }
@@ -98,22 +117,6 @@ public class ProjectMetrics {
     }
 
     /**
-     * Démarre un timer pour la création de projet
-     */
-    public Timer.Sample startProjectCreationTimer() {
-        return Timer.start(meterRegistry);
-    }
-
-    /**
-     * Arrête le timer de création de projet
-     */
-    public void stopProjectCreationTimer(Timer.Sample sample) {
-        sample.stop(Timer.builder(PROJECT_CREATION_TIMER)
-                .description("Durée de création d'un projet")
-                .register(meterRegistry));
-    }
-
-    /**
      * Démarre un timer pour l'inscription utilisateur
      */
     public Timer.Sample startUserRegistrationTimer() {
@@ -129,14 +132,4 @@ public class ProjectMetrics {
                 .register(meterRegistry));
     }
 
-    /**
-     * Enregistre la durée d'une requête base de données
-     */
-    public void recordDatabaseQueryTime(String operation, long durationMs) {
-        Timer.builder(DATABASE_QUERY_TIMER)
-                .description("Durée des requêtes base de données")
-                .tag("operation", operation)
-                .register(meterRegistry)
-                .record(java.time.Duration.ofMillis(durationMs));
-    }
 }

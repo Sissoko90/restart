@@ -166,6 +166,22 @@ management:
       # ObservationsSansParametresTest refuse qu'elle devienne vraie.
       include-parameter-values: false
 
+  metrics:
+    distribution:
+      percentiles-histogram:
+        # Les centiles de duree des requetes base, pour le panneau
+        # « Duree des requetes base (p50 / p95) » du tableau de bord
+        # « Securite et surfaces d'administration ».
+        #
+        # Sans cette ligne, l'observation `r2dbc.query` publie _count, _sum et
+        # _max — mais AUCUN _bucket. Le panneau affichait « No data » depuis sa
+        # creation. Mesure du 2026-11-13 sur le service en marche : sept series
+        # exposees, pas une seule en _bucket.
+        #
+        # auth-service est le seul module a porter r2dbc-proxy, donc le seul a
+        # emettre cette observation : la poser ailleurs ne ferait rien.
+        r2dbc.query: true
+
   endpoint:
     health:
       group:

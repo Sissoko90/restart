@@ -16,7 +16,9 @@ import com.abdatytch.market_service.repository.ProduitCaracteristiqueRepository;
 import com.abdatytch.market_service.repository.ProduitPhotoRepository;
 import com.abdatytch.market_service.repository.ProduitRepository;
 import com.abdatytch.market_service.repository.ProduitVarianteRepository;
+import com.abdatytch.market_service.metrics.MarketMetrics;
 import com.abdatytch.market_service.security.PorteeDuCatalogue;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -61,6 +63,8 @@ class ProduitServiceImplTest {
     private ProduitCaracteristiqueRepository caracteristiques;
     private BoutiqueRepository boutiques;
     private ClientMedia media;
+    private MarketMetrics metriques;
+    private SimpleMeterRegistry registre;
     private ProduitServiceImpl service;
 
     /** Les identifiants observes a l'entree de save(), avant toute assignation. */
@@ -103,8 +107,10 @@ class ProduitServiceImplTest {
         when(boutiques.findById(any(UUID.class)))
                 .thenReturn(Mono.just(boutique(StatutBoutique.APPROUVEE)));
 
+        registre = new SimpleMeterRegistry();
+        metriques = new MarketMetrics(registre);
         service = new ProduitServiceImpl(produits, photos, variantes, caracteristiques,
-                boutiques, media);
+                boutiques, media, metriques);
     }
 
     private static Boutique boutique(StatutBoutique statut) {
@@ -348,6 +354,99 @@ class ProduitServiceImplTest {
 
     // ==================================================================
     @Nested
+    @DisplayName("Les metriques sont ALIMENTEES")
+    class Metriques {
+
+        /**
+         * Une metrique declaree n'est pas une metrique alimentee.
+         *
+         * <p>{@code MarketMetrics} enregistre ses compteurs a zero dans son
+         * constructeur, pour qu'une alerte puisse porter sur zero. La serie est
+         * donc VISIBLE meme sans appelant — et un panneau affiche une ligne
+         * plate que rien ne distingue d'une absence d'incident.
+         *
+         * <p>Mesure du 2026-11-13 : trois des cinq metriques de ce module
+         * etaient dans ce cas.
+         */
+        @Test
+        @DisplayName("un refus de portee est COMPTE")
+        void refusCompte() {
+            var portee = new PorteeDuCatalogue("u-1", "SN", null, false, false);
+            when(produits.parIdentifiantVisible(any(), anyBoolean(), any(),
+                    anyBoolean(), anyString())).thenReturn(Mono.empty());
+
+            double avant = compteur(MarketMetrics.HORS_PORTEE);
+            service.fiche(portee, UUID.randomUUID()).onErrorResume(e -> Mono.empty()).block();
+
+            assertThat(compteur(MarketMetrics.HORS_PORTEE))
+                    .withFailMessage("""
+                            Un refus de portee n'est pas compte.
+
+                            La regle de visibilite travaillerait sans laisser de trace, \
+                            et une campagne de sondage passerait inapercue.""")
+                    .isEqualTo(avant + 1);
+        }
+
+        /**
+         * Une photo non signee est OMISE de la reponse : la fiche s'affiche
+         * sans elle, et aucune erreur HTTP ne le signale. Sans ce compteur, un
+         * catalogue entier peut perdre ses images en silence.
+         */
+        @Test
+        @DisplayName("une photo non signee est COMPTEE")
+        void photoNonSigneeComptee() {
+            Produit p = approuve();
+            var photo = new ProduitPhoto();
+            photo.setProduitId(p.getId());
+            photo.setDocumentId("doc-absent");
+            photo.setPosition(0);
+            photo.setPrincipale(Boolean.TRUE);
+
+            when(photos.findByProduitIdOrderByPositionAsc(any())).thenReturn(Flux.just(photo));
+            // media-service ne signe pas ce document : la carte revient VIDE.
+            when(media.liensSignes(anyList())).thenReturn(Mono.just(Map.of()));
+            when(produits.parIdentifiantVisible(any(), anyBoolean(), any(),
+                    anyBoolean(), any())).thenReturn(Mono.just(p));
+
+            double avant = compteur(MarketMetrics.PHOTOS_NON_SIGNEES);
+            var reponse = service.fiche(
+                    new PorteeDuCatalogue("u-1", "ML", MA_BOUTIQUE, true, false),
+                    p.getId()).block();
+
+            assertThat(compteur(MarketMetrics.PHOTOS_NON_SIGNEES))
+                    .withFailMessage("Une photo non signable n'est pas comptee : la "
+                            + "degradation reste silencieuse.")
+                    .isEqualTo(avant + 1);
+            assertThat(reponse.photos())
+                    .withFailMessage("Un identifiant non signe est rendu tel quel : le "
+                            + "client recevrait un lien qu'il ne peut pas suivre.")
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("le rendu d'une page de catalogue est CHRONOMETRE")
+        void catalogueChronometre() {
+            var portee = new PorteeDuCatalogue("u-1", "ML", null, false, false);
+            when(produits.catalogue(anyBoolean(), any(), anyBoolean(), anyString(),
+                    any(), anyInt(), anyInt())).thenReturn(Flux.empty());
+            when(produits.compterLeCatalogue(anyBoolean(), any(), anyBoolean(),
+                    anyString(), any())).thenReturn(Mono.just(0L));
+
+            long avant = metriques.dureeDuCatalogue().count();
+            service.catalogue(portee, null, null, 0, 20).block();
+
+            assertThat(metriques.dureeDuCatalogue().count())
+                    .withFailMessage("""
+                            Le rendu du catalogue n'est pas chronometre.
+
+                            L'alerte CatalogueRalenti compare le 95e centile a celui de \
+                            la veille : sans mesure, elle ne se declenche jamais.""")
+                    .isEqualTo(avant + 1);
+        }
+    }
+
+    // ==================================================================
+    @Nested
     @DisplayName("Le catalogue")
     class Catalogue {
 
@@ -386,5 +485,27 @@ class ProduitServiceImplTest {
                     .expectError(MarketException.class)
                     .verify();
         }
+    }
+
+    /**
+     * La valeur d'un compteur, lue dans le registre du test.
+     *
+     * <p>Cette lecture vivait dans {@code MarketMetrics}, en methode publique,
+     * sous le motif qu'un test ne devait pas avoir a reconstruire le nom de la
+     * metrique. Le motif etait FAUX : les noms sont des constantes publiques de
+     * cette classe, et ce test les nommait deja. La methode n'avait donc aucun
+     * appelant de production — et c'est exactement ce que
+     * {@code MetriquesDesAlertesTest} refuse, a juste titre : une classe de
+     * metriques dont une methode publique n'est jamais appelee est soit une
+     * metrique morte, soit du code de test egare dans le code livre.
+     *
+     * <p>Exclure du garde-fou les methodes qui RENDENT une valeur aurait ete
+     * la correction facile, et elle aurait ouvert un angle mort :
+     * {@code ProjectMetrics.startUserRegistrationTimer()} rend un
+     * {@code Timer.Sample} et alimente bel et bien une metrique.
+     */
+    private double compteur(String nom) {
+        var compteur = registre.find(nom).counter();
+        return compteur == null ? 0d : compteur.count();
     }
 }

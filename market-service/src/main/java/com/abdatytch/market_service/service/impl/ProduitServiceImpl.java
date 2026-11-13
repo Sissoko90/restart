@@ -19,6 +19,7 @@ import com.abdatytch.market_service.enums.StatutModeration;
 import com.abdatytch.market_service.exception.MarketException;
 import com.abdatytch.market_service.exception.RefusExplique;
 import com.abdatytch.market_service.mapper.MarketMapper;
+import com.abdatytch.market_service.metrics.MarketMetrics;
 import com.abdatytch.market_service.repository.BoutiqueRepository;
 import com.abdatytch.market_service.repository.ProduitCaracteristiqueRepository;
 import com.abdatytch.market_service.repository.ProduitPhotoRepository;
@@ -72,17 +73,20 @@ public class ProduitServiceImpl implements IProduitService {
     private final ProduitCaracteristiqueRepository caracteristiques;
     private final BoutiqueRepository boutiques;
     private final ClientMedia media;
+    private final MarketMetrics metriques;
 
     public ProduitServiceImpl(ProduitRepository produits, ProduitPhotoRepository photos,
                               ProduitVarianteRepository variantes,
                               ProduitCaracteristiqueRepository caracteristiques,
-                              BoutiqueRepository boutiques, ClientMedia media) {
+                              BoutiqueRepository boutiques, ClientMedia media,
+                              MarketMetrics metriques) {
         this.produits = produits;
         this.photos = photos;
         this.variantes = variantes;
         this.caracteristiques = caracteristiques;
         this.boutiques = boutiques;
         this.media = media;
+        this.metriques = metriques;
     }
 
     // ================================================================
@@ -118,10 +122,17 @@ public class ProduitServiceImpl implements IProduitService {
                     portee.boutiqueId(), portee.professionnel(), portee.pays(), motif);
         }
 
+        // La duree est mesuree BOUT EN BOUT : lecture, enrichissement et appel
+        // a media-service compris. Chronometrer la seule requete SQL
+        // masquerait precisement ce qui se degrade en premier — un N+1
+        // reintroduit dans l'enrichissement.
+        long debut = System.nanoTime();
         return trouves.collectList()
                 .flatMap(liste -> enrichir(liste, false))
                 .zipWith(total)
-                .map(paire -> PageResponse.de(paire.getT1(), paire.getT2(), page, taille));
+                .map(paire -> PageResponse.de(paire.getT1(), paire.getT2(), page, taille))
+                .doFinally(fin -> metriques.dureeDuCatalogue().record(
+                        System.nanoTime() - debut, java.util.concurrent.TimeUnit.NANOSECONDS));
     }
 
     @Override
@@ -130,7 +141,16 @@ public class ProduitServiceImpl implements IProduitService {
                         portee.boutiqueId(), portee.professionnel(), portee.pays())
                 // Hors portee ou inexistant : la MEME reponse. Un 403
                 // confirmerait que la reference existe.
-                .switchIfEmpty(Mono.error(MarketException.introuvable()))
+                //
+                // La metrique est posee ICI, sur le seul chemin ou un refus de
+                // portee se produit. Aucune etiquette ne porte l'identifiant
+                // demande : une metrique est conservee longtemps et exportee
+                // largement, et y inscrire ce que quelqu'un a tente de voir en
+                // ferait un journal d'activite personnel.
+                .switchIfEmpty(Mono.defer(() -> {
+                    metriques.horsPortee();
+                    return Mono.error(MarketException.introuvable());
+                }))
                 .flatMap(produit -> enrichir(List.of(produit), true))
                 .map(liste -> liste.get(0));
     }
@@ -407,12 +427,19 @@ public class ProduitServiceImpl implements IProduitService {
                     .distinct()
                     .toList();
 
-            return media.liensSignes(documents).flatMap(liens ->
-                    Flux.fromIterable(liste)
-                            .concatMap(produit -> composer(produit,
-                                    photosParProduit.getOrDefault(produit.getId(), List.of()),
-                                    liens, fiche))
-                            .collectList());
+            return media.liensSignes(documents).flatMap(liens -> {
+                // Une photo non signee est OMISE de la reponse : la fiche
+                // s'affiche sans elle. Degradation voulue, mais SILENCIEUSE —
+                // aucune erreur HTTP ne le signale. Sans ce compteur, un
+                // catalogue entier peut perdre ses images sans que rien ne
+                // l'indique.
+                metriques.photosNonSignees(documents.size() - liens.size());
+                return Flux.fromIterable(liste)
+                        .concatMap(produit -> composer(produit,
+                                photosParProduit.getOrDefault(produit.getId(), List.of()),
+                                liens, fiche))
+                        .collectList();
+            });
         });
     }
 

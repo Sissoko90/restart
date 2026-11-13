@@ -156,7 +156,7 @@ public class UserServiceImpl implements UserService {
                         .thenReturn(reponse)))
                 .doOnSuccess(response -> {
                     UserResponse userResponse = (UserResponse) response.get("user");
-                    metrics.incrementUserLogin(userResponse.getId().toString());
+                    metrics.incrementUserLogin();
                     log.info("Connexion réussie pour l'utilisateur: {} (via {})", userResponse.getId(), request.isEmail() ? "email" : "téléphone");
                 })
                 .doOnError(error -> log.warn("Échec de connexion pour: {} - {}", request.getIdentifier(), error.getMessage()));

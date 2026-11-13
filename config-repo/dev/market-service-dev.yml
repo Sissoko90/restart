@@ -177,11 +177,17 @@ resilience4j:
         baseConfig: default
       media-service-document:
         baseConfig: default
-  retry:
-    instances:
-      market-service:
-        baseConfig: default
-  ratelimiter:
-    instances:
-      market-service:
-        baseConfig: default
+
+# Ni retry ni ratelimiter ici, et c'est DELIBERE.
+#
+# Les deux etaient declares. Rien ne les appliquait : ce depot n'embarque pas
+# aspectjweaver, donc @Retry et @RateLimiter ne tissent rien, et market-service
+# n'emploie aucun operateur reactif equivalent. Une instance declaree sans
+# appliquant est une affirmation fausse dans la configuration — elle annonce un
+# service qui reessaie alors qu'il ne reessaie pas.
+#
+# Le reessai n'est de surcroit pas souhaitable partout : une lecture de profil
+# peut etre rejouee, une decision de moderation deja ecrite ne le doit pas. Le
+# jour ou l'un des deux sera voulu, il faudra l'appliquer par operateur sur le
+# chemin NOMME, comme le disjoncteur l'est dans ClientMedia et
+# ClientProfilUtilisateur — pas le declarer globalement ici.

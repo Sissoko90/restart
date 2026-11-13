@@ -7,6 +7,7 @@ import com.abdatytch.market_service.enums.StatutModeration;
 import com.abdatytch.market_service.exception.MarketException;
 import com.abdatytch.market_service.exception.RefusExplique;
 import com.abdatytch.market_service.mapper.MarketMapper;
+import com.abdatytch.market_service.metrics.MarketMetrics;
 import com.abdatytch.market_service.repository.AvisRepository;
 import com.abdatytch.market_service.repository.ProduitRepository;
 import com.abdatytch.market_service.security.PorteeDuCatalogue;
@@ -37,10 +38,13 @@ public class AvisServiceImpl implements IAvisService {
 
     private final AvisRepository avis;
     private final ProduitRepository produits;
+    private final MarketMetrics metriques;
 
-    public AvisServiceImpl(AvisRepository avis, ProduitRepository produits) {
+    public AvisServiceImpl(AvisRepository avis, ProduitRepository produits,
+                           MarketMetrics metriques) {
         this.avis = avis;
         this.produits = produits;
+        this.metriques = metriques;
     }
 
     @Override
@@ -95,7 +99,15 @@ public class AvisServiceImpl implements IAvisService {
             PorteeDuCatalogue portee, UUID produitId) {
         return produits.parIdentifiantVisible(produitId, portee.administrateur(),
                         portee.boutiqueId(), portee.professionnel(), portee.pays())
-                .switchIfEmpty(Mono.error(MarketException.introuvable()));
+                // Noter un article qu'on n'a pas le droit de voir est un refus
+                // de PORTEE, au meme titre qu'ouvrir sa fiche. Le compter ici
+                // aussi : sinon la metrique ne verrait qu'une moitie du trafic
+                // refuse, et une campagne de sondage par les avis passerait
+                // inapercue.
+                .switchIfEmpty(Mono.defer(() -> {
+                    metriques.horsPortee();
+                    return Mono.error(MarketException.introuvable());
+                }));
     }
 
     private Avis nouveau(UUID produitId, String authUserId) {

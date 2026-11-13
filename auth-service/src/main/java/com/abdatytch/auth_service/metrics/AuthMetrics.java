@@ -65,9 +65,19 @@ public class AuthMetrics {
             .increment();
     }
     
+    /**
+     * Duree de generation d'un jeton JWT.
+     *
+     * <p>{@code publishPercentileHistogram} est indispensable ici : le tableau
+     * de bord d'auth-service trace p50, p95 et p99 de cette duree, et
+     * {@code histogram_quantile} ne travaille que sur des {@code _bucket}. Un
+     * {@code Timer} ordinaire n'en publie aucun — le panneau affichait
+     * « No data » depuis sa creation. Mesure du 2026-11-13.
+     */
     public void recordTokenGeneration(Duration duration) {
         Timer.builder("auth.token.generation")
             .description("Durée de génération des tokens JWT")
+            .publishPercentileHistogram()
             .register(registry)
             .record(duration);
     }

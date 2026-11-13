@@ -240,6 +240,59 @@ Le seuil porte sur la **durée** et non sur la taille — une file de trente
 articles un lundi matin est saine, la même file inchangée depuis six heures ne
 l'est pas.
 
+### Un chronomètre ne publie pas de centiles tout seul
+
+`market.catalogue.duree` est déclaré avec `publishPercentileHistogram()`, et
+c'est **nécessaire**, pas décoratif. Un `Timer` Micrometer ordinaire publie
+`_count`, `_sum` et `_max` — aucun `_bucket`. Or le panneau « Rendu d'une page
+de catalogue (centiles) » et l'alerte `CatalogueRalenti` interrogent tous deux
+`market_catalogue_duree_seconds_bucket`.
+
+Sans l'histogramme, le panneau affiche « No data » — ce qui finit par se
+remarquer. L'alerte, elle, **ne se déclenche jamais** : une expression PromQL
+qui ne rend aucune série ne passe pas à `firing`, et son vert permanent se lit
+comme une absence d'incident.
+
+Le chronomètre n'est enregistré **qu'une fois**, dans le constructeur. Micrometer
+rend le compteur déjà enregistré pour un identifiant donné et ignore la
+configuration du second appel : deux `Timer.builder` dans la même classe
+faisaient gagner le premier, et poser `publishPercentileHistogram()` sur le
+second n'avait aucun effet — sans la moindre erreur pour le dire.
+
+`MetriquesDesAlertesTest` refuse désormais toute métrique interrogée en
+`_bucket` qui n'en déclare pas. Il lit les sources **dépouillées de leurs
+commentaires** : sans cela, la javadoc qui explique pourquoi un histogramme est
+là suffisait à faire croire qu'il y était.
+
+### Journaux
+
+`logback-spring.xml` pose `traceId` et `spanId` sur chaque ligne — sans eux, un
+journal ne se recoupe pas avec une trace, et il faut relire la requête à la main
+pour savoir de laquelle on parle.
+
+L'appender Loki n'est actif que sous les profils `prod`, `staging` et
+`observability` : en développement, il n'y a pas de collecteur à joindre et
+chaque ligne coûterait une tentative de connexion.
+
+### Résilience
+
+Deux disjoncteurs, un par dépendance : `user-service-profil` et
+`media-service-document`. **Jamais un partagé** — deux dépendances sous le même
+nom tombent ensemble, donc une panne de user-service fermerait le chemin de
+media-service.
+
+Ils sont appliqués par **opérateur Reactor**, dans `ClientProfilUtilisateur` et
+`ClientMedia`, et non par annotation : ce dépôt n'embarque pas `aspectjweaver`,
+donc `@CircuitBreaker` n'y tisse rien. `DisjoncteurSortantTest` prouve qu'un
+disjoncteur ouvert **n'exécute plus l'appel**, et pas seulement qu'il change
+d'état.
+
+Ni `retry` ni `ratelimiter` ne sont déclarés, et c'est délibéré : rien ne les
+appliquerait. Une instance déclarée sans appliquant est une affirmation fausse
+dans la configuration. Le réessai n'est d'ailleurs pas souhaitable partout —
+une lecture de profil peut être rejouée, une décision de modération déjà écrite
+ne le doit pas.
+
 ---
 
 ## 9. Les notifications de décision

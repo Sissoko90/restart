@@ -86,7 +86,7 @@ public class ProjectServiceImpl implements ProjectService {
                                 // ProjectMetrics est injecte ici et dans
                                 // UserServiceImpl, et n'etait appele par aucun des
                                 // deux : neuf metriques definies, zero emission.
-                                metrics.incrementProjectCreated(savedProject.getUserId().toString());
+                                metrics.incrementProjectCreated();
 
                                 // Publier l'événement Kafka de manière asynchrone
                                 publishProjectCreatedEvent(savedProject, user)
@@ -188,7 +188,7 @@ public class ProjectServiceImpl implements ProjectService {
                     return projectRepository.save(project);
                 })
                 .doOnSuccess(project -> {
-                    metrics.incrementProjectDeleted(project.getUserId().toString());
+                    metrics.incrementProjectDeleted();
 
                     // Publier événement de suppression
                     publishProjectDeletedEvent(project)

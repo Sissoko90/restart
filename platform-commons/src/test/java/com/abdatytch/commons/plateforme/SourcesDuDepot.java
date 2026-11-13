@@ -25,7 +25,7 @@ import java.util.stream.Stream;
  * est satisfait par une declaration inerte, par un commentaire, ou par sa
  * propre documentation.
  */
-final class SourcesDuDepot {
+public final class SourcesDuDepot {
 
     private SourcesDuDepot() {
     }
@@ -90,7 +90,7 @@ final class SourcesDuDepot {
      * tout le code jusqu'au prochain {@code *}{@code /}. Ce defaut exact a
      * rendu {@code CouvertureDesCheminsAdminTest} rouge sur du code correct.
      */
-    static String sansCommentairesJava(String source) {
+    public static String sansCommentairesJava(String source) {
         StringBuilder sortie = new StringBuilder(source.length());
         boolean chaine = false;
         boolean ligne = false;

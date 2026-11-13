@@ -8,7 +8,9 @@ import com.abdatytch.market_service.exception.MarketException;
 import com.abdatytch.market_service.exception.RefusExplique;
 import com.abdatytch.market_service.repository.AvisRepository;
 import com.abdatytch.market_service.repository.ProduitRepository;
+import com.abdatytch.market_service.metrics.MarketMetrics;
 import com.abdatytch.market_service.security.PorteeDuCatalogue;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -51,7 +53,8 @@ class AvisServiceImplTest {
             return Mono.just(sauve);
         });
         when(produits.reconcilierLesAgregats(any())).thenReturn(Mono.empty());
-        service = new AvisServiceImpl(avis, produits);
+        service = new AvisServiceImpl(avis, produits,
+                new MarketMetrics(new SimpleMeterRegistry()));
     }
 
     private static Produit produit(UUID boutique) {
