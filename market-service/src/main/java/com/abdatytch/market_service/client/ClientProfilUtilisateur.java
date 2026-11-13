@@ -51,7 +51,7 @@ public class ClientProfilUtilisateur {
     static final String EN_TETE_SECRET = "X-Internal-Secret";
 
     /** Profil non resolu : aucun pays, donc aucune portee elargie. */
-    public static final Profil INCONNU = new Profil(null, null);
+    public static final Profil INCONNU = new Profil(null, null, null);
 
     private final WebClient webClient;
     private final IDisjoncteurSortant disjoncteur;
@@ -113,16 +113,27 @@ public class ClientProfilUtilisateur {
      * Ce qu'on lit de {@code UserDetailDTO}.
      *
      * <p>{@code @JsonIgnoreProperties} : user-service en rend une vingtaine de
-     * champs, et ce service n'en veut que deux. Les declarer tous ferait de ce
+     * champs, et ce service n'en veut que trois. Les declarer tous ferait de ce
      * record un second exemplaire d'un contrat qui ne lui appartient pas, a
      * tenir d'accord a chaque evolution.
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Profil(String country, String role) {
+    public record Profil(String country, String role, String email) {
 
         /** Le pays, ou {@code null} s'il n'est pas connu. */
         public String pays() {
             return country == null || country.isBlank() ? null : country.trim();
+        }
+
+        /**
+         * L'adresse, ou {@code null}.
+         *
+         * <p>Lue ICI et non saisie : prevenir un vendeur a une adresse qu'il
+         * aurait lui-meme declaree permettrait de faire partir un courriel au
+         * nom de la plateforme vers n'importe qui.
+         */
+        public String adresse() {
+            return email == null || email.isBlank() ? null : email.trim();
         }
     }
 }

@@ -29,6 +29,17 @@ import java.util.UUID;
 /**
  * Les trois files de moderation.
  *
+ * <h2>Le vendeur est PREVENU, et les avis ne le sont pas encore</h2>
+ *
+ * Une decision sur une boutique ou sur un article part en courriel au vendeur.
+ * Sans cela il devait revenir voir, et pour un refus il attendait une reponse
+ * deja arrivee — puis redeposait le meme dossier.
+ *
+ * <p>Les AVIS ne declenchent aucune notification, et c'est une decision a
+ * prendre plutot qu'un oubli : prevenir l'auteur d'un avis refuse ouvre une
+ * discussion avec quelqu'un qui n'est pas client de la plateforme mais d'une
+ * boutique. La question se tranchera avec le besoin.
+ *
  * <h2>Le motif est OBLIGATOIRE au refus, et il est RENDU</h2>
  *
  * Verifie ici et non par une annotation : la regle depend du SENS de la
@@ -59,15 +70,18 @@ public class ModerationServiceImpl implements IModerationService {
     private final AvisRepository avis;
     private final CacheDePortee cache;
     private final MarketMetrics metriques;
+    private final NotificateurDeDecision notificateur;
 
     public ModerationServiceImpl(BoutiqueRepository boutiques, ProduitRepository produits,
                                  AvisRepository avis, CacheDePortee cache,
-                                 MarketMetrics metriques) {
+                                 MarketMetrics metriques,
+                                 NotificateurDeDecision notificateur) {
         this.boutiques = boutiques;
         this.produits = produits;
         this.avis = avis;
         this.cache = cache;
         this.metriques = metriques;
+        this.notificateur = notificateur;
     }
 
     @Override
@@ -89,6 +103,18 @@ public class ModerationServiceImpl implements IModerationService {
                         // remettrait en cache.
                         .flatMap(sauvee -> cache.evincer(sauvee.getAuthUserId())
                                 .thenReturn(sauvee)))
+                // La notification suit l'ecriture, et NE PEUT PAS la faire
+                // echouer : la decision est deja en base.
+                //
+                // L'onErrorResume est ici ET dans NotificateurDeDecision, et ce
+                // n'est pas une redondance inutile : le notificateur avale les
+                // erreurs de SA chaine, celui-ci couvre ce qui echapperait
+                // avant — une dependance non injectee, une exception levee de
+                // façon synchrone. La garantie est ecrite a l'endroit ou elle
+                // est promise.
+                .flatMap(sauvee -> notifier(notificateur.boutique(
+                        sauvee.getAuthUserId(), sauvee.getNom(), sens(decision),
+                        decision.motif())).thenReturn(sauvee))
                 .doOnNext(sauvee -> {
                     metriques.decisionDeModeration("boutique", decision.sens().name());
                     log.info("Boutique {} : {} par {}", sauvee.getId(),
@@ -153,6 +179,15 @@ public class ModerationServiceImpl implements IModerationService {
                     log.info("Produit {} : {} par {}", sauve.getId(),
                             sauve.getStatutModeration(), moderateurId);
                 })
+                // Le destinataire est le PROPRIETAIRE de la boutique, retrouve
+                // depuis l'article. L'article ne porte pas d'identifiant de
+                // compte : la propriete passe par la boutique, et un second
+                // chemin finirait par dire autre chose.
+                .flatMap(sauve -> notifier(boutiques.findById(sauve.getBoutiqueId())
+                        .flatMap(boutique -> notificateur.produit(
+                                boutique.getAuthUserId(), sauve.getNom(),
+                                sens(decision), decision.motif())))
+                        .thenReturn(sauve))
                 .map(produit -> MarketMapper.versReponse(produit, null, List.of(),
                         List.of(), List.of()));
     }
@@ -192,6 +227,43 @@ public class ModerationServiceImpl implements IModerationService {
                             sauve.getStatutModeration(), moderateurId);
                 })
                 .map(MarketMapper::versReponse);
+    }
+
+    /**
+     * Rend un envoi de notification INCAPABLE de faire echouer son appelant.
+     *
+     * <p>Une decision de moderation est ecrite en base avant que cette methode
+     * soit atteinte. Propager une erreur de notification annulerait donc la
+     * REPONSE d'une operation deja faite : le moderateur verrait un echec,
+     * reprendrait sa decision, et la file afficherait un element qui n'y est
+     * plus.
+     *
+     * <p>L'echec est journalise par {@code NotificateurDeDecision}. Ce qui est
+     * avale ici est ce qui lui echapperait.
+     */
+    private Mono<Void> notifier(Mono<Void> envoi) {
+        return envoi.onErrorResume(erreur -> {
+            log.warn("Notification de decision impossible ({}) : la decision reste "
+                    + "acquise", erreur.getClass().getSimpleName());
+            return Mono.empty();
+        });
+    }
+
+    /**
+     * Le sens d'une decision, pour le message envoye au vendeur.
+     *
+     * <p>Deux enumerations plutot qu'une : {@code DecisionRequest.Sens} decrit
+     * ce qu'un moderateur DEMANDE — approuver, rejeter, suspendre — tandis que
+     * {@code NotificateurDeDecision.Sens} porte ce qu'on ECRIT a quelqu'un.
+     * Les confondre reviendrait a faire dependre le texte d'un courriel du
+     * vocabulaire d'une API.
+     */
+    private static NotificateurDeDecision.Sens sens(DecisionRequest decision) {
+        return switch (decision.sens()) {
+            case APPROUVER -> NotificateurDeDecision.Sens.APPROUVE;
+            case REJETER -> NotificateurDeDecision.Sens.REJETE;
+            case SUSPENDRE -> NotificateurDeDecision.Sens.SUSPENDU;
+        };
     }
 
     /** Un refus sans motif n'apprend rien a celui qui doit corriger. */

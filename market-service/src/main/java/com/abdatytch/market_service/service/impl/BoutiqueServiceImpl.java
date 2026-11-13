@@ -13,6 +13,7 @@ import com.abdatytch.market_service.exception.RefusExplique;
 import com.abdatytch.market_service.mapper.MarketMapper;
 import com.abdatytch.market_service.repository.BoutiqueDocumentRepository;
 import com.abdatytch.market_service.repository.BoutiqueRepository;
+import com.abdatytch.market_service.repository.ProduitRepository;
 import com.abdatytch.market_service.service.IBoutiqueService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,15 +44,18 @@ public class BoutiqueServiceImpl implements IBoutiqueService {
 
     private final BoutiqueRepository boutiques;
     private final BoutiqueDocumentRepository pieces;
+    private final ProduitRepository produits;
     private final ClientProfilUtilisateur profils;
     private final CacheDePortee cache;
 
     public BoutiqueServiceImpl(BoutiqueRepository boutiques,
                                BoutiqueDocumentRepository pieces,
+                               ProduitRepository produits,
                                ClientProfilUtilisateur profils,
                                CacheDePortee cache) {
         this.boutiques = boutiques;
         this.pieces = pieces;
+        this.produits = produits;
         this.profils = profils;
         this.cache = cache;
     }
@@ -110,7 +114,7 @@ public class BoutiqueServiceImpl implements IBoutiqueService {
                 .switchIfEmpty(Mono.error(MarketException.introuvable()))
                 .flatMap(boutique -> {
                     if (boutique.getStatut() == StatutBoutique.SUSPENDUE) {
-                        return Mono.error(RefusExplique.etatIncompatible(
+                        return Mono.<Boutique>error(RefusExplique.etatIncompatible(
                                 "Cette boutique est suspendue. Contactez la moderation "
                                         + "avant toute modification."));
                     }
@@ -130,11 +134,68 @@ public class BoutiqueServiceImpl implements IBoutiqueService {
                         log.info("Boutique {} renvoyee en moderation : RCCM ou NIF modifie",
                                 boutique.getId());
                         return boutiques.save(boutique)
-                                .flatMap(sauvee -> cache.evincer(authUserId).thenReturn(sauvee));
+                                .flatMap(sauvee -> cache.evincer(authUserId)
+                                        .thenReturn(sauvee));
                     }
                     return boutiques.save(boutique);
                 })
+                .flatMap(sauvee -> rattraperLePays(authUserId, sauvee))
                 .map(MarketMapper::versReponse);
+    }
+
+    /**
+     * Aligne le pays de la boutique sur celui du profil, et le PROPAGE.
+     *
+     * <h3>Pourquoi cette methode existe</h3>
+     *
+     * {@code propagerLePays} etait ecrite et n'avait AUCUN appelant. Le pays
+     * est recopie depuis user-service a la creation de la boutique, puis plus
+     * jamais relu : un vendeur qui demenage gardait indefiniment le pays de son
+     * inscription, et ses articles restaient visibles du mauvais public.
+     *
+     * <h3>Pourquoi ICI, et pas a la resolution de portee</h3>
+     *
+     * La portee se calcule sur le chemin de CHAQUE requete de catalogue. Y
+     * detecter une divergence ajouterait une comparaison et, le jour ou elle
+     * diverge, deux ecritures — sur l'ecran le plus consulte du service.
+     *
+     * <p>La modification de la boutique est le moment naturel : le vendeur est
+     * en train d'editer son dossier. La limite est assumee et elle est ecrite :
+     * un vendeur qui demenage sans jamais rouvrir son dossier garde l'ancien
+     * pays. Un releve periodique le rattraperait, et ce n'est pas encore
+     * justifie.
+     *
+     * <h3>Cela ne renvoie PAS en moderation</h3>
+     *
+     * Contrairement au RCCM, le pays n'est pas une piece a verifier : il vient
+     * de user-service, qui fait foi. Renvoyer en moderation ferait repasser un
+     * dossier valide devant une equipe qui n'aurait rien a y examiner.
+     *
+     * <p>Le cache de portee est en revanche EVINCE : le pays du vendeur change
+     * aussi ce que lui-meme voit du catalogue.
+     *
+     * <h3>Un profil injoignable ne touche a rien</h3>
+     *
+     * {@code pays()} rend alors nul, et la boutique garde sa valeur. Ecraser le
+     * pays par nul rendrait les articles invisibles de tous — une panne de
+     * user-service viderait les vitrines.
+     */
+    private Mono<Boutique> rattraperLePays(String authUserId, Boutique boutique) {
+        return profils.pour(authUserId)
+                .flatMap(profil -> Mono.justOrEmpty(profil.pays()))
+                .filter(pays -> !pays.equals(boutique.getPays()))
+                .flatMap(nouveauPays -> {
+                    String ancien = boutique.getPays();
+                    boutique.setPays(nouveauPays);
+                    log.info("Boutique {} : pays {} -> {}, propagation aux articles",
+                            boutique.getId(), ancien, nouveauPays);
+                    return boutiques.save(boutique)
+                            .flatMap(sauvee -> produits
+                                    .propagerLePays(sauvee.getId(), nouveauPays)
+                                    .then(cache.evincer(authUserId))
+                                    .thenReturn(sauvee));
+                })
+                .defaultIfEmpty(boutique);
     }
 
     @Override

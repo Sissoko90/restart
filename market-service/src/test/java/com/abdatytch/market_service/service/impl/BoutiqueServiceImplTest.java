@@ -12,6 +12,7 @@ import com.abdatytch.market_service.exception.MarketException;
 import com.abdatytch.market_service.exception.RefusExplique;
 import com.abdatytch.market_service.repository.BoutiqueDocumentRepository;
 import com.abdatytch.market_service.repository.BoutiqueRepository;
+import com.abdatytch.market_service.repository.ProduitRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -25,6 +26,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -44,6 +46,7 @@ class BoutiqueServiceImplTest {
 
     private BoutiqueRepository boutiques;
     private BoutiqueDocumentRepository pieces;
+    private ProduitRepository produits;
     private ClientProfilUtilisateur profils;
     private CacheDePortee cache;
     private BoutiqueServiceImpl service;
@@ -52,11 +55,18 @@ class BoutiqueServiceImplTest {
     void preparer() {
         boutiques = mock(BoutiqueRepository.class);
         pieces = mock(BoutiqueDocumentRepository.class);
+        produits = mock(ProduitRepository.class);
+        when(produits.propagerLePays(any(), anyString())).thenReturn(Mono.empty());
         profils = mock(ClientProfilUtilisateur.class);
+        // Par defaut, le profil rend le MEME pays que la boutique : la
+        // modification ne doit alors rien propager.
+        when(profils.pour(anyString())).thenReturn(
+                Mono.just(new ClientProfilUtilisateur.Profil("ML", "USER",
+                        "vendeur@exemple.invalid")));
         cache = mock(CacheDePortee.class);
         when(cache.evincer(anyString())).thenReturn(Mono.empty());
         when(boutiques.save(any())).thenAnswer(a -> Mono.just(a.getArgument(0)));
-        service = new BoutiqueServiceImpl(boutiques, pieces, profils, cache);
+        service = new BoutiqueServiceImpl(boutiques, pieces, produits, profils, cache);
     }
 
     private static CreationBoutiqueRequest demande(String rccm, String nif) {
@@ -86,7 +96,7 @@ class BoutiqueServiceImplTest {
         void paysEtStatut() {
             when(boutiques.findByAuthUserId(MOI)).thenReturn(Mono.empty());
             when(profils.pour(MOI)).thenReturn(
-                    Mono.just(new ClientProfilUtilisateur.Profil("ML", "USER")));
+                    Mono.just(new ClientProfilUtilisateur.Profil("ML", "USER", "v@exemple.invalid")));
 
             StepVerifier.create(service.ouvrir(MOI, demande("R1", "N1")))
                     .assertNext(reponse -> {
@@ -108,7 +118,7 @@ class BoutiqueServiceImplTest {
         void identifiantLaisseALaBase() {
             when(boutiques.findByAuthUserId(MOI)).thenReturn(Mono.empty());
             when(profils.pour(MOI)).thenReturn(
-                    Mono.just(new ClientProfilUtilisateur.Profil("ML", "USER")));
+                    Mono.just(new ClientProfilUtilisateur.Profil("ML", "USER", "v@exemple.invalid")));
 
             service.ouvrir(MOI, demande("R1", "N1")).block();
 
@@ -211,6 +221,73 @@ class BoutiqueServiceImplTest {
                             .isEqualTo(StatutBoutique.APPROUVEE))
                     .verifyComplete();
             verify(cache, never()).evincer(anyString());
+        }
+
+        /**
+         * {@code propagerLePays} n'avait AUCUN appelant.
+         *
+         * <p>Le pays est recopie depuis user-service a la creation, puis plus
+         * jamais relu : un vendeur qui demenage gardait le pays de son
+         * inscription, et ses articles restaient visibles du mauvais public.
+         */
+        @Test
+        @DisplayName("un pays change est repris ET propage aux articles")
+        void paysChangePropage() {
+            when(boutiques.findByAuthUserId(MOI))
+                    .thenReturn(Mono.just(existante(StatutBoutique.APPROUVEE)));
+            when(profils.pour(MOI)).thenReturn(Mono.just(
+                    new ClientProfilUtilisateur.Profil("SN", "USER", "v@exemple.invalid")));
+
+            StepVerifier.create(service.modifier(MOI, demande("R1", "N1")))
+                    .assertNext(reponse -> assertThat(reponse.pays()).isEqualTo("SN"))
+                    .verifyComplete();
+
+            verify(produits).propagerLePays(any(), eq("SN"));
+            verify(cache).evincer(MOI);
+        }
+
+        /**
+         * Un pays INCHANGE ne doit declencher aucune ecriture.
+         *
+         * <p>Propager a chaque modification ferait une mise a jour de tous les
+         * articles d'une boutique pour un simple changement de numero de
+         * telephone.
+         */
+        @Test
+        @DisplayName("un pays inchange ne propage rien")
+        void paysInchange() {
+            when(boutiques.findByAuthUserId(MOI))
+                    .thenReturn(Mono.just(existante(StatutBoutique.APPROUVEE)));
+
+            service.modifier(MOI, demande("R1", "N1")).block();
+
+            verify(produits, never()).propagerLePays(any(), anyString());
+        }
+
+        /**
+         * Un profil injoignable ne doit RIEN ecraser.
+         *
+         * <p>Ecraser le pays par nul rendrait les articles invisibles de tous :
+         * une panne de user-service viderait les vitrines.
+         */
+        @Test
+        @DisplayName("un profil injoignable laisse le pays intact")
+        void profilInjoignable() {
+            when(boutiques.findByAuthUserId(MOI))
+                    .thenReturn(Mono.just(existante(StatutBoutique.APPROUVEE)));
+            when(profils.pour(MOI)).thenReturn(Mono.just(ClientProfilUtilisateur.INCONNU));
+
+            StepVerifier.create(service.modifier(MOI, demande("R1", "N1")))
+                    .assertNext(reponse -> assertThat(reponse.pays())
+                            .withFailMessage("""
+                                    Le pays a ete efface parce que user-service n'a pas \
+                                    repondu.
+
+                                    Un article sans pays n'est visible de personne : \
+                                    une panne de user-service viderait les vitrines.""")
+                            .isEqualTo("ML"))
+                    .verifyComplete();
+            verify(produits, never()).propagerLePays(any(), anyString());
         }
 
         @Test

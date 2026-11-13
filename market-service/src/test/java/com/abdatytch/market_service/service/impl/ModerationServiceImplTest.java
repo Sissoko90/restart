@@ -49,6 +49,7 @@ class ModerationServiceImplTest {
     private ProduitRepository produits;
     private AvisRepository avis;
     private CacheDePortee cache;
+    private NotificateurDeDecision notificateur;
     private ModerationServiceImpl service;
 
     @BeforeEach
@@ -62,8 +63,15 @@ class ModerationServiceImplTest {
         when(produits.save(any())).thenAnswer(a -> Mono.just(a.getArgument(0)));
         when(avis.save(any())).thenAnswer(a -> Mono.just(a.getArgument(0)));
         when(produits.reconcilierLesAgregats(any())).thenReturn(Mono.empty());
+        // La decision sur un article retrouve le proprietaire par sa boutique :
+        // sans ce simulacre, findById rend null et la chaine casse.
+        when(boutiques.findById(any(UUID.class)))
+                .thenReturn(Mono.just(boutique(StatutBoutique.APPROUVEE)));
+        notificateur = mock(NotificateurDeDecision.class);
+        when(notificateur.boutique(any(), any(), any(), any())).thenReturn(Mono.empty());
+        when(notificateur.produit(any(), any(), any(), any())).thenReturn(Mono.empty());
         service = new ModerationServiceImpl(boutiques, produits, avis, cache,
-                new MarketMetrics(new SimpleMeterRegistry()));
+                new MarketMetrics(new SimpleMeterRegistry()), notificateur);
     }
 
     private static Boutique boutique(StatutBoutique statut) {
@@ -77,6 +85,9 @@ class ModerationServiceImplTest {
     private static Produit produit() {
         Produit produit = new Produit();
         produit.setId(UUID.randomUUID());
+        produit.setNom("Bazin riche");
+        // La boutique, sans quoi la notification ne retrouve pas le vendeur.
+        produit.setBoutiqueId(UUID.randomUUID());
         produit.setStatutModeration(StatutModeration.EN_ATTENTE);
         return produit;
     }
@@ -213,6 +224,100 @@ class ModerationServiceImplTest {
                             new DecisionRequest(DecisionRequest.Sens.APPROUVER, null)))
                     .expectError(MarketException.class)
                     .verify();
+        }
+    }
+
+    // ==================================================================
+    @Nested
+    @DisplayName("Le vendeur est prevenu")
+    class Notification {
+
+        /**
+         * Sans cela, le vendeur devait revenir voir.
+         *
+         * <p>Pour un refus, il attendait une reponse deja arrivee — puis
+         * redeposait le meme dossier.
+         */
+        @Test
+        @DisplayName("une decision sur une boutique part au vendeur, avec son motif")
+        void boutiquePrevenue() {
+            Boutique b = boutique(StatutBoutique.EN_ATTENTE);
+            b.setNom("Sankadi Textile");
+            when(boutiques.findById(b.getId())).thenReturn(Mono.just(b));
+
+            service.deciderBoutique(MODERATEUR, b.getId(),
+                    new DecisionRequest(DecisionRequest.Sens.REJETER, "RCCM illisible"))
+                    .block();
+
+            verify(notificateur).boutique("vendeur-1", "Sankadi Textile",
+                    NotificateurDeDecision.Sens.REJETE, "RCCM illisible");
+        }
+
+        @Test
+        @DisplayName("une decision sur un article part au PROPRIETAIRE de sa boutique")
+        void articlePrevenu() {
+            Produit p = produit();
+            when(produits.findById(any(UUID.class))).thenReturn(Mono.just(p));
+
+            service.deciderProduit(MODERATEUR, p.getId(),
+                    new DecisionRequest(DecisionRequest.Sens.APPROUVER, null)).block();
+
+            verify(notificateur).produit("vendeur-1", "Bazin riche",
+                    NotificateurDeDecision.Sens.APPROUVE, null);
+        }
+
+        /**
+         * Les deux enumerations de sens ne doivent pas diverger.
+         *
+         * <p>{@code DecisionRequest.Sens} decrit ce qu'un moderateur DEMANDE ;
+         * {@code NotificateurDeDecision.Sens} porte ce qu'on ECRIT a quelqu'un.
+         * Une correspondance fausse enverrait « approuvee » a un vendeur dont
+         * la boutique vient d'etre suspendue.
+         */
+        @Test
+        @DisplayName("une suspension est annoncee comme une suspension")
+        void suspensionAnnoncee() {
+            Boutique b = boutique(StatutBoutique.APPROUVEE);
+            b.setNom("Sankadi");
+            when(boutiques.findById(b.getId())).thenReturn(Mono.just(b));
+
+            service.deciderBoutique(MODERATEUR, b.getId(),
+                    new DecisionRequest(DecisionRequest.Sens.SUSPENDRE, "verification"))
+                    .block();
+
+            verify(notificateur).boutique("vendeur-1", "Sankadi",
+                    NotificateurDeDecision.Sens.SUSPENDU, "verification");
+        }
+
+        /**
+         * UNE NOTIFICATION NE FAIT JAMAIS ECHOUER UNE DECISION.
+         *
+         * <p>La decision est deja ecrite quand le notificateur est appele.
+         * Propager son erreur annulerait une moderation parce qu'un courriel
+         * n'est pas parti — et le moderateur, voyant l'echec, la rendrait deux
+         * fois.
+         */
+        @Test
+        @DisplayName("une notification en panne n'annule pas la decision")
+        void notificationEnPanne() {
+            Boutique b = boutique(StatutBoutique.EN_ATTENTE);
+            when(boutiques.findById(b.getId())).thenReturn(Mono.just(b));
+            when(notificateur.boutique(any(), any(), any(), any()))
+                    .thenReturn(Mono.error(new IllegalStateException("notification HS")));
+
+            StepVerifier.create(service.deciderBoutique(MODERATEUR, b.getId(),
+                            new DecisionRequest(DecisionRequest.Sens.APPROUVER, null)))
+                    .assertNext(reponse -> assertThat(reponse.statut())
+                            .withFailMessage("""
+                                    Une notification en panne fait echouer la decision.
+
+                                    Elle est deja ecrite en base : le moderateur \
+                                    verrait un echec, reprendrait sa decision, et la \
+                                    file afficherait un element qui n'y est plus.""")
+                            .isEqualTo(StatutBoutique.APPROUVEE))
+                    .verifyComplete();
+
+            verify(boutiques).save(any());
         }
     }
 

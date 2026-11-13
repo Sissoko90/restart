@@ -81,6 +81,15 @@ Les signaler à nouveau est inutile ; les **approfondir** est utile.
 | `AdminController` lisait `@Value("${admin.mail.from}")`, clef retirée de la configuration et **sans valeur par défaut** : tout démarrage neuf échouait sur un marqueur non résolu. Le défaut était masqué en local par une variable morte restée dans `.env`, Spring résolvant aussi contre l'environnement par liaison souple | Modérée | Clef remplacée par `admin.default.email`, qui est ce que le champ désignait. `ValeursInjecteesResolublesTest` refuse toute clef injectée sans source déclarée, et ne lit jamais l'environnement de celui qui l'exécute |
 | Sept endpoints `/internal/**` étaient publiés dans les collections Postman avec l'URL de la passerelle, qui ne les route pas. Outre les 404, cela invitait à router `/internal` — ce qui aurait détruit l'isolement qui fait leur sécurité | Faible | Les requêtes internes pointent le port du service et portent `X-Internal-Secret` |
 
+## Corrigé le 2026-11-13
+
+| Faille | Gravité | Correction |
+|---|---|---|
+| **Injection de paramètre par la passerelle.** Le proxy recollait la chaîne de requête DÉCODÉE dans l'URL cible. Un appelant envoyant UN paramètre dont la valeur contient un ET encodé — `q=Bazin%26injecte=1` — voyait la passerelle en transmettre DEUX au service aval : `q=Bazin` et `injecte=1`. Tout réglage que le service lit et que l'appelant ne devrait pas gouverner — une taille de page, un filtre, un drapeau — devenait atteignable depuis l'extérieur. Le même mécanisme vaut pour `%3D` | Élevée | La chaîne de requête est retransmise en BRUT : la passerelle transmet exactement ce qu'elle a reçu, et le service décode une fois. `ChaineDeRequeteTest` le vérifie |
+| `PathTraversalWebFilter` **décodait la chaîne de requête deux fois** : `getQuery()` la rend déjà décodée, puis `URLDecoder` la décodait encore. Il contrôlait donc à une profondeur de deux quand le service en décode une. Un double encodage dans la requête traversait le contrôle, la règle sur `%25` s'appliquant à une valeur déjà décodée | Modérée | Lecture en brut, et contrôle à la profondeur que le service voit |
+| Le même filtre refusait **un pour-cent littéral dans un paramètre** en 400 ET le comptait comme tentative de traversée. Une recherche « Solde -50% » ou « TVA 18% » faisait approcher le blocage de l'adresse de l'acheteur (compteur de violations) | Modérée | `%25` n'est fatal que dans un CHEMIN ; dans une requête, c'est l'encodage ordinaire d'un pour-cent |
+| Les jokers `LIKE` n'étaient pas échappés dans la recherche du catalogue : un terme valant `%` ramenait tout le catalogue autorisé au lieu des articles correspondants | Faible | Échappement de `\`, `%` et `_`, avec `ESCAPE` explicite. Mesuré sur PostgreSQL : 4 résultats sur 4 avant, 1 après |
+
 ## Contrôles automatiques
 
 Chaque modification passe par :

@@ -59,10 +59,27 @@ public class PathTraversalWebFilter implements WebFilter {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String path = exchange.getRequest().getPath().value();
-        String query = exchange.getRequest().getURI().getQuery();
+        // getRawQuery() et NON getQuery().
+        //
+        // getQuery() rend la chaine DEJA DECODEE. isPathTraversal la decodait
+        // alors une seconde fois — exactement ce que sa javadoc interdit, et
+        // avec les deux consequences attendues :
+        //
+        //   - faux positif : une valeur contenant un pour-cent litteral, envoyee
+        //     correctement en %25, arrivait ici sous la forme « % » et faisait
+        //     lever URLDecoder (« Incomplete trailing escape »). Une recherche
+        //     « Solde -50% » etait donc refusee en 400 ET comptee comme une
+        //     tentative de traversee, jusqu'au blocage de l'adresse ;
+        //   - contournement : %252e%252e devenait %2e%2e au premier decodage,
+        //     puis « .. » au second — mais la regle sur %25, appliquee a une
+        //     valeur deja decodee, ne voyait plus rien a refuser.
+        //
+        // En brut, le filtre examine ce que le client a REELLEMENT envoye, et
+        // decode une seule fois : la meme profondeur que le service en aval.
+        String query = exchange.getRequest().getURI().getRawQuery();
         
         // Vérifier le path
-        if (isPathTraversal(path)) {
+        if (isPathTraversal(path, Origine.CHEMIN)) {
             log.warn("Path traversal attempt detected in path: {} from IP: {}", 
                 path, clientIpResolver.resolve(exchange));
             exchange.getResponse().setStatusCode(HttpStatus.BAD_REQUEST);
@@ -71,7 +88,7 @@ public class PathTraversalWebFilter implements WebFilter {
         }
         
         // Vérifier les query parameters
-        if (query != null && isPathTraversal(query)) {
+        if (query != null && isPathTraversal(query, Origine.REQUETE)) {
             log.warn("Path traversal attempt detected in query: {} from IP: {}", 
                 query, clientIpResolver.resolve(exchange));
             exchange.getResponse().setStatusCode(HttpStatus.BAD_REQUEST);
@@ -129,7 +146,21 @@ public class PathTraversalWebFilter implements WebFilter {
      * amont ({@code %25}) : decoder deux fois serait precisement ce qui permet
      * de contourner un controle a decodage unique.
      */
-    private boolean isPathTraversal(String value) {
+    /**
+     * D'ou vient la valeur examinee.
+     *
+     * <p>La regle sur {@code %25} en depend, et c'est la seule difference :
+     * dans un CHEMIN, encoder un pour-cent n'a aucun usage legitime sur cette
+     * API et signale un double encodage. Dans une chaine de REQUETE, {@code %25}
+     * est l'encodage ordinaire d'un pour-cent litteral — « Solde -50% », « TVA
+     * 18% », un motif de recherche.
+     */
+    private enum Origine {
+        CHEMIN,
+        REQUETE
+    }
+
+    private boolean isPathTraversal(String value, Origine origine) {
         if (value == null || value.isEmpty()) {
             return false;
         }
@@ -141,8 +172,9 @@ public class PathTraversalWebFilter implements WebFilter {
             return true;
         }
 
-        // Double encodage : refuse avant tout decodage.
-        if (minuscule.contains("%25")) {
+        // Double encodage : refuse avant tout decodage, et SEULEMENT dans un
+        // chemin. Voir Origine.
+        if (origine == Origine.CHEMIN && minuscule.contains("%25")) {
             return true;
         }
 

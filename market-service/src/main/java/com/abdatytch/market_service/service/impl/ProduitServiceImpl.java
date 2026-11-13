@@ -94,19 +94,29 @@ public class ProduitServiceImpl implements IProduitService {
                                                          UUID categorieId, String recherche,
                                                          int page, int taille) {
         int decalage = page * taille;
+        String motif = motifDeRecherche(recherche);
 
-        Flux<Produit> trouves = (recherche == null || recherche.isBlank())
-                ? produits.catalogue(portee.administrateur(), portee.boutiqueId(),
-                        portee.professionnel(), portee.pays(), categorieId, taille, decalage)
-                : produits.rechercher(portee.administrateur(), portee.boutiqueId(),
-                        portee.professionnel(), portee.pays(),
-                        "%" + recherche.trim() + "%", taille, decalage);
+        Flux<Produit> trouves;
+        Mono<Long> total;
 
-        // Le COUNT porte la MEME clause de visibilite que la liste. Sans cela
-        // il compterait des articles que l'appelant n'a pas le droit de voir,
-        // et l'ecran annoncerait des pages vides.
-        Mono<Long> total = produits.compterLeCatalogue(portee.administrateur(),
-                portee.boutiqueId(), portee.professionnel(), portee.pays(), categorieId);
+        // Le COUNT porte EXACTEMENT les memes conditions que la liste, clause
+        // de visibilite ET terme de recherche compris.
+        //
+        // Sans la clause, il compterait des articles que l'appelant n'a pas le
+        // droit de voir. Sans le terme — le defaut d'origine — une recherche
+        // ramenant deux articles annoncait le total du catalogue entier, et
+        // l'ecran affichait quarante-neuf pages vides.
+        if (motif == null) {
+            trouves = produits.catalogue(portee.administrateur(), portee.boutiqueId(),
+                    portee.professionnel(), portee.pays(), categorieId, taille, decalage);
+            total = produits.compterLeCatalogue(portee.administrateur(),
+                    portee.boutiqueId(), portee.professionnel(), portee.pays(), categorieId);
+        } else {
+            trouves = produits.rechercher(portee.administrateur(), portee.boutiqueId(),
+                    portee.professionnel(), portee.pays(), motif, taille, decalage);
+            total = produits.compterLaRecherche(portee.administrateur(),
+                    portee.boutiqueId(), portee.professionnel(), portee.pays(), motif);
+        }
 
         return trouves.collectList()
                 .flatMap(liste -> enrichir(liste, false))
@@ -273,6 +283,42 @@ public class ProduitServiceImpl implements IProduitService {
     // ================================================================
     // AIDES
     // ================================================================
+
+    /**
+     * Le motif {@code LIKE} d'une recherche, jokers ECHAPPES.
+     *
+     * <h3>Le defaut que cette methode ferme</h3>
+     *
+     * Le motif etait {@code "%" + terme + "%"}, sans echappement. Un terme
+     * valant {@code %} donnait donc {@code %%%} — trois jokers — qui
+     * correspond a TOUT. Et un terme valant {@code _} correspondait a
+     * n'importe quel caractere.
+     *
+     * <p>Ce n'est pas une faille : la clause de visibilite s'applique quand
+     * meme, et la taille de page est plafonnee. C'est un defaut de
+     * COMPORTEMENT, et il se voit des qu'un article s'appelle « Solde -50% » ou
+     * « T_shirt » : le chercher par son nom exact ne le trouve pas, tandis
+     * qu'une frappe de travers ramene le catalogue.
+     *
+     * <h3>L'ANTISLASH D'ABORD</h3>
+     *
+     * Son remplacement doit preceder les deux autres, faute de quoi les
+     * antislashs qu'ils introduisent seraient echappes a leur tour : le terme
+     * {@code %} deviendrait {@code \\%}, c'est-a-dire un antislash litteral
+     * suivi d'un joker — l'inverse du but.
+     *
+     * @return le motif, ou {@code null} si la recherche est vide
+     */
+    static String motifDeRecherche(String recherche) {
+        if (recherche == null || recherche.isBlank()) {
+            return null;
+        }
+        String terme = recherche.trim()
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+        return "%" + terme + "%";
+    }
 
     private Mono<Produit> renvoyerEnModeration(Produit produit) {
         produit.setStatutModeration(StatutModeration.EN_ATTENTE);

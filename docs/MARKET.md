@@ -242,14 +242,80 @@ l'est pas.
 
 ---
 
-## 9. Ce qui reste ouvert
+## 9. Les notifications de décision
 
-- **Les notifications de décision.** Un vendeur dont la boutique est approuvée
-  ou rejetée ne reçoit rien : il doit revenir voir. Le branchement sur
-  notification-service est à faire, et les textes lui appartiennent.
-- **La recherche** est un `ILIKE` sur le nom et la description. Le volume ne
-  justifie pas encore un index textuel, qui se paie à chaque écriture.
-- **Le pays d'une boutique qui déménage** doit être propagé à ses articles
-  (`propagerLePays`). L'opération existe ; aucun endpoint ne l'appelle encore,
-  parce que changer de pays est une décision de modération dont la forme reste
-  à trancher.
+Une décision sur une boutique ou sur un article part en courriel au vendeur.
+Sans cela il devait revenir voir ; pour un refus, il attendait une réponse déjà
+arrivée, puis redéposait le même dossier.
+
+- Les **textes vivent dans notification-service** (`market.boutique-decision`,
+  `market.produit-decision`), comme tous les messages de la plateforme.
+  market-service ne fournit que des variables.
+- Le **sens est déjà traduit** — « approuvée », « refusée » — parce qu'écrire
+  `APPROUVEE` dans un courriel ferait lire une valeur d'énumération à quelqu'un
+  qui vend du tissu.
+- **Une notification ne fait jamais échouer une décision.** Elle est déjà écrite
+  en base ; propager son erreur annulerait la réponse d'une opération faite, et
+  le modérateur la rendrait deux fois.
+- **L'adresse vient de user-service**, jamais d'un champ saisi : prévenir à une
+  adresse déclarée par l'intéressé permettrait d'envoyer un courriel au nom de
+  la plateforme vers n'importe qui.
+
+Les **avis** ne déclenchent aucune notification, et c'est une décision à
+prendre plutôt qu'un oubli : prévenir l'auteur d'un avis refusé ouvre une
+discussion avec quelqu'un qui n'est pas client de la plateforme mais d'une
+boutique.
+
+---
+
+## 10. Le pays d'une boutique qui déménage
+
+Le pays est recopié depuis user-service à la création. S'il changeait sans être
+relu, un vendeur ayant déménagé garderait indéfiniment le pays de son
+inscription, et ses articles resteraient visibles du mauvais public.
+
+Il est donc relu **à chaque modification de la boutique**, et propagé à ses
+articles. Trois points :
+
+- **Pas à la résolution de portée.** Celle-ci se calcule sur le chemin de
+  chaque requête de catalogue ; y détecter une divergence ajouterait une
+  comparaison, et le jour où elle diverge, deux écritures — sur l'écran le plus
+  consulté.
+- **Cela ne renvoie pas en modération.** Contrairement au RCCM, le pays n'est
+  pas une pièce à vérifier : il vient de user-service, qui fait foi.
+- **Un profil injoignable ne touche à rien.** Écraser le pays par `null`
+  rendrait les articles invisibles de tous : une panne de user-service viderait
+  les vitrines.
+
+**Limite assumée :** un vendeur qui déménage sans jamais rouvrir son dossier
+garde l'ancien pays. Un relevé périodique le rattraperait ; ce n'est pas encore
+justifié.
+
+---
+
+## 11. La recherche
+
+`ILIKE` sur le nom et la description. Deux défauts y ont été corrigés le
+2026-11-13 :
+
+- **Les jokers n'étaient pas échappés.** Le motif était `"%" + terme + "%"` :
+  un terme valant `%` donnait `%%%`, trois jokers, qui correspondent à tout.
+  Mesuré sur PostgreSQL, sur quatre articles dont « Solde -50% » : non échappé
+  **4 résultats sur 4**, échappé **1**. Ce n'était pas une faille — la clause de
+  visibilité s'applique et la page est plafonnée — mais un article nommé
+  « Solde -50% » ne se trouvait pas par son nom.
+- **Le total ignorait le terme.** `compterLeCatalogue` était appelé même quand
+  une recherche était active : une recherche ramenant deux articles annonçait le
+  total du catalogue entier, et l'écran affichait des pages vides.
+
+Le volume ne justifie **pas encore** un index textuel : un index GIN sur deux
+colonnes se paie à chaque écriture. Le jour où `ILIKE` ne suffira plus, c'est
+ici qu'il faudra regarder — pas dans la clause de visibilité, qui ne change pas.
+
+---
+
+## 12. Ce qui reste ouvert
+
+- **Les avis ne sont pas notifiés** — voir §9, c'est une décision à prendre.
+- **Pas d'index textuel** — voir §11, c'est un seuil de volume à atteindre.
+- **Le pays d'un vendeur qui ne rouvre jamais son dossier** — voir §10.

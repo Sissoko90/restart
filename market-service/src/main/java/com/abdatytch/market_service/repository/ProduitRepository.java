@@ -61,13 +61,42 @@ public interface ProduitRepository extends ReactiveCrudRepository<Produit, UUID>
      * encore, et un index GIN sur deux colonnes se paie a chaque ecriture. Le
      * jour ou cela ne suffira plus, c'est ici qu'il faudra regarder — pas dans
      * la clause de visibilite, qui ne change pas.
+     *
+     * <h3>{@code ESCAPE} est EXPLICITE</h3>
+     *
+     * PostgreSQL prend deja l'antislash par defaut, donc cette clause ne change
+     * rien aujourd'hui. Elle est ecrite parce que le caractere d'echappement
+     * est une convention du moteur, et que {@code ProduitServiceImpl} echappe
+     * de son cote en SUPPOSANT laquelle : enoncer l'hypothese la rend
+     * verifiable, et {@code RechercheEchappeeTest} la verifie.
      */
     @Query("SELECT p.* FROM produit p JOIN boutique b ON b.id = p.boutique_id "
             + "WHERE " + PorteeDuCatalogue.CLAUSE_SQL
-            + " AND (p.nom ILIKE :motif OR p.description ILIKE :motif) "
+            + " AND (p.nom ILIKE :motif ESCAPE '\\' "
+            + "     OR p.description ILIKE :motif ESCAPE '\\') "
             + "ORDER BY p.created_at DESC LIMIT :limite OFFSET :decalage")
     Flux<Produit> rechercher(boolean administrateur, UUID boutiqueId, boolean professionnel,
                              String pays, String motif, int limite, int decalage);
+
+    /**
+     * Le nombre de resultats de la RECHERCHE.
+     *
+     * <h3>Le defaut que cette methode ferme</h3>
+     *
+     * {@code compterLeCatalogue} etait appele meme quand une recherche etait
+     * active : il ignore le terme, donc il rendait le total du catalogue
+     * ENTIER. Une recherche ramenant deux articles annoncait cinquante pages,
+     * et l'ecran en affichait quarante-neuf vides.
+     *
+     * <p>Le COUNT porte donc exactement les memes conditions que la liste —
+     * clause de visibilite comprise.
+     */
+    @Query("SELECT COUNT(*) FROM produit p JOIN boutique b ON b.id = p.boutique_id "
+            + "WHERE " + PorteeDuCatalogue.CLAUSE_SQL
+            + " AND (p.nom ILIKE :motif ESCAPE '\\' "
+            + "     OR p.description ILIKE :motif ESCAPE '\\')")
+    Mono<Long> compterLaRecherche(boolean administrateur, UUID boutiqueId,
+                                  boolean professionnel, String pays, String motif);
 
     /**
      * Un produit par son identifiant, SI la portee le permet.

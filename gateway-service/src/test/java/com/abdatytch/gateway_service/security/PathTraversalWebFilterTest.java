@@ -6,11 +6,13 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import reactor.core.publisher.Mono;
 
+import java.net.URI;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,6 +55,23 @@ class PathTraversalWebFilterTest {
         org.mockito.Mockito.when(resolveur.resolve(org.mockito.Mockito.any()))
                 .thenReturn("203.0.113.7");
         filtre = new PathTraversalWebFilter(resolveur);
+    }
+
+    /**
+     * Une requete dont l'encodage est PRESERVE.
+     *
+     * <h3>Pourquoi {@code URI.create} et non {@code MockServerHttpRequest.get(String)}</h3>
+     *
+     * La seconde RE-ENCODE la chaine : {@code ?q=50%25} y devient
+     * {@code q=50%2525} en brut. Un test ecrit avec elle mesure donc un double
+     * encodage la ou il croit mesurer un encodage simple — et le filtre lit
+     * desormais la requete en BRUT, ce qui rend la difference visible.
+     *
+     * <p>Mesure faite le 2026-11-13 : {@code get("?chemin=%2e%2e")} produit
+     * {@code chemin=%252e%252e}.
+     */
+    private MockServerHttpRequest requete(String cible) {
+        return MockServerHttpRequest.method(HttpMethod.GET, URI.create(cible)).build();
     }
 
     /** Rend {@code true} si la requete a atteint la suite de la chaine. */
@@ -138,6 +157,60 @@ class PathTraversalWebFilterTest {
                     .isFalse();
         }
 
+        /**
+         * LE DOUBLE DECODAGE DE LA REQUETE, PINCE.
+         *
+         * <p>Le filtre lisait {@code getURI().getQuery()}, qui rend la chaine
+         * DEJA DECODEE, puis la decodait une seconde fois. Il controlait donc
+         * a une profondeur de DEUX, alors que le service en aval n'en decode
+         * qu'une.
+         *
+         * <p>Ce test mesure la profondeur : une traversee encodee UNE fois est
+         * refusee, parce que c'est ce que le service verrait.
+         */
+        @Test
+        @DisplayName("une traversee encodee une fois dans la requete est refusee")
+        void traverseeEncodeeDansLaQuery() {
+            assertThat(passe(requete(
+                    "/api/v1/media/fichier?chemin=%2e%2e%2f%2e%2e%2fetc")))
+                    .withFailMessage("""
+                            Une traversee encodee dans la chaine de requete passe.
+
+                            Le service en aval decodera une fois et verra « ../../etc ».""")
+                    .isFalse();
+        }
+
+        /**
+         * UN DOUBLE ENCODAGE DANS LA REQUETE PASSE, ET C'EST LA BONNE REPONSE.
+         *
+         * <p>Ce test documente une LIMITE choisie, pas un oubli.
+         *
+         * <p>{@code chemin=%252e%252e%252fetc} donne, apres l'unique decodage
+         * du service, la valeur {@code %2e%2e%2fetc} — une chaine de texte, pas
+         * un chemin. Pour qu'elle devienne {@code ../etc}, il faudrait que le
+         * service la decode UNE SECONDE FOIS ; ce serait son defaut a lui, et
+         * la passerelle ne peut pas enumerer les bogues de ses voisins.
+         *
+         * <p>Refuser ici couterait cher et pour rien : un parametre portant une
+         * URL double-encodee — cas courant d'une redirection qui traverse deux
+         * couches, {@code redirect=https%253A%252F%252Fx} — serait bloque.
+         * Bloquer du trafic valide a un cout : on finit par desactiver le
+         * filtre.
+         */
+        @Test
+        @DisplayName("un double encodage dans la requete passe : le controle est a UN decodage")
+        void doubleEncodageDansLaQuery() {
+            assertThat(passe(requete(
+                    "/api/v1/media/fichier?chemin=%252e%252e%252fetc")))
+                    .withFailMessage("""
+                            Un double encodage dans la requete est refuse.
+
+                            C'est une limite CHOISIE : le controle porte a la \
+                            profondeur que le service voit. Refuser ici bloquerait \
+                            une URL double-encodee dans un parametre de redirection.""")
+                    .isTrue();
+        }
+
         @Test
         @DisplayName("une traversee dans la chaine de requete est refusee")
         void traverseeDansLaQuery() {
@@ -175,12 +248,53 @@ class PathTraversalWebFilterTest {
             // toute valeur de parametre contenant une barre encodee — un
             // identifiant base64, un chemin relatif, une date au format ISO avec
             // separateurs encodes.
-            assertThat(passe(MockServerHttpRequest
-                    .get("/api/v1/users/me?filter=a%2Fb").build()))
+            assertThat(passe(requete("/api/v1/users/me?filter=a%2Fb")))
                     .withFailMessage("une barre encodee dans une valeur de parametre "
                             + "est refusee : du trafic valide est bloque, et un filtre "
                             + "qui bloque le trafic valide finit desactive")
                     .isTrue();
+        }
+
+        /**
+         * LE FAUX POSITIF QUI COUTAIT LE PLUS CHER.
+         *
+         * <p>Un pour-cent litteral dans une valeur de parametre — « Solde
+         * -50% », « TVA 18% », un motif de recherche — est envoye en
+         * {@code %25}. Le filtre le refusait en 400 ET le comptait comme une
+         * tentative de traversee : quelques recherches de ce genre faisaient
+         * bloquer l'adresse de l'acheteur.
+         *
+         * <p>Dans un CHEMIN, {@code %25} reste refuse : c'est la seule
+         * difference entre les deux origines.
+         */
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {
+                "/api/v1/market/produits?q=50%25",
+                "/api/v1/market/produits?q=%25",
+                "/api/v1/market/produits?q=TVA%2018%25",
+                "/api/v1/market/produits?q=T%5Fshirt"
+        })
+        @DisplayName("un pour-cent litteral dans un parametre passe")
+        void pourcentLitteralDansParametre(String cible) {
+            assertThat(passe(requete(cible)))
+                    .withFailMessage("""
+                            %s est refuse alors qu'il est legitime.
+
+                            Un acheteur cherchant « 50%% » recevrait un 400 et verrait \
+                            son adresse comptee en violation de securite.""", cible)
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("mais %25 dans le CHEMIN reste refuse")
+        void pourcentDansLeChemin() {
+            assertThat(passe(requete("/api/v1/users/%252e%252e/me")))
+                    .withFailMessage("""
+                            Le double encodage dans un chemin n'est plus refuse.
+
+                            La correction ne devait lever la regle que pour la chaine \
+                            de requete.""")
+                    .isFalse();
         }
 
         @Test

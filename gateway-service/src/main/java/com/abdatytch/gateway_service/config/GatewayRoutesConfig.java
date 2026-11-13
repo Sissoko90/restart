@@ -649,6 +649,41 @@ public class GatewayRoutesConfig {
      * @param serviceName Nom du service Consul (ex: auth-service)
      * @return Mono<ServerResponse> réponse asynchrone
      */
+    /**
+     * La chaine de requete a retransmettre, telle que le client l'a ENVOYEE.
+     *
+     * <h3>Pourquoi le brut, et non {@code getQuery()}</h3>
+     *
+     * {@code getQuery()} rend la chaine DECODEE. Recollee telle quelle dans
+     * l'URL cible, elle change le sens de la requete. Deux consequences,
+     * mesurees le 2026-11-13 :
+     *
+     * <ol>
+     *   <li><b>Scission de parametre.</b> Un appelant envoyant UN parametre
+     *       dont la valeur contient un ET encode — {@code q=Bazin%26injecte=1}
+     *       — voyait la passerelle en transmettre DEUX au service aval :
+     *       {@code q=Bazin} et {@code injecte=1}. Tout parametre que le service
+     *       lit et que l'appelant ne devrait pas gouverner — une taille de
+     *       page, un filtre, un drapeau — devenait atteignable. Le meme
+     *       mecanisme vaut pour {@code %3D}.</li>
+     *   <li><b>URL malformee.</b> Une valeur portant un pour-cent litteral,
+     *       envoyee correctement en {@code %25}, redevenait un {@code %} seul :
+     *       {@code URI.create} levait « Malformed escape pair » et la requete
+     *       sortait en 503. Chercher « Solde -50% » etait impossible.</li>
+     * </ol>
+     *
+     * <p>En brut, la passerelle retransmet exactement ce qu'elle a recu, et le
+     * service decode une fois — comme il le ferait sans intermediaire.
+     *
+     * <p>{@code XssProtectionWebFilter}, lui, lit bien la forme DECODEE : il
+     * doit voir la valeur reelle, sans quoi un {@code %3Cscript%3E} lui
+     * echapperait. Les deux lectures sont justes, chacune pour son usage.
+     */
+    static String chaineDeRequete(java.net.URI uri) {
+        String brute = uri == null ? null : uri.getRawQuery();
+        return brute == null || brute.isEmpty() ? "" : "?" + brute;
+    }
+
     private Mono<ServerResponse> proxyRequest(
             org.springframework.web.reactive.function.server.ServerRequest request,
             WebClient webClient,
@@ -670,7 +705,7 @@ public class GatewayRoutesConfig {
         // 403 sans que rien ne designe le chemin comme cause.
         String originalPath = request.path();
         String targetPath = CheminCible.pour(originalPath);
-        String queryString = request.uri().getQuery() != null ? "?" + request.uri().getQuery() : "";
+        String queryString = chaineDeRequete(request.uri());
 
         // Identité issue des claims VALIDÉS par JwtWebFilter (signature RSA vérifiée).
         // Ne jamais re-décoder le payload JWT à la main ici : il ne serait pas vérifié.
