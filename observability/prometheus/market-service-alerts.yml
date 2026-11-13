@@ -96,9 +96,28 @@ groups:
       # decide plus rien alors qu'il n'y a rien a decider n'est pas un incident ;
       # mais couplee a une file qui monte, c'est le meme symptome vu des deux
       # cotes, et deux signaux valent mieux qu'un quand l'un peut etre masque.
+      #
+      # `or vector(0)` n'est PAS une precaution decorative. Les quatre autres
+      # metriques de ce service sont enregistrees a zero au demarrage, mais
+      # celle-ci porte des ETIQUETTES (nature, sens) : on ne peut pas
+      # pre-enregistrer toutes les combinaisons, donc la serie n'existe pas
+      # tant qu'aucune decision n'a ete rendue.
+      #
+      # Or `increase()` sur une fenetre qui ne contient AUCUN echantillon ne rend
+      # pas zero : il rend un vecteur vide. La comparaison `== 0` est alors
+      # vide, le `and` aussi, et l'alerte ne part jamais.
+      #
+      # Le cas n'est pas theorique, et c'est le PIRE : un deploiement neuf ou
+      # aucune decision n'a jamais ete rendue. La file se remplit, personne ne
+      # modere, et l'alerte faite pour le dire reste muette parce que le
+      # compteur qu'elle interroge n'a jamais ete incremente.
+      #
+      # Mesure du 2026-11-14 sur le Prometheus du poste :
+      #   sum(increase(<metrique sans echantillon>[12h])) == 0   -> vecteur vide
+      #   (sum(increase(...)) or vector(0)) == 0                 -> 0
       - alert: AucuneDecisionDeModeration
         expr: >-
-          sum(increase(market_moderation_decisions_total[12h])) == 0
+          (sum(increase(market_moderation_decisions_total[12h])) or vector(0)) == 0
           and sum(market_moderation_file) > 0
         for: 1h
         labels:

@@ -264,6 +264,23 @@ second n'avait aucun effet — sans la moindre erreur pour le dire.
 commentaires** : sans cela, la javadoc qui explique pourquoi un histogramme est
 là suffisait à faire croire qu'il y était.
 
+### Une fenêtre sans échantillon ne vaut pas zéro
+
+`AucuneDecisionDeModeration` compare `increase(market_moderation_decisions_total[12h])`
+à zéro. Ce compteur porte des **étiquettes** (`nature`, `sens`), donc il ne peut
+pas être pré-enregistré à zéro comme les quatre autres : sa série n'existe
+qu'après la première décision.
+
+Or `increase()` sur une fenêtre sans aucun échantillon ne rend pas zéro — il
+rend un **vecteur vide**. La comparaison est alors vide et l'alerte ne part
+jamais, précisément sur un déploiement neuf où personne n'a jamais modéré,
+c'est-à-dire dans le cas qu'elle existe pour détecter.
+
+D'où le `or vector(0)`. `MetriquesDesAlertesTest` refuse désormais tout
+`increase`/`rate` d'un compteur `_total` comparé à zéro sans ce repli — la règle
+est bornée aux compteurs, car `up == 0` est sûr (Prometheus synthétise `up`) et
+une jauge enregistrée au démarrage existe tant que le service répond.
+
 ### Journaux
 
 `logback-spring.xml` pose `traceId` et `spanId` sur chaque ligne — sans eux, un

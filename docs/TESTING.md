@@ -218,7 +218,7 @@ attrapé — le code était juste, c'est son *branchement* qui ne l'était pas.
 
 | Garde-fou | Ce qu'il refuse |
 |---|---|
-| `MetriquesDesAlertesTest` | une alerte ou un panneau sur une métrique que rien n'émet ; une métrique définie sans appelant ; un centile sur une métrique sans histogramme |
+| `MetriquesDesAlertesTest` | une alerte ou un panneau sur une métrique que rien n'émet ; une métrique définie sans appelant ; un centile sur une métrique sans histogramme ; un compteur comparé à zéro sans repli `or vector(0)` |
 | `AnnotationsResilienceInertesTest` | une annotation Resilience4j nouvelle, puisque rien ne la tisse |
 | `AppelsSortantsBornesTest` | un appel sortant sans délai maximal |
 | `ModuleLivrableTest` | un module qui compile mais ne peut pas démarrer |

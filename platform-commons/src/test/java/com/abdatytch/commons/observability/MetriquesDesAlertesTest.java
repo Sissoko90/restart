@@ -715,6 +715,74 @@ class MetriquesDesAlertesTest {
         }
     }
 
+    @Nested
+    @DisplayName("Aucune alerte ne compare a zero un compteur qui peut manquer")
+    class ComparaisonsAZero {
+
+        /**
+         * <h2>Une fenetre sans echantillon ne vaut pas zero</h2>
+         *
+         * {@code increase(x_total[12h])} sur une fenetre qui ne contient
+         * <b>aucun</b> echantillon ne rend pas zero : il rend un vecteur vide.
+         * La comparaison {@code == 0} est alors vide, et l'alerte ne part
+         * jamais.
+         *
+         * <p>Le cas n'est pas theorique, et c'est le pire : un deploiement neuf
+         * ou le compteur n'a jamais ete incremente. Une alerte du genre
+         * « plus personne ne modere » interroge precisement un compteur qui, si
+         * le symptome est reel, n'a jamais bouge.
+         *
+         * <p>Mesure du 2026-11-14 sur le Prometheus du poste :
+         * {@code sum(increase(<metrique sans echantillon>[12h])) == 0} rend un
+         * vecteur vide, et la meme expression enveloppee de
+         * {@code or vector(0)} rend 0.
+         *
+         * <h2>Pourquoi la regle est bornee aux compteurs</h2>
+         *
+         * {@code up == 0} est parfaitement sur : Prometheus <b>synthetise</b>
+         * {@code up} pour chaque cible configuree, donc la serie existe
+         * toujours. Une jauge enregistree au demarrage existe aussi tant que le
+         * service repond — et s'il ne repond pas, c'est {@code up} qui le dit.
+         *
+         * <p>Le danger est propre aux compteurs lus par fenetre : ils peuvent
+         * n'avoir aucun echantillon, et c'est justement l'etat qu'on veut
+         * detecter.
+         */
+        @Test
+        @DisplayName("un increase/rate de compteur compare a zero porte un repli vector(0)")
+        void comparaisonAZeroAvecRepli() throws IOException {
+            Pattern fenetreSurCompteur = Pattern.compile(
+                    "\\b(?:increase|rate|irate)\\s*\\(\\s*[a-z][a-z0-9_]*_total\\s*[\\{\\[]");
+            Pattern comparaisonAZero = Pattern.compile("[=!]=\\s*0(?![.0-9])");
+
+            Map<String, List<String>> fragiles = new TreeMap<>();
+            for (Map.Entry<String, String> alerte : expressionsDAlertes().entrySet()) {
+                String expression = alerte.getValue();
+                if (!fenetreSurCompteur.matcher(expression).find()
+                        || !comparaisonAZero.matcher(expression).find()) {
+                    continue;
+                }
+                if (expression.contains("or vector(0)") || expression.contains("or on() vector(0)")) {
+                    continue;
+                }
+                fragiles.computeIfAbsent(alerte.getKey(), cle -> new ArrayList<>())
+                        .add(expression.length() > 160
+                                ? expression.substring(0, 160) + "..." : expression);
+            }
+
+            assertThat(fragiles)
+                    .withFailMessage("""
+                            Ces alertes comparent a zero un compteur lu par fenetre,                             sans repli :
+
+                            %s
+
+                            increase() et rate() sur une fenetre SANS echantillon ne                             rendent pas zero : ils rendent un vecteur vide. La                             comparaison est alors vide et l'alerte ne part jamais --                             precisement sur un deploiement neuf, ou le compteur n'a                             jamais bouge, c'est-a-dire dans le cas que l'alerte existe                             pour detecter.
+
+                            Envelopper le compteur : (sum(increase(x_total[12h])) or                             vector(0)) == 0""".formatted(rendreLisible(fragiles)))
+                    .isEmpty();
+        }
+    }
+
     // ==================================================================
     // Outillage
     // ==================================================================
@@ -837,6 +905,43 @@ class MetriquesDesAlertesTest {
      * noms, ni les etiquettes, ni les descriptions.
      */
     @SuppressWarnings("unchecked")
+    /**
+     * Les expressions de toutes les alertes du depot.
+     *
+     * <p>Analysees par snakeyaml, et non ligne a ligne : une expression tient
+     * souvent sur plusieurs lignes derriere un {@code >-}, et une lecture
+     * ligne a ligne la coupe en morceaux dont aucun ne porte la condition
+     * complete.
+     *
+     * @return « NomDeLAlerte (fichier.yml) » vers l'expression, mise sur une
+     *         seule ligne
+     */
+    private static Map<String, String> expressionsDAlertes() throws IOException {
+        Map<String, String> resultat = new LinkedHashMap<>();
+        for (Path fichier : fichiersDeRegles()) {
+            Object racine = new org.yaml.snakeyaml.Yaml().load(Files.readString(fichier));
+            if (!(racine instanceof Map<?, ?> document)
+                    || !(document.get("groups") instanceof List<?> listeDeGroupes)) {
+                continue;
+            }
+            for (Object groupe : listeDeGroupes) {
+                if (!(groupe instanceof Map<?, ?> g)
+                        || !(g.get("rules") instanceof List<?> listeDeRegles)) {
+                    continue;
+                }
+                for (Object regle : listeDeRegles) {
+                    if (!(regle instanceof Map<?, ?> r) || r.get("expr") == null
+                            || r.get("alert") == null) {
+                        continue;
+                    }
+                    resultat.put(r.get("alert") + " (" + fichier.getFileName() + ")",
+                            String.join(" ", String.valueOf(r.get("expr")).split("\\s+")));
+                }
+            }
+        }
+        return resultat;
+    }
+
     private static Map<String, List<String>> metriquesDesRegles() throws IOException {
         Map<String, List<String>> resultat = new LinkedHashMap<>();
 
