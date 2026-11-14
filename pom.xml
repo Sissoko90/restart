@@ -99,7 +99,7 @@
 
 		<!-- Bibliothèques transverses -->
 		<jjwt.version>0.13.0</jjwt.version>
-		<springdoc.version>2.7.0</springdoc.version>
+		<springdoc.version>2.10.0</springdoc.version>
 		<!--
 		  2.1.0 dans gateway et interface, 2.2.0 dans media et user, et cette
 		  propriete qui disait 2.2.0 sans etre lue par personne : les quatre
