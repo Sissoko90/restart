@@ -246,7 +246,7 @@
 		  source.
 		-->
 		<maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
-		<license-plugin.version>2.4.0</license-plugin.version>
+		<license-plugin.version>2.7.1</license-plugin.version>
 	</properties>
 
 	<dependencyManagement>
