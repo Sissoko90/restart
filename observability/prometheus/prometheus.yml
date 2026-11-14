@@ -158,6 +158,15 @@ scrape_configs:
           service: 'market'
           tier: 'backend'
 
+  - job_name: 'order-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8093']
+        labels:
+          application: 'order-service'
+          service: 'market'
+          tier: 'backend'
+
   # Config Service — sa chute empeche tout demarrage de service
   - job_name: 'config-service'
     metrics_path: '/actuator/prometheus'

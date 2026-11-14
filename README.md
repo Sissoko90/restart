@@ -482,6 +482,7 @@ Chacun a déjà causé un défaut réel.
 | [docs/QUOTAS.md](docs/QUOTAS.md) · [docs/SETTINGS.md](docs/SETTINGS.md) | Quotas et paramètres |
 | [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md) | Canaux, modèles, surveillance, surface d'administration |
 | [docs/MARKET.md](docs/MARKET.md) | Place de marché : visibilité, boutiques, modération, photos signées |
+| [docs/ORDERS.md](docs/ORDERS.md) | Panier, commandes, retours arbitrés par Sankadi, réservation de stock |
 | [docs/AUTH-SERVICE-R2DBC-MIGRATION.md](docs/AUTH-SERVICE-R2DBC-MIGRATION.md) | Migration JPA vers R2DBC |
 | [postman/README.md](postman/README.md) | Collections et ordre de test |
 | [SECURITY.md](SECURITY.md) | Signalement de failles |

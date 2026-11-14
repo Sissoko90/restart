@@ -20,7 +20,7 @@ Tout le reste appartient à d'autres :
 | Le **pays** d'une personne | user-service, `/internal/users/auth/{id}` |
 | Les photos et pièces justificatives | media-service |
 
-Il ne gère ni panier, ni commande, ni paiement : ce sont d'autres bornes.
+Il ne gère ni panier, ni commande, ni paiement — voir [ORDERS.md](ORDERS.md) : ce sont d'autres bornes.
 
 ---
 

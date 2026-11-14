@@ -1,0 +1,201 @@
+groups:
+  # ==========================================================================
+  # order-service — panier, commandes et retours
+  # ==========================================================================
+  # Sankadi est l'intermediaire entre l'acheteur et la boutique. Les alertes de
+  # ce module surveillent donc deux choses que rien d'autre ne signale :
+  #
+  #   - que Sankadi ARBITRE encore (sinon les acheteurs attendent) ;
+  #   - que les commandes se CLOTURENT encore (sinon les boutiques ne sont
+  #     jamais payees).
+  #
+  # Dans les deux cas, le service repond normalement. C'est ce qui rend ces
+  # alertes indispensables : la panne est silencieuse et n'a aucun symptome
+  # technique.
+  # ==========================================================================
+  - name: order-service-arbitrage
+    rules:
+
+      # ----------------------------------------------------------------
+      # PLUS PERSONNE N'ARBITRE
+      # ----------------------------------------------------------------
+      # La file des retours en attente monte sans redescendre. L'acheteur a
+      # demande, Sankadi n'a pas tranche, et personne ne le sait : le service
+      # repond, les demandes arrivent, et les dossiers ne bougent pas.
+      #
+      # Le seuil porte sur la DUREE et non sur la taille. Une file de dix
+      # dossiers un lundi matin est saine ; la meme file inchangee depuis six
+      # heures ne l'est pas.
+      - alert: FileDArbitrageFigee
+        expr: >-
+          min_over_time(order_files{nature="retours_a_arbitrer"}[6h]) > 0
+        for: 30m
+        labels:
+          severity: warning
+          service: order-service
+        annotations:
+          summary: "Aucun retour arbitre depuis six heures"
+          description: >-
+            La file d'arbitrage n'est jamais redescendue a zero depuis six
+            heures. Des acheteurs attendent une decision de Sankadi, et la
+            boutique concernee n'est pas payee pendant ce temps.
+
+      # ----------------------------------------------------------------
+      # LA FILE D'ARBITRAGE DEBORDE
+      # ----------------------------------------------------------------
+      # Le meme symptome vu de l'autre cote : pas la duree, mais le volume. Les
+      # deux ensemble valent mieux qu'un seul, parce que l'un peut etre masque.
+      - alert: FileDArbitrageSaturee
+        expr: order_files{nature="retours_a_arbitrer"} > 50
+        for: 15m
+        labels:
+          severity: warning
+          service: order-service
+        annotations:
+          summary: "Plus de cinquante retours en attente d'arbitrage"
+          description: >-
+            La file d'arbitrage depasse cinquante dossiers. Soit l'equipe est
+            absente, soit une boutique genere un volume anormal de retours et
+            il faut regarder laquelle.
+
+  - name: order-service-argent
+    rules:
+
+      # ----------------------------------------------------------------
+      # AUCUNE BOUTIQUE N'EST PLUS PAYABLE
+      # ----------------------------------------------------------------
+      # Le balayeur de cloture s'est arrete. C'est l'etat CLOTUREE que
+      # payment-service attendra pour verser : sans lui, les commandes
+      # s'accumulent en LIVREE et AUCUNE BOUTIQUE N'EST JAMAIS PAYEE.
+      #
+      # Rien d'autre ne le signale. Le service repond, les acheteurs
+      # commandent, les colis arrivent, et l'argent ne part pas.
+      #
+      # `or vector(0)` : increase() sur une fenetre SANS echantillon ne rend pas
+      # zero mais un vecteur VIDE, et la comparaison serait alors vide. Le cas
+      # n'est pas theorique : c'est precisement celui d'un deploiement neuf, ou
+      # aucune commande n'a jamais ete cloturee.
+      - alert: AucuneClotureDeCommande
+        expr: >-
+          (sum(increase(order_transitions_total{vers="CLOTUREE"}[24h])) or vector(0)) == 0
+          and order_files{nature="commandes_a_cloturer"} > 0
+        for: 1h
+        labels:
+          severity: critical
+          service: order-service
+        annotations:
+          summary: "Aucune commande cloturee depuis vingt-quatre heures"
+          description: >-
+            Des commandes livrees attendent leur cloture et aucune n'a ete
+            cloturee depuis un jour. Le balayeur est probablement arrete :
+            aucune boutique n'est payable tant que cela dure.
+
+      # ----------------------------------------------------------------
+      # DU STOCK EST RETENU SANS COMMANDE
+      # ----------------------------------------------------------------
+      # La limite connue du modele a deux bases. La reservation a reussi chez
+      # market-service, l'ecriture de la commande a echoue, et la compensation
+      # a echoue aussi : du stock est bloque pour une commande qui n'existe
+      # pas.
+      #
+      # CRITIQUE des la premiere occurrence, et sans `for`. Ce n'est pas une
+      # degradation progressive : chaque occurrence est un article qu'une
+      # boutique ne peut plus vendre, et le journal porte le detail des lignes
+      # a rendre a la main. Attendre serait perdre la trace.
+      - alert: CompensationDeStockEchouee
+        expr: increase(order_stock_compensation_echouee_total[15m]) > 0
+        labels:
+          severity: critical
+          service: order-service
+        annotations:
+          summary: "Stock retenu sans commande : compensation echouee"
+          description: >-
+            Une restitution de stock a echoue apres une reservation reussie. Du
+            stock est bloque chez market-service pour une commande inexistante.
+            Le detail des lignes a rendre est dans le journal de
+            CommandeServiceImpl, au niveau ERROR.
+
+  - name: order-service-caisse
+    rules:
+
+      # ----------------------------------------------------------------
+      # LE PASSAGE EN CAISSE REFUSE TROP SOUVENT
+      # ----------------------------------------------------------------
+      # Un refus de stock isole est normal sur une place de marche : deux
+      # personnes regardent le meme article. Une proportion elevee ne l'est
+      # pas — elle signifie que le catalogue montre des articles qu'il ne peut
+      # pas vendre, et chaque refus est un acheteur perdu au dernier moment.
+      #
+      # Un RATIO et non un compte absolu : cent refus sur dix mille commandes
+      # est sain, dix refus sur douze ne l'est pas.
+      #
+      # clamp_min au denominateur : sans lui, une periode sans aucun trafic
+      # donnerait une division par zero, donc NaN, donc une alerte qui ne se
+      # declenche jamais — et dont le silence se lirait comme une absence de
+      # probleme.
+      - alert: CaisseRefuseTropSouvent
+        expr: >-
+          (sum(rate(order_caisse_refus_de_stock_total[30m])) or vector(0))
+          /
+          clamp_min(
+            (sum(rate(order_caisse_refus_de_stock_total[30m])) or vector(0))
+            + (sum(rate(order_commandes_creees_total[30m])) or vector(0)),
+            0.001)
+          > 0.25
+        for: 30m
+        labels:
+          severity: warning
+          service: order-service
+        annotations:
+          summary: "Plus d'un quart des passages en caisse refuses faute de stock"
+          description: >-
+            Le catalogue montre des articles qu'il ne peut pas vendre. Chaque
+            refus est un acheteur perdu apres avoir choisi et clique.
+
+      # ----------------------------------------------------------------
+      # LA CAISSE RALENTIT
+      # ----------------------------------------------------------------
+      # Pas un seuil absolu — il serait devine — mais une COMPARAISON a soi :
+      # le 95e centile a plus que double par rapport a la journee precedente.
+      #
+      # Le chronometre publie un histogramme (publishPercentileHistogram dans
+      # OrderMetrics), sans quoi cette expression ne rendrait rien et l'alerte
+      # resterait verte pour toujours. MetriquesDesAlertesTest le verrouille.
+      - alert: CaisseRalentie
+        expr: >-
+          histogram_quantile(0.95, sum(rate(order_caisse_duree_seconds_bucket[15m])) by (le))
+          > 2 * histogram_quantile(0.95, sum(rate(order_caisse_duree_seconds_bucket[1d] offset 1d)) by (le))
+        for: 20m
+        labels:
+          severity: warning
+          service: order-service
+        annotations:
+          summary: "Le passage en caisse a plus que double de duree"
+          description: >-
+            Le 95e centile du passage en caisse depasse le double de celui de
+            la veille. La cause est presque toujours la reservation de stock
+            chez market-service, qui est sur le chemin critique.
+
+      # ----------------------------------------------------------------
+      # LES COMMANDES NE SONT PLUS PAYEES
+      # ----------------------------------------------------------------
+      # Les commandes s'accumulent en A_PAYER et aucune ne passe a PAYEE. Tant
+      # que le paiement est constate a la main par Sankadi, c'est le signe que
+      # personne ne le fait ; quand payment-service existera, ce sera le signe
+      # qu'il est tombe.
+      #
+      # Chaque commande impayee retient du stock jusqu'a son echeance : la file
+      # qui monte est aussi du catalogue qui s'appauvrit.
+      - alert: AucunPaiementConstate
+        expr: >-
+          (sum(increase(order_transitions_total{vers="PAYEE"}[3h])) or vector(0)) == 0
+          and order_files{nature="commandes_a_payer"} > 5
+        for: 1h
+        labels:
+          severity: warning
+          service: order-service
+        annotations:
+          summary: "Aucun paiement constate depuis trois heures"
+          description: >-
+            Des commandes attendent leur encaissement et aucun n'a ete constate
+            depuis trois heures. Chacune retient du stock jusqu'a son echeance.
