@@ -78,7 +78,16 @@ public class RetourServiceImpl implements IRetourService {
                 .filter(commande -> portee.authUserId().equals(commande.getAuthUserId()))
                 .switchIfEmpty(Mono.error(OrderException::introuvable))
                 .flatMap(commande -> verifierQuOnPeutDemander(commande, demande.motif())
-                        .then(retours.ouvertDe(commandeId)
+                        // Mono.defer et non then(retours.ouvertDe(...)) : un
+                        // argument de then est evalue a l'ASSEMBLAGE de la
+                        // chaine, donc la base serait interrogee meme quand la
+                        // verification ci-dessus echoue. Le resultat serait
+                        // jete, mais la requete aurait eu lieu.
+                        //
+                        // Trouve par RetourServiceImplTest, dont le mock non
+                        // stubbe rendait null : la preuve que l'appel partait
+                        // avant que l'erreur ne remonte.
+                        .then(Mono.defer(() -> retours.ouvertDe(commandeId)
                                 // Un retour deja ouvert : 409 et non un second
                                 // dossier. L'index unique partiel le refuserait
                                 // de toute facon, mais une erreur de contrainte
@@ -87,7 +96,7 @@ public class RetourServiceImpl implements IRetourService {
                                         HttpStatus.CONFLICT,
                                         "Une demande de retour est deja en cours sur "
                                                 + "cette commande")))
-                                .switchIfEmpty(Mono.defer(() -> ecrire(commande, portee, demande))))
+                                .switchIfEmpty(Mono.defer(() -> ecrire(commande, portee, demande)))))
                         .flatMap(retour -> machine.faireAvancer(commande,
                                         StatutCommande.RETOUR_EN_COURS, portee.authUserId(),
                                         RoleDeTransition.ACHETEUR, demande.motif().name())
