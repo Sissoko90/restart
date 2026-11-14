@@ -2,6 +2,7 @@ package com.abdatytch.market_service.web;
 
 import com.abdatytch.market_service.dto.request.ReservationStockRequest;
 import com.abdatytch.market_service.dto.request.RestitutionStockRequest;
+import com.abdatytch.market_service.dto.response.LigneDecriteResponse;
 import com.abdatytch.market_service.dto.response.LigneReserveeResponse;
 import com.abdatytch.market_service.service.IStockInterne;
 import jakarta.validation.Valid;
@@ -63,6 +64,21 @@ public class InternalStockController {
     public Mono<ResponseEntity<List<LigneReserveeResponse>>> reserver(
             @Valid @RequestBody ReservationStockRequest demande) {
         return stock.reserver(demande).map(ResponseEntity::ok);
+    }
+
+    /**
+     * Decrit des articles sans rien reserver, pour l'affichage d'un panier.
+     *
+     * <p>Un POST et non un GET, bien que ce soit une lecture : la demande porte
+     * une liste d'articles et la portee de l'acheteur, ce qui ne tient pas
+     * proprement dans une URL. Un GET avec dix identifiants en parametres
+     * depasserait les limites de longueur d'URL de certains intermediaires, et
+     * ferait journaliser les identifiants dans les acces.
+     */
+    @PostMapping("/decrire")
+    public Mono<ResponseEntity<List<LigneDecriteResponse>>> decrire(
+            @Valid @RequestBody ReservationStockRequest demande) {
+        return stock.decrire(demande).map(ResponseEntity::ok);
     }
 
     /**

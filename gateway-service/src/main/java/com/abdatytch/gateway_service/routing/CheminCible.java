@@ -282,6 +282,7 @@ public final class CheminCible {
         // AVANT /api/v1/admin, pour la meme raison que les suivants.
         // Le catalogue, les boutiques et les categories de la place de marche.
         SERVICES_PAR_PREFIXE.put("/api/v1/market", "market-service");
+        SERVICES_PAR_PREFIXE.put("/api/v1/orders", "order-service");
 
         SERVICES_PAR_PREFIXE.put("/api/v1/admin/users", "user-service");
         SERVICES_PAR_PREFIXE.put("/api/v1/admin/quotas", "quotas-service");
@@ -318,6 +319,7 @@ public final class CheminCible {
         // interface-service : la resolution retient le prefixe le plus LONG,
         // mais l'ordre de declaration documente l'intention.
         SERVICES_PAR_PREFIXE.put("/api/v1/admin/market", "market-service");
+        SERVICES_PAR_PREFIXE.put("/api/v1/admin/orders", "order-service");
 
         SERVICES_PAR_PREFIXE.put("/api/v1/admin", "interface-service");
     }

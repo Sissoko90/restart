@@ -105,6 +105,35 @@ public class ResolveurDePortee {
      * le cas le plus courant — produirait un {@code Mono} vide, donc une
      * portee absente, donc un catalogue vide pour tous les particuliers.
      */
+    /**
+     * La portee d'un compte NOMME, hors du contexte de securite courant.
+     *
+     * <h3>Pourquoi {@link #courante()} ne suffit pas</h3>
+     *
+     * {@code courante()} lit le contexte de securite de la requete. Sur un appel
+     * interne venu d'order-service, ce contexte porte l'APPELANT INTERNE et non
+     * l'acheteur : la portee calculee serait celle du service, pas celle de la
+     * personne.
+     *
+     * <h3>Pourquoi ce calcul n'est pas delegue a order-service</h3>
+     *
+     * Parce que la boutique d'un compte et sa qualite de professionnel vivent
+     * ICI. Laisser l'appelant annoncer une portee lui permettrait de se
+     * declarer professionnel et d'acheter un article qui ne lui est pas
+     * destine. Il ne transmet donc qu'un identifiant, et ce service conclut.
+     *
+     * <p>C'est la meme raison qui fait que la regle de visibilite n'a qu'un
+     * detenteur : {@code PorteeDuCatalogue}, surveille par
+     * {@code RegleDeVisibiliteUniqueTest}.
+     */
+    public Mono<PorteeDuCatalogue> pourLeCompte(String authUserId) {
+        if (authUserId == null || authUserId.isBlank()) {
+            return Mono.error(new IllegalArgumentException(
+                    "Portee demandee sans identifiant de compte"));
+        }
+        return calculer(authUserId);
+    }
+
     private Mono<PorteeDuCatalogue> calculer(String authUserId) {
         Mono<Optional<Boutique>> boutique = boutiques.findByAuthUserId(authUserId)
                 .map(Optional::of)

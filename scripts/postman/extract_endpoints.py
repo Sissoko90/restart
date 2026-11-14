@@ -28,6 +28,7 @@ SERVICES = {
     # collection ne permette de les appeler sont des endpoints que personne
     # n'essaiera.
     "market-service": ("market_service", 8092),
+    "order-service": ("order_service", 8093),
 }
 
 METHOD_ANNOTATIONS = {

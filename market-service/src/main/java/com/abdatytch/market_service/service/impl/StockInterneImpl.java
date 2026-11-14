@@ -2,6 +2,7 @@ package com.abdatytch.market_service.service.impl;
 
 import com.abdatytch.market_service.dto.request.ReservationStockRequest;
 import com.abdatytch.market_service.dto.request.RestitutionStockRequest;
+import com.abdatytch.market_service.dto.response.LigneDecriteResponse;
 import com.abdatytch.market_service.dto.response.LigneReserveeResponse;
 import com.abdatytch.market_service.entities.Produit;
 import com.abdatytch.market_service.entities.ProduitVariante;
@@ -9,6 +10,7 @@ import com.abdatytch.market_service.exception.MarketException;
 import com.abdatytch.market_service.repository.ProduitRepository;
 import com.abdatytch.market_service.repository.ProduitVarianteRepository;
 import com.abdatytch.market_service.security.PorteeDuCatalogue;
+import com.abdatytch.market_service.security.ResolveurDePortee;
 import com.abdatytch.market_service.service.IStockInterne;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,29 +56,34 @@ public class StockInterneImpl implements IStockInterne {
 
     private final ProduitRepository produits;
     private final ProduitVarianteRepository variantes;
+    private final ResolveurDePortee portees;
 
-    public StockInterneImpl(ProduitRepository produits, ProduitVarianteRepository variantes) {
+    public StockInterneImpl(ProduitRepository produits, ProduitVarianteRepository variantes,
+                            ResolveurDePortee portees) {
         this.produits = produits;
         this.variantes = variantes;
+        this.portees = portees;
     }
 
     @Override
     @Transactional
     public Mono<List<LigneReserveeResponse>> reserver(ReservationStockRequest demande) {
-        PorteeDuCatalogue portee = new PorteeDuCatalogue(
-                demande.authUserId(), demande.pays(), demande.boutiqueId(),
-                demande.professionnel(), false);
-
         List<ReservationStockRequest.Ligne> ordonnees = demande.lignes().stream()
                 .sorted(java.util.Comparator.comparing(ReservationStockRequest.Ligne::varianteId))
                 .toList();
 
-        // concatMap et non flatMap : l'ordre de verrouillage doit etre tenu,
-        // donc les lignes sont traitees une a une. flatMap les lancerait en
-        // parallele et l'ordre impose plus haut ne servirait a rien.
-        return Flux.fromIterable(ordonnees)
-                .concatMap(ligne -> reserverUneLigne(portee, ligne))
-                .collectList();
+        // La portee est RESOLUE ICI, depuis le seul identifiant transmis.
+        // L'appelant ne l'annonce pas : il suffirait sinon d'un appel forge pour
+        // se declarer professionnel et acheter un article qui ne vous est pas
+        // destine.
+        return portees.pourLeCompte(demande.authUserId())
+                .flatMap(portee -> Flux.fromIterable(ordonnees)
+                        // concatMap et non flatMap : l'ordre de verrouillage
+                        // doit etre tenu, donc les lignes sont traitees une a
+                        // une. flatMap les lancerait en parallele et l'ordre
+                        // impose plus haut ne servirait a rien.
+                        .concatMap(ligne -> reserverUneLigne(portee, ligne))
+                        .collectList());
     }
 
     private Mono<LigneReserveeResponse> reserverUneLigne(
@@ -138,6 +145,76 @@ public class StockInterneImpl implements IStockInterne {
                 variante.getPrix(),
                 produit.getDevise(),
                 quantite);
+    }
+
+    /**
+     * La description, sans ecriture ni transaction.
+     *
+     * <p>Pas de {@code @Transactional} : rien n'est ecrit, et une transaction
+     * en lecture seule n'apporterait ici qu'une connexion retenue plus
+     * longtemps.
+     *
+     * <p>Pas d'ordre impose sur les lignes non plus : aucun verrou n'est pris,
+     * donc aucun interblocage possible. {@code flatMap} plutot que
+     * {@code concatMap} : les lignes sont lues en parallele, ce qui divise le
+     * temps d'affichage d'un panier de dix articles.
+     */
+    @Override
+    public Mono<List<LigneDecriteResponse>> decrire(ReservationStockRequest demande) {
+        return portees.pourLeCompte(demande.authUserId())
+                .flatMap(portee -> Flux.fromIterable(demande.lignes())
+                        .flatMap(ligne -> decrireUneLigne(portee, ligne))
+                        .collectList());
+    }
+
+    private Mono<LigneDecriteResponse> decrireUneLigne(
+            PorteeDuCatalogue portee, ReservationStockRequest.Ligne ligne) {
+
+        return produits.parIdentifiantVisible(ligne.produitId(), portee.administrateur(),
+                        portee.boutiqueId(), portee.professionnel(), portee.pays())
+                .flatMap(produit -> variantes.findById(ligne.varianteId())
+                        .filter(variante -> produit.getId().equals(variante.getProduitId()))
+                        .map(variante -> decrite(produit, variante, ligne.quantite())))
+                // Invisible, inexistant, ou variante d'un autre produit : la
+                // ligne est rendue INDISPONIBLE et non omise. Omettre ferait
+                // disparaitre une ligne du panier sans explication, et
+                // l'acheteur chercherait ce qu'il avait mis.
+                .switchIfEmpty(Mono.fromSupplier(() -> new LigneDecriteResponse(
+                        ligne.produitId(), ligne.varianteId(), null, null, null,
+                        null, null, null, null, null, ligne.quantite(),
+                        false, "Article indisponible")));
+    }
+
+    private LigneDecriteResponse decrite(Produit produit, ProduitVariante variante,
+                                         int quantiteDemandee) {
+        boolean actif = Boolean.TRUE.equals(variante.getActif());
+        int stock = variante.getStock() == null ? 0 : variante.getStock();
+        boolean assez = stock >= quantiteDemandee;
+
+        String motif = null;
+        if (!actif) {
+            motif = "Declinaison desactivee par la boutique";
+        } else if (!assez) {
+            // Le stock EXACT n'est pas rendu, et c'est delibere : il renseigne
+            // un concurrent sur le volume de ventes d'une boutique. « Il n'en
+            // reste pas assez » suffit a l'acheteur pour reduire sa quantite.
+            motif = "Quantite demandee superieure au stock disponible";
+        }
+
+        return new LigneDecriteResponse(
+                produit.getId(), variante.getId(), produit.getBoutiqueId(),
+                produit.getPays(), produit.getNom(), variante.getCouleur(),
+                variante.getTaille(), variante.getSku(), variante.getPrix(),
+                produit.getDevise(), quantiteDemandee, actif && assez, motif);
+    }
+
+    @Override
+    public Mono<com.abdatytch.market_service.dto.response.PorteeDuCompteResponse>
+            porteeDuCompte(String authUserId) {
+        return portees.pourLeCompte(authUserId)
+                .map(portee -> new com.abdatytch.market_service.dto.response
+                        .PorteeDuCompteResponse(
+                        portee.boutiqueId(), portee.professionnel(), portee.pays()));
     }
 
     @Override

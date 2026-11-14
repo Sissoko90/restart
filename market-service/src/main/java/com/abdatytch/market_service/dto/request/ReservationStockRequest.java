@@ -12,16 +12,20 @@ import java.util.UUID;
 /**
  * Une demande de reservation de stock, venue d'order-service.
  *
- * <h2>LA PORTEE DE L'ACHETEUR EST DANS LA DEMANDE</h2>
+ * <h2>L'APPELANT NE TRANSMET QU'UN IDENTIFIANT</h2>
  *
- * Et c'est market-service qui l'applique, pas l'appelant. La regle de
- * visibilite n'a qu'un seul detenteur dans ce depot — {@code PorteeDuCatalogue},
- * et {@code RegleDeVisibiliteUniqueTest} refuse qu'il y en ait un second.
+ * Ni le pays, ni la boutique, ni la qualite de professionnel : market-service
+ * les RESOUT lui-meme, par {@code ResolveurDePortee.pourLeCompte}.
  *
- * <p>Laisser order-service decider de la visibilite aurait duplique la regle :
- * un article reserve aux professionnels finirait achetable par un particulier
- * le jour ou l'une des deux copies oublierait une condition. order-service
- * transmet donc ce qu'il sait de l'acheteur, et ne conclut rien.
+ * <p>C'est volontaire, et c'est une question de securite avant d'etre une
+ * question de propriete. Si order-service annoncait la portee, il suffirait
+ * d'un appel forge — ou d'un defaut dans order-service — pour se declarer
+ * professionnel et acheter un article qui ne vous est pas destine.
+ *
+ * <p>La boutique d'un compte et sa qualite de professionnel vivent ici. La
+ * regle de visibilite aussi : {@code PorteeDuCatalogue} en est le seul
+ * detenteur, et {@code RegleDeVisibiliteUniqueTest} refuse qu'il y en ait un
+ * second.
  *
  * <h2>Pourquoi un lot, et non un appel par ligne</h2>
  *
@@ -30,19 +34,11 @@ import java.util.UUID;
  * par une — avec le risque qu'un echec en cours de route laisse du stock
  * retenu pour une commande qui n'existera jamais.
  *
- * @param authUserId   l'acheteur, pour la portee
- * @param pays         son pays, lu chez user-service par order-service
- * @param boutiqueId   sa boutique s'il en a une, pour qu'un vendeur puisse
- *                     voir ses propres articles non encore approuves
- * @param professionnel s'il est professionnel : il voit les articles reserves
- *                      aux pro et ceux des autres pays
- * @param lignes       les articles a reserver, en tout ou rien
+ * @param authUserId l'acheteur. Sa portee est resolue ici
+ * @param lignes     les articles a reserver, en tout ou rien
  */
 public record ReservationStockRequest(
         @NotNull String authUserId,
-        @NotNull @Size(min = 2, max = 2) String pays,
-        UUID boutiqueId,
-        boolean professionnel,
         @NotEmpty @Size(max = 50) @Valid List<Ligne> lignes) {
 
     /**

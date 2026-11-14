@@ -437,6 +437,32 @@ public class GatewayRoutesConfig {
                 .PATCH("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "market-service", defaultCircuitBreaker))
                 .DELETE("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "market-service", defaultCircuitBreaker))
             )
+            // LES COMMANDES.
+            //
+            // /api/v1/admin/orders/** AVANT la route generale /api/v1/admin/**,
+            // pour la meme raison que pour market : place apres, elle partirait
+            // chez interface-service, qui ne porte aucun chemin /admin/orders,
+            // et tout l'arbitrage des retours rendrait 404.
+            .nest(path("/api/v1/admin/orders/**"), builder -> builder
+                .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "order-service", defaultCircuitBreaker))
+                .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "order-service", defaultCircuitBreaker))
+                .PUT("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "order-service", defaultCircuitBreaker))
+                .DELETE("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "order-service", defaultCircuitBreaker))
+            )
+            // Le panier, les commandes et la vue boutique.
+            //
+            // Aucune reecriture : le service recoit /orders/**, qui est aussi le
+            // prefixe de ses controleurs. CheminsDesCommandes les nomme une fois
+            // de son cote.
+            //
+            // DELETE est present : vider son panier passe par la.
+            .nest(path("/api/v1/orders/**"), builder -> builder
+                .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "order-service", defaultCircuitBreaker))
+                .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "order-service", defaultCircuitBreaker))
+                .PUT("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "order-service", defaultCircuitBreaker))
+                .PATCH("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "order-service", defaultCircuitBreaker))
+                .DELETE("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "order-service", defaultCircuitBreaker))
+            )
             .nest(path("/api/v1/admin/quotas/**"), builder -> builder
                 .GET("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "quotas-service", defaultCircuitBreaker))
                 .POST("/**", request -> proxyRequestWithCircuitBreaker(request, webClient, "quotas-service", defaultCircuitBreaker))

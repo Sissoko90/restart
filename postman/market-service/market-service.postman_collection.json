@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Restart — market-service",
-    "description": "Collection générée depuis le code source (28 endpoints).\n\n**Appels via le Gateway** : `baseUrl` = `http://localhost:8081/api/v1`.\n\nL'appel en direct sur `http://localhost:8092` est refusé : les services exigent la signature HMAC du Gateway, qu'un client ne peut pas produire.\n\n**Une seule exception, et elle est voulue** : la surface `/internal/**` n'est routée par AUCUNE passerelle — c'est précisément ce qui la rend injoignable depuis l'extérieur. Ses requêtes utilisent donc `directUrl` (`http://localhost:8092`) et l'en-tête `X-Internal-Secret`, jamais un jeton.\n\nLe jeton est capturé automatiquement après une connexion réussie et réinjecté dans `{{accessToken}}`.",
+    "description": "Collection générée depuis le code source (32 endpoints).\n\n**Appels via le Gateway** : `baseUrl` = `http://localhost:8081/api/v1`.\n\nL'appel en direct sur `http://localhost:8092` est refusé : les services exigent la signature HMAC du Gateway, qu'un client ne peut pas produire.\n\n**Une seule exception, et elle est voulue** : la surface `/internal/**` n'est routée par AUCUNE passerelle — c'est précisément ce qui la rend injoignable depuis l'extérieur. Ses requêtes utilisent donc `directUrl` (`http://localhost:8092`) et l'en-tête `X-Internal-Secret`, jamais un jeton.\n\nLe jeton est capturé automatiquement après une connexion réussie et réinjecté dans `{{accessToken}}`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -1602,6 +1602,123 @@
             }
           ],
           "response": []
+        }
+      ]
+    },
+    {
+      "name": "InternalCompte",
+      "description": "Contrôleur `InternalCompteController` — base `/internal/market/comptes`",
+      "item": [
+        {
+          "method": "GET",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Internal-Secret",
+              "value": "{{internalSecret}}"
+            }
+          ],
+          "url": {
+            "raw": "{{directUrl}}/internal/market/comptes/:authUserId/portee",
+            "host": [
+              "{{directUrl}}"
+            ],
+            "path": [
+              "internal",
+              "market",
+              "comptes",
+              ":authUserId",
+              "portee"
+            ]
+          },
+          "description": "Handler : portee\n\nSurface INTERNE. Elle n'est routee par aucune passerelle : l'appel se fait en direct sur le port du service, avec le secret partage. Aucun jeton JWT n'y est attendu."
+        }
+      ]
+    },
+    {
+      "name": "InternalStock",
+      "description": "Contrôleur `InternalStockController` — base `/internal/market/stock`",
+      "item": [
+        {
+          "method": "POST",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Internal-Secret",
+              "value": "{{internalSecret}}"
+            }
+          ],
+          "url": {
+            "raw": "{{directUrl}}/internal/market/stock/reserver",
+            "host": [
+              "{{directUrl}}"
+            ],
+            "path": [
+              "internal",
+              "market",
+              "stock",
+              "reserver"
+            ]
+          },
+          "description": "Handler : reserver\n\nSurface INTERNE. Elle n'est routee par aucune passerelle : l'appel se fait en direct sur le port du service, avec le secret partage. Aucun jeton JWT n'y est attendu."
+        },
+        {
+          "method": "POST",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Internal-Secret",
+              "value": "{{internalSecret}}"
+            }
+          ],
+          "url": {
+            "raw": "{{directUrl}}/internal/market/stock/decrire",
+            "host": [
+              "{{directUrl}}"
+            ],
+            "path": [
+              "internal",
+              "market",
+              "stock",
+              "decrire"
+            ]
+          },
+          "description": "Handler : decrire\n\nSurface INTERNE. Elle n'est routee par aucune passerelle : l'appel se fait en direct sur le port du service, avec le secret partage. Aucun jeton JWT n'y est attendu."
+        },
+        {
+          "method": "POST",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "X-Internal-Secret",
+              "value": "{{internalSecret}}"
+            }
+          ],
+          "url": {
+            "raw": "{{directUrl}}/internal/market/stock/rendre",
+            "host": [
+              "{{directUrl}}"
+            ],
+            "path": [
+              "internal",
+              "market",
+              "stock",
+              "rendre"
+            ]
+          },
+          "description": "Handler : rendre\n\nSurface INTERNE. Elle n'est routee par aucune passerelle : l'appel se fait en direct sur le port du service, avec le secret partage. Aucun jeton JWT n'y est attendu."
         }
       ]
     }
