@@ -40,4 +40,27 @@ public class MarketException extends ResponseStatusException {
         return new MarketException(HttpStatus.SERVICE_UNAVAILABLE,
                 "Dependance indisponible : " + laquelle);
     }
+
+    /**
+     * Stock insuffisant, ou variante desactivee.
+     *
+     * <h3>409 et non 404</h3>
+     *
+     * Contrairement a {@link #introuvable()}, il n'y a rien a cacher ici :
+     * l'acheteur a VU l'article — il l'avait mis dans son panier — et la portee
+     * de visibilite a deja ete verifiee avant d'arriver la. Lui rendre un 404
+     * le laisserait croire que l'article a disparu du catalogue, alors qu'il
+     * suffit d'attendre un reapprovisionnement.
+     *
+     * <h3>Ce n'est pas une panne</h3>
+     *
+     * Un conflit de stock est une reponse normale d'une place de marche, pas un
+     * incident. {@code DisjoncteurSortantConfig} ne compte pas les 4xx comme
+     * une indisponibilite : une rafale d'articles epuises ne doit pas ouvrir le
+     * disjoncteur et couper l'acces a un service parfaitement sain.
+     */
+    public static MarketException stockInsuffisant(java.util.UUID varianteId) {
+        return new MarketException(HttpStatus.CONFLICT,
+                "Stock insuffisant ou variante inactive : " + varianteId);
+    }
 }

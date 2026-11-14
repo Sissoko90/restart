@@ -89,6 +89,7 @@
 		  dependencyManagement du parent, ni des epinglages de CVE, ni d'un test.
 		-->
 		<module>market-service</module>
+		<module>order-service</module>
 	</modules>
 
 	<properties>

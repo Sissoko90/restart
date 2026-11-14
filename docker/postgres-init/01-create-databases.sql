@@ -41,3 +41,4 @@ CREATE DATABASE notification_service_db;
 -- tant qu'elle manquait. C'est la deuxieme fois qu'il rend ce service, et la
 -- lecon est la meme — un module peut etre tout vert et incapable de demarrer.
 CREATE DATABASE market_service_db;
+CREATE DATABASE order_service_db;

@@ -1,0 +1,240 @@
+# ==========================================================
+# order-service — panier, commandes et retours
+# ==========================================================
+# SANKADI EST L'INTERMEDIAIRE. L'acheteur commande aupres de Sankadi, et c'est
+# Sankadi qui arbitre les retours : une boutique ne peut pas refuser un retour
+# que Sankadi a accepte.
+#
+# Ce service ne connait pas le catalogue : market-service detient les produits,
+# les prix et le STOCK, que ce module reserve par un appel interne sans le
+# dupliquer.
+#
+# Il ne deplace AUCUN argent et n'organise AUCUNE livraison : ce sont deux
+# services a part entiere, a venir. La commande porte les montants et les dates
+# CONSTATEES, pas les transactions ni les tournees.
+# ==========================================================
+
+server:
+  # 8093 : le premier port libre apres market-service (8092).
+  # Pas de context-path — la passerelle route /api/v1/orders/**.
+  port: 8093
+
+spring:
+  application:
+    name: order-service
+  cloud:
+    consul:
+      discovery:
+        health-check-path: /actuator/health
+
+  # ==========================================
+  # Base de donnees — PostgreSQL R2DBC
+  # ==========================================
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_ORDER:order_service_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    pool:
+      initial-size: 10
+      max-size: 50
+      max-idle-time: 30m
+      validation-query: SELECT 1
+
+  # ==========================================
+  # Schema — Flyway
+  # ==========================================
+  # `baseline-on-migrate: false`, et c'est la seule valeur juste. A `true` sans
+  # `baseline-version`, Flyway qui trouve un schema non vide sans historique
+  # inscrit « version 1 deja passee » et SAUTE V1 : le service demarre alors
+  # sans se plaindre, sur des tables qui n'existent pas.
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME_ORDER:order_service_db}
+    user: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    baseline-on-migrate: false
+    locations: classpath:db/migration
+
+  kafka:
+    consumer:
+      group-id: order-service-group-dev
+
+  # ==========================================
+  # Serveur de ressources OAuth2
+  # ==========================================
+  # L'autorite JWT est interface-service, seul detenteur des cles privees.
+  #
+  # Pas d'`issuer-uri` : il ferait valider le claim `iss` contre une URL, alors
+  # que l'autorite emet `iss: interface-service` — un NOM. Tous les jetons
+  # seraient refuses. L'emetteur EST verifie, par DecodeurJwtDeLaPlateforme
+  # dans SecurityConfig.
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${JWKS_URL:http://localhost:8088/dev/.well-known/jwks.json}
+
+# ==========================================
+# Securite de passerelle
+# ==========================================
+gateway:
+  secret:
+    key: ${GATEWAY_SECRET_KEY}
+
+# `security.internal-secret` vient de application-dev.yml : il est partage par
+# tous les services, et le declarer ici en ferait un second detenteur.
+
+# ==========================================
+# Les services dont celui-ci depend
+# ==========================================
+# Les URL pointent le port du service, PAS la passerelle : /internal/** n'est
+# route par aucune passerelle, et c'est ce qui le rend injoignable de
+# l'exterieur.
+market-service:
+  url: ${MARKET_SERVICE_URL:http://localhost:8092}
+  # Plus long que les autres : l'appel de reservation de stock ECRIT, et il est
+  # sur le chemin critique du passage en caisse. Un delai trop court y
+  # produirait des commandes a moitie creees.
+  timeout-seconds: 8
+
+user-service:
+  url: ${USER_SERVICE_URL:http://localhost:8083}
+  timeout-seconds: 3
+
+notification-service:
+  url: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
+  timeout-seconds: 5
+
+# ==========================================
+# Reglages propres aux commandes
+# ==========================================
+order:
+  paiement:
+    # Delai accorde pour payer, apres quoi la commande est annulee et le stock
+    # RENDU.
+    #
+    # Ce n'est pas un confort. Le stock est reserve chez market-service des la
+    # creation de la commande : sans echeance, un seul acheteur mal
+    # intentionne viderait une boutique sans rien debourser, et le stock
+    # resterait bloque indefiniment.
+    #
+    # Trente minutes : assez pour finir un paiement mobile, assez peu pour
+    # qu'un article convoite ne reste pas retenu une journee.
+    delai-minutes: ${ORDER_PAIEMENT_DELAI_MINUTES:30}
+
+  retour:
+    # Duree de la fenetre de retour, comptee depuis la LIVRAISON.
+    #
+    # Depuis la livraison et non depuis l'achat : un delai qui courrait depuis
+    # la commande serait deja entame, voire epuise, quand le colis arrive.
+    #
+    # La date d'echeance est STOCKEE sur la commande au moment de la livraison.
+    # Changer cette valeur n'affecte donc que les commandes livrees APRES le
+    # changement : une commande deja livree garde la fenetre annoncee a son
+    # acheteur.
+    fenetre-jours: ${ORDER_RETOUR_FENETRE_JOURS:7}
+
+  commission:
+    # La part de Sankadi, en pourcentage du montant des articles.
+    #
+    # Le taux est FIGE SUR CHAQUE COMMANDE a sa creation. Le changer ici
+    # n'affecte que les commandes suivantes : une commande passee sous
+    # l'ancien taux garde ses conditions, sans quoi un versement a la boutique
+    # ne correspondrait plus a ce qui lui avait ete annonce.
+    taux-pourcent: ${ORDER_COMMISSION_TAUX:5.00}
+
+  panier:
+    # Plafond de lignes par panier. Sans lui, une boucle cliente ajoute dix
+    # mille lignes et chaque affichage du panier interroge market-service
+    # autant de fois.
+    lignes-maximum: ${ORDER_PANIER_LIGNES_MAX:50}
+    # Plafond de quantite par ligne. Au-dela, c'est une commande de gros qui se
+    # traite autrement, pas un panier.
+    quantite-maximum-par-ligne: ${ORDER_PANIER_QUANTITE_MAX:20}
+
+  pagination:
+    taille-page-maximale: ${ORDER_PAGE_MAX:100}
+    taille-page-defaut: ${ORDER_PAGE_DEFAUT:20}
+
+  balayage:
+    # Nombre de commandes traitees par passage de balayeur.
+    #
+    # Un plafond, pas un defaut. Sans lui, le premier passage apres une panne
+    # prolongee chargerait toutes les commandes en retard d'un coup, et un
+    # balayeur qui tombe au milieu laisse la moitie du travail fait.
+    plafond: ${ORDER_BALAYAGE_PLAFOND:200}
+    # Periode des deux balayages, en millisecondes.
+    #
+    # Les commandes impayees : toutes les cinq minutes. Une precision plus fine
+    # ne servirait a rien, le delai de paiement etant de trente minutes.
+    impayees-ms: ${ORDER_BALAYAGE_IMPAYEES_MS:300000}
+    # Les clotures : toutes les heures. La fenetre de retour se compte en
+    # jours, et c'est l'etat CLOTUREE que payment-service attendra pour verser.
+    clotures-ms: ${ORDER_BALAYAGE_CLOTURES_MS:3600000}
+
+logging:
+  level:
+    com.abdatytch.order_service: DEBUG
+    org.springframework.security: DEBUG
+
+# ==========================================
+# Sondes de sante
+# ==========================================
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: diskSpace,r2dbc,redis
+        liveness:
+          include: ping
+  health:
+    r2dbc:
+      enabled: true
+    redis:
+      enabled: true
+
+cors:
+  allowed-origins: http://localhost:3000,http://localhost:8080,http://localhost:8081,http://localhost:4200
+  allowed-methods: GET,POST,PUT,DELETE,PATCH,OPTIONS
+  allowed-headers: Authorization,Content-Type,Accept,X-Requested-With,X-XSRF-TOKEN
+  exposed-headers: Authorization,X-Total-Count
+  allow-credentials: true
+  max-age: 3600
+
+# ==========================================
+# Disjoncteurs
+# ==========================================
+# UNE INSTANCE PAR DEPENDANCE, et jamais une partagee : deux dependances qui
+# portent le meme nom tombent ensemble, donc la panne de l'une ferme le chemin
+# de l'autre.
+#
+# `market-service-stock` et `market-service-catalogue` sont volontairement
+# SEPARES, bien qu'ils visent le meme service. L'un ecrit sur le chemin critique
+# du passage en caisse, l'autre lit pour afficher un panier : une lecture qui
+# ralentit ne doit pas fermer le chemin qui reserve du stock.
+#
+# Les noms sont ceux declares dans le code. Une instance non declaree ici herite
+# de `default` ; la declarer explicitement la rend visible dans
+# /actuator/circuitbreakers et dans Prometheus avant tout trafic.
+resilience4j:
+  circuitbreaker:
+    instances:
+      market-service-stock:
+        baseConfig: default
+      market-service-catalogue:
+        baseConfig: default
+      user-service-profil:
+        baseConfig: default
+
+# Ni retry ni ratelimiter ici, et c'est DELIBERE.
+#
+# Rien ne les appliquerait : ce depot n'embarque pas aspectjweaver, donc @Retry
+# et @RateLimiter ne tissent rien. Une instance declaree sans appliquant est une
+# affirmation fausse dans la configuration.
+#
+# Le reessai est de surcroit DANGEREUX ici. Rejouer une lecture de catalogue est
+# anodin ; rejouer une reservation de stock la prend deux fois, et rejouer une
+# transition de commande peut expedier ou rembourser deux fois. Le jour ou un
+# reessai sera voulu, il faudra l'appliquer par operateur sur le chemin NOMME et
+# seulement sur les lectures.
