@@ -1,12 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <!-- Configuration pour masquer les données sensibles dans les logs -->
+    <springProperty scope="context" name="appName" source="spring.application.name"/>
+    <springProperty scope="context" name="lokiUrl" source="loki.url"
+                    defaultValue="http://localhost:3100/loki/api/v1/push"/>
+
+    <!--
+        Les journaux de ce module masquent les donnees sensibles, par un layout
+        maison (MaskingPatternLayout, qui derive de PatternLayout). C'est pour
+        cela que chaque encodeur passe par un <layout> et non par un <pattern>
+        direct.
+
+        DEUX MANQUES CORRIGES LE 2026-11-14.
+
+        1. Aucun traceId ni spanId dans les motifs. Les journaux de ce module ne
+           se recoupaient donc avec aucune trace, ni avec ceux des autres
+           services : il fallait relire la requete a la main pour savoir de
+           laquelle on parlait.
+
+        2. Aucun appender Loki, alors que les six autres modules en avaient un.
+           Les journaux restaient sur la machine. Le module journalisait tres
+           bien localement, donc rien ne signalait qu'ils n'arrivaient nulle
+           part.
+    -->
+
+    <!--
+        Le motif est declare UNE fois. Il vivait en trois copies, une par
+        appender, et trois copies finissent toujours par diverger — c'est ainsi
+        qu'un seul des trois aurait recu le traceId.
+    -->
+    <property name="MOTIF"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5level [%thread] %-40logger{39} [traceId=%X{traceId:-}, spanId=%X{spanId:-}] : %msg%n"/>
     
     <!-- Appender pour la console avec masquage -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
             <layout class="com.abdatytch.interface_service.config.LogMaskingConfig$MaskingPatternLayout">
-                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %5level [%thread] %-40logger{39} : %msg%n</pattern>
+                <pattern>${MOTIF}</pattern>
             </layout>
         </encoder>
     </appender>
@@ -16,7 +45,7 @@
         <file>logs/interface-service.log</file>
         <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
             <layout class="com.abdatytch.interface_service.config.LogMaskingConfig$MaskingPatternLayout">
-                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %5level [%thread] %-40logger{39} : %msg%n</pattern>
+                <pattern>${MOTIF}</pattern>
             </layout>
         </encoder>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
@@ -32,7 +61,7 @@
         <file>logs/security.log</file>
         <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
             <layout class="com.abdatytch.interface_service.config.LogMaskingConfig$MaskingPatternLayout">
-                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %5level [%thread] %-40logger{39} : %msg%n</pattern>
+                <pattern>${MOTIF}</pattern>
             </layout>
         </encoder>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
@@ -43,20 +72,38 @@
         </rollingPolicy>
     </appender>
 
-    <!-- Logger spécifique pour les événements de sécurité -->
-    <logger name="com.abdatytch.interface_service.filter.GatewayAccessFilter" level="WARN" additivity="false">
+    <!--
+        Les evenements de securite : dans leur propre fichier, conserve
+        quatre-vingt-dix jours, ET dans le flux commun.
+
+        Ces trois loggers portaient additivity="false" avec une reference
+        explicite a CONSOLE. L'intention est claire — eviter que la console
+        recoive la ligne deux fois, une par le logger et une par la racine —
+        mais la consequence ne l'etait pas : couper l'additivite coupe l'acces a
+        TOUS les appenders de la racine, donc au fichier commun et, depuis
+        aujourd'hui, a Loki.
+
+        Autrement dit, les journaux les plus importants de ce module etaient les
+        seuls a ne jamais quitter la machine.
+
+        La reference a CONSOLE est donc retiree et l'additivite retablie : la
+        ligne va dans SECURITY par ce logger, puis dans CONSOLE, FILE et LOKI
+        par la racine. Aucun doublon, et plus d'angle mort.
+
+        Le niveau du logger gouverne seul : un INFO d'AdminController atteint
+        les appenders de la racine meme sous le profil prod, ou la racine est a
+        WARN. C'est voulu — une action d'administration est une piece d'audit.
+    -->
+    <logger name="com.abdatytch.interface_service.filter.GatewayAccessFilter" level="WARN">
         <appender-ref ref="SECURITY"/>
-        <appender-ref ref="CONSOLE"/>
     </logger>
 
-    <logger name="com.abdatytch.interface_service.filter.XssProtectionFilter" level="WARN" additivity="false">
+    <logger name="com.abdatytch.interface_service.filter.XssProtectionFilter" level="WARN">
         <appender-ref ref="SECURITY"/>
-        <appender-ref ref="CONSOLE"/>
     </logger>
 
-    <logger name="com.abdatytch.interface_service.controller.AdminController" level="INFO" additivity="false">
+    <logger name="com.abdatytch.interface_service.controller.AdminController" level="INFO">
         <appender-ref ref="SECURITY"/>
-        <appender-ref ref="CONSOLE"/>
     </logger>
 
     <!-- Configuration par défaut -->
@@ -72,11 +119,51 @@
         </root>
     </springProfile>
 
-    <!-- Profil de production -->
+    <!--
+        Profil de production : seul le NIVEAU change.
+
+        Ce bloc re-referencait FILE et SECURITY. FILE etait sans effet, la
+        racine le portant deja et logback ne rattachant pas deux fois le meme
+        appender. SECURITY, en revanche, changeait tout : la racine y versait
+        l'integralite des journaux WARN du module, dans un fichier conserve
+        quatre-vingt-dix jours et plafonne a deux gigaoctets.
+
+        Un journal de securite qui recoit tout n'est plus un journal de
+        securite — il faut le trier pour s'en servir, exactement ce que ce
+        fichier separe existait pour eviter. Et sa longue conservation, choisie
+        pour des evenements de securite, s'appliquait a des lignes
+        quelconques susceptibles de porter des donnees personnelles.
+    -->
     <springProfile name="prod">
-        <root level="WARN">
-            <appender-ref ref="FILE"/>
-            <appender-ref ref="SECURITY"/>
+        <root level="WARN"/>
+    </springProfile>
+
+    <!--
+        Expedition vers Loki : seulement la ou Loki existe.
+
+        Liste blanche de profils, et non « tous sauf dev » : les tests
+        s'executent sans profil actif, donc une exclusion de dev les laisserait
+        expedier dans le vide. Loki n'etant pas demarre en developpement, chaque
+        lot echouerait et loki4j deverserait une pile complete par tentative —
+        un demarrage normal ressemblerait a une panne.
+
+        L'appender est defini DANS le bloc de profil, et pas seulement sa
+        reference : loki4j demarre son fil d'expedition des sa definition.
+    -->
+    <springProfile name="prod | staging | observability">
+        <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+            <http>
+                <url>${lokiUrl}</url>
+            </http>
+            <encoder class="com.github.loki4j.logback.JsonEncoder">
+                <label>
+                    <pattern>service_name=${appName},app=${appName},host=${HOSTNAME},level=%level</pattern>
+                </label>
+            </encoder>
+        </appender>
+
+        <root>
+            <appender-ref ref="LOKI"/>
         </root>
     </springProfile>
 </configuration>

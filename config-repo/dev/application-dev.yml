@@ -62,6 +62,36 @@ netty:
 
 spring:
   # ==========================================
+  # PROPAGATION DU CONTEXTE REACTIF
+  # ==========================================
+  # Sans cette ligne, %X{traceId} est VIDE dans les journaux de tous les
+  # services, sur toutes les requetes.
+  #
+  # Le MDC de logback est lie au FIL d'execution. WebFlux execute la chaine sur
+  # les boucles d'evenements de Netty et sur les ordonnanceurs de Reactor, pas
+  # sur le fil qui a recu la requete : la valeur posee a l'entree n'est plus la
+  # ou la ligne est ecrite. La valeur par defaut, « limited », ne propage le
+  # contexte que dans quelques cas bien delimites.
+  #
+  # Mesure du 2026-11-14, sur les services en marche :
+  #   auto-configuration de tracage seule   -> 0 ligne tracee
+  #   cette propriete seule                 -> 0 ligne tracee
+  #   les deux ensemble                     -> 255 lignes tracees
+  #
+  # auth-service, qui portait l'auto-configuration sans cette propriete, tracait
+  # ses taches PLANIFIEES et aucune requete HTTP : huit lignes remplies sur
+  # quatre cent quatre-vingt-huit. Les taches planifiees tournent sur un fil
+  # dedie, ou le MDC survit ; une requete reactive, non. C'est ce qui rendait le
+  # defaut si difficile a voir : le tracage avait l'air de marcher.
+  #
+  # Le cout : chaque bascule d'ordonnanceur restaure et nettoie le contexte.
+  # Il est reel, et c'est le prix d'un journal qu'on peut recouper avec une
+  # trace. Sans cela, le mode d'emploi d'observability/README.md -- « trouver le
+  # traceId dans les logs » -- n'est pas realisable.
+  reactor:
+    context-propagation: auto
+
+  # ==========================================
   # DATASOURCE / HIKARICP CONFIGURATION
   # ==========================================
   # Note: datasource.url, username, password sont chargés depuis .env via DotenvConfig

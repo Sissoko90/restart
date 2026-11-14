@@ -127,6 +127,69 @@
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
 		</dependency>
+
+		<!--
+		  Expedition des journaux vers Loki.
+
+		  AUCUNE version ici : elle est geree par le POM racine. Une version
+		  posee dans un module surcharge silencieusement celle du parent, et deux
+		  modules finissent par expedier avec des appenders differents.
+
+		  Ajoutee le 2026-11-14 : ce module avait un logback sans Loki, ou pas de
+		  logback du tout. La dependance et le fichier vont ENSEMBLE — la
+		  dependance seule est du poids mort, le fichier seul fait echouer le
+		  demarrage sur une classe d'appender introuvable.
+		-->
+		<dependency>
+			<groupId>com.github.loki4j</groupId>
+			<artifactId>loki-logback-appender</artifactId>
+		</dependency>
+
+		<!--
+		  Le PONT entre Micrometer Tracing et Brave.
+
+		  spring-boot-micrometer-tracing-brave, declare juste au-dessus, apporte
+		  l'auto-configuration et ne tire PAS ce pont de facon transitive.
+		  Mesure du 2026-11-14 : cinq modules avaient l'auto-configuration sans
+		  le pont, donc aucune implementation de Tracer, donc un %X{traceId}
+		  vide malgre les deux autres conditions reunies.
+
+		  Les trois morceaux sont necessaires, et aucun ne suffit : ce pont,
+		  l'auto-configuration, et spring.reactor.context-propagation=auto dans
+		  config-repo/dev/application-dev.yml.
+		-->
+		<dependency>
+			<groupId>io.micrometer</groupId>
+			<artifactId>micrometer-tracing-bridge-brave</artifactId>
+		</dependency>
+
+		<!--
+		  L'AUTO-CONFIGURATION du tracage, et pas seulement sa bibliotheque.
+
+		  Spring Boot 4 a modularise son auto-configuration : celle du tracage
+		  vit dans cet artefact. Le pont micrometer-tracing-bridge-brave, quand
+		  il est present, n'apporte que les classes et ne cable RIEN. Sans cet
+		  artefact : aucun bean Tracer, aucun decorateur de MDC, donc un
+		  %X{traceId} qui reste vide a chaque ligne.
+
+		  IL NE SUFFIT PAS A LUI SEUL sur une pile reactive. Le MDC est lie au
+		  fil, et WebFlux execute sur les boucles d'evenements de Netty : il faut
+		  en plus spring.reactor.context-propagation=auto, pose dans
+		  config-repo/dev/application-dev.yml.
+
+		  Mesure du 2026-11-14, sur le service en marche :
+		    auto-configuration seule          -> 0 ligne tracee
+		    propriete seule                   -> 0 ligne tracee
+		    les deux                          -> 255 lignes tracees
+		  auth-service, qui portait l'auto-configuration sans la propriete,
+		  tracait ses taches planifiees et aucune requete HTTP : huit lignes sur
+		  quatre cent quatre-vingt-huit.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-micrometer-tracing-brave</artifactId>
+		</dependency>
+
 	</dependencies>
 <build>
 		<plugins>

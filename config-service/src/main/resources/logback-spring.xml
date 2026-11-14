@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProperty scope="context" name="appName" source="spring.application.name"/>
+    <springProperty scope="context" name="lokiUrl" source="loki.url"
+                    defaultValue="http://localhost:3100/loki/api/v1/push"/>
+
+    <!--
+        CE FICHIER MANQUAIT, ET SON ABSENCE NE SE VOYAIT PAS.
+
+        Sans lui, le module journalise sur la console avec le format par defaut
+        de Spring Boot : lisible, mais SANS traceId ni spanId, et sans jamais
+        rien expedier a Loki. Un service dont les journaux n'arrivent pas dans
+        l'agregateur est invisible au moment ou l'on en a besoin — et rien ne le
+        signale, puisqu'il journalise tres bien localement.
+
+        Mesure du 2026-11-14 : cinq des douze modules du reacteur etaient dans
+        ce cas, dont celui qui sert la configuration a tous les autres. ModuleLivrableTest le refuse desormais.
+    -->
+
+    <property name="MOTIF"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [traceId=%X{traceId:-}, spanId=%X{spanId:-}] - %msg%n"/>
+
+    <!--
+        traceId et spanId dans le motif.
+
+        Sans eux, une requete qui traverse la passerelle puis deux ou trois
+        services laisse autant de journaux que rien ne relie. C'est precisement
+        quand plusieurs services sont en cause que l'on cherche, et c'est alors
+        qu'on ne peut plus.
+
+        Le motif est declare UNE fois : les deux appenders le partageaient par
+        copie dans les fichiers ecrits avant celui-ci, et deux copies finissent
+        toujours par diverger.
+    -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${MOTIF}</pattern>
+        </encoder>
+    </appender>
+
+    <!--
+        Le nom du fichier vient de spring.application.name, et n'est pas ecrit
+        en dur : un nom code en dur survit a un renommage de module et designe
+        alors un service qui n'existe plus.
+    -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/${appName}.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/${appName}.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${MOTIF}</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+
+    <logger name="com.abdatytch" level="DEBUG"/>
+    <logger name="org.springframework.web" level="INFO"/>
+    <logger name="org.springframework.security" level="DEBUG"/>
+    <!--
+        Le serveur de configuration : ce qu'il sert, et a qui. C'est le seul
+        journal qui dit pourquoi un autre service a demarre avec la mauvaise
+        valeur.
+    -->
+    <logger name="org.springframework.cloud.config.server" level="INFO"/>
+
+    <!--
+        Expedition vers Loki : seulement la ou Loki existe.
+
+        Liste blanche de profils, et non « tous sauf dev » : les tests
+        s'executent sans profil actif, donc une exclusion de dev les laisserait
+        expedier dans le vide. Loki n'etant pas demarre en developpement, chaque
+        lot echouerait et loki4j deverserait une pile complete par tentative —
+        un demarrage normal ressemblerait a une panne.
+
+        L'appender est defini DANS le bloc de profil, et pas seulement sa
+        reference : loki4j demarre son fil d'expedition des sa definition.
+    -->
+    <springProfile name="prod | staging | observability">
+        <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+            <http>
+                <url>${lokiUrl}</url>
+            </http>
+            <encoder class="com.github.loki4j.logback.JsonEncoder">
+                <label>
+                    <pattern>service_name=${appName},app=${appName},host=${HOSTNAME},level=%level</pattern>
+                </label>
+            </encoder>
+        </appender>
+
+        <root>
+            <appender-ref ref="LOKI"/>
+        </root>
+    </springProfile>
+</configuration>

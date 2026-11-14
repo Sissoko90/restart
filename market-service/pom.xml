@@ -223,6 +223,27 @@
 			<artifactId>micrometer-tracing-bridge-brave</artifactId>
 		</dependency>
 
+		<!--
+		  L'AUTO-CONFIGURATION du tracage, et non seulement sa bibliotheque.
+
+		  micrometer-tracing-bridge-brave ci-dessus n'est que le pont : il
+		  apporte les classes, et RIEN ne les cable. Spring Boot 4 a modularise
+		  son auto-configuration, et celle du tracage vit desormais dans
+		  spring-boot-micrometer-tracing-brave. Sans cet artefact : aucun bean
+		  Tracer, aucun decorateur de MDC, donc un %X{traceId} qui reste VIDE a
+		  chaque ligne.
+
+		  Mesure du 2026-11-14 : sur les huit modules qui tournaient, un seul
+		  produisait un traceId rempli : auth-service, le seul a porter cet
+		  artefact. Les autres affichaient « traceId= » des centaines de
+		  milliers de fois, toujours vide. Le champ etait la, la valeur ne
+		  venait jamais.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-micrometer-tracing-brave</artifactId>
+		</dependency>
+
 		<!-- Redis Reactive pour caching non-bloquant -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

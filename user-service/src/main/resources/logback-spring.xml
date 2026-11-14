@@ -55,8 +55,25 @@
     <logger name="com.abdatytch" level="DEBUG"/>
     <logger name="org.springframework.web" level="INFO"/>
     <logger name="org.springframework.security" level="DEBUG"/>
-    <logger name="org.hibernate.SQL" level="DEBUG"/>
-    <logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE"/>
+    <!--
+        LES DEUX LOGGERS HIBERNATE ONT ETE RETIRES LE 2026-11-14.
+
+        Ce module est en R2DBC : Hibernate n'est ni dans son POM ni dans son
+        arbre de dependances. org.hibernate.SQL en DEBUG et
+        org.hibernate.type.descriptor.sql.BasicBinder en TRACE ne reglaient donc
+        rien du tout — mais ils donnaient a croire que le SQL etait journalise,
+        et quelqu'un qui cherchait une requete lente a pu conclure a tort que
+        le DEBUG etait deja actif.
+
+        Le second etait de surcroit le pire des deux a reactiver : BasicBinder
+        en TRACE imprime les VALEURS liees aux parametres, donc les adresses,
+        les numeros et les empreintes de ce service, dans un fichier conserve
+        trente jours.
+
+        L'equivalent R2DBC se regle par org.springframework.r2dbc, laisse a INFO
+        pour exactement la meme raison.
+    -->
+    <logger name="org.springframework.r2dbc" level="INFO"/>
     <!--
         Expedition vers Loki : hors developpement uniquement.
 

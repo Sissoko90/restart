@@ -221,7 +221,7 @@ attrapé — le code était juste, c'est son *branchement* qui ne l'était pas.
 | `MetriquesDesAlertesTest` | une alerte ou un panneau sur une métrique que rien n'émet ; une métrique définie sans appelant ; un centile sur une métrique sans histogramme ; un compteur comparé à zéro sans repli `or vector(0)` |
 | `AnnotationsResilienceInertesTest` | une annotation Resilience4j nouvelle, puisque rien ne la tisse |
 | `AppelsSortantsBornesTest` | un appel sortant sans délai maximal |
-| `ModuleLivrableTest` | un module qui compile mais ne peut pas démarrer |
+| `ModuleLivrableTest` | un module qui compile mais ne peut pas démarrer ; un service dont les journaux n'atteignent pas l'agrégateur, ou y arrivent sans `traceId` ; un `%X{traceId}` dans un motif sans l'auto-configuration qui le remplit |
 | `ValeursInjecteesResolublesTest` | un `@Value` sans défaut et sans source déclarée |
 | `AucunCorpsHtmlEnJavaTest` | du balisage composé en Java |
 | `RoutageCoherentTest`, `CheminCibleTest` | une route déclarée qui ne route rien |
