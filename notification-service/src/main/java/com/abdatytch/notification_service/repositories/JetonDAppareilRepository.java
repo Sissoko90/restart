@@ -1,6 +1,7 @@
 package com.abdatytch.notification_service.repositories;
 
 import com.abdatytch.notification_service.entities.JetonDAppareil;
+import org.springframework.data.r2dbc.repository.Modifying;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import org.springframework.stereotype.Repository;
@@ -42,6 +43,7 @@ public interface JetonDAppareilRepository
      *
      * @return le nombre de lignes touchees, toujours 1
      */
+    @Modifying
     @Query("""
             INSERT INTO jeton_d_appareil
                    (id, destinataire_id, jeton, plateforme, enregistre_le, vu_le)
@@ -85,6 +87,7 @@ public interface JetonDAppareilRepository
      * chaque notification paie un appel reseau et chaque compte rendu porte un
      * echec qui ne se reparera jamais.
      */
+    @Modifying
     @Query("DELETE FROM jeton_d_appareil WHERE jeton = :jeton")
     Mono<Long> retirerJetonInvalide(String jeton);
 
@@ -104,6 +107,7 @@ public interface JetonDAppareilRepository
      *
      * @return le nombre d'appareils retires, zero compris
      */
+    @Modifying
     @Query("DELETE FROM jeton_d_appareil WHERE destinataire_id = :destinataireId")
     Mono<Long> retirerTousPour(String destinataireId);
 
@@ -114,6 +118,7 @@ public interface JetonDAppareilRepository
      * derniere vue ancienne signale une application desinstallee dont FCM n'a
      * pas encore signale l'invalidite.
      */
+    @Modifying
     @Query("DELETE FROM jeton_d_appareil WHERE vu_le < :avant")
     Mono<Long> purgerLesDormants(LocalDateTime avant);
 }

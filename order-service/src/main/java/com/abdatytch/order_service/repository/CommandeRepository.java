@@ -2,6 +2,7 @@ package com.abdatytch.order_service.repository;
 
 import com.abdatytch.order_service.entities.Commande;
 import com.abdatytch.order_service.enums.StatutCommande;
+import org.springframework.data.r2dbc.repository.Modifying;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import org.springframework.stereotype.Repository;
@@ -33,9 +34,22 @@ public interface CommandeRepository extends ReactiveCrudRepository<Commande, UUI
      * entre la lecture et l'ecriture. Sur une commande, cette fenetre suffit a
      * expedier deux fois ou a rembourser deux fois.
      *
+     * <h3>{@code @Modifying} n'est pas decoratif</h3>
+     *
+     * <p>Sans lui, Spring Data R2DBC traite cette requete comme une LECTURE :
+     * elle est bien executee, mais aucun compte de lignes n'est emis et le
+     * {@code Mono} est VIDE. Un {@code flatMap} en aval n'est alors jamais
+     * appele, et la branche d'erreur est sautee.
+     *
+     * <p>Mesure du 2026-11-14 sur le service en marche : la reservation rendait
+     * « 200 [] » sans rien journaliser, et l'appelant croyait avoir reserve.
+     * {@code RequetesModifiantesAnnoteesTest} refuse desormais toute requete
+     * UPDATE, INSERT ou DELETE sans cette annotation.
+     *
      * @return le nombre de lignes modifiees : 1 si la transition a eu lieu,
      *         0 si l'etat attendu n'etait plus celui de la ligne
      */
+    @Modifying
     @Query("""
             UPDATE commande
                SET statut = :vers, updated_at = CURRENT_TIMESTAMP

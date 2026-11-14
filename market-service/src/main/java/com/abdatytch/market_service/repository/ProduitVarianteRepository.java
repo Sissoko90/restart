@@ -1,6 +1,7 @@
 package com.abdatytch.market_service.repository;
 
 import com.abdatytch.market_service.entities.ProduitVariante;
+import org.springframework.data.r2dbc.repository.Modifying;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import org.springframework.stereotype.Repository;
@@ -33,10 +34,23 @@ public interface ProduitVarianteRepository extends ReactiveCrudRepository<Produi
      * desactivee pendant que l'acheteur remplissait son panier ne doit pas etre
      * vendue.
      *
+     * <h3>{@code @Modifying} n'est pas decoratif</h3>
+     *
+     * <p>Sans lui, Spring Data R2DBC traite cette requete comme une LECTURE :
+     * elle est bien executee, mais aucun compte de lignes n'est emis et le
+     * {@code Mono} est VIDE. Un {@code flatMap} en aval n'est alors jamais
+     * appele, et la branche d'erreur est sautee.
+     *
+     * <p>Mesure du 2026-11-14 sur le service en marche : la reservation rendait
+     * « 200 [] » sans rien journaliser, et l'appelant croyait avoir reserve.
+     * {@code RequetesModifiantesAnnoteesTest} refuse desormais toute requete
+     * UPDATE, INSERT ou DELETE sans cette annotation.
+     *
      * @return 1 si la reservation a eu lieu, 0 si le stock etait insuffisant ou
      *         la variante inactive. Jamais d'exception : l'indisponibilite
      *         n'est pas une panne, c'est une reponse
      */
+    @Modifying
     @Query("""
             UPDATE produit_variante
                SET stock = stock - :quantite, updated_at = CURRENT_TIMESTAMP
@@ -56,6 +70,7 @@ public interface ProduitVarianteRepository extends ReactiveCrudRepository<Produi
      * desactivee entre-temps doit quand meme recuperer son stock, sinon la
      * reactiver la montrerait vide.
      */
+    @Modifying
     @Query("""
             UPDATE produit_variante
                SET stock = stock + :quantite, updated_at = CURRENT_TIMESTAMP

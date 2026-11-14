@@ -1,6 +1,7 @@
 package com.abdatytch.market_service.repository;
 
 import com.abdatytch.market_service.entities.ProduitPhoto;
+import org.springframework.data.r2dbc.repository.Modifying;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import org.springframework.stereotype.Repository;
@@ -24,6 +25,7 @@ public interface ProduitPhotoRepository extends ReactiveCrudRepository<ProduitPh
      * refuserait sinon la seconde, et le message parlerait d'une contrainte
      * au lieu de l'intention.
      */
+    @Modifying
     @Query("UPDATE produit_photo SET principale = FALSE WHERE produit_id = :produitId")
     Mono<Void> retirerLaPrincipale(UUID produitId);
 }

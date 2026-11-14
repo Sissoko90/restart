@@ -1,6 +1,7 @@
 package com.abdatytch.notification_service.repositories;
 
 import com.abdatytch.notification_service.entities.SurchargeDeModele;
+import org.springframework.data.r2dbc.repository.Modifying;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import org.springframework.stereotype.Repository;
@@ -32,6 +33,7 @@ public interface SurchargeDeModeleRepository
      *
      * @return le nombre de lignes touchees, toujours 1
      */
+    @Modifying
     @Query("""
             INSERT INTO surcharge_de_modele (cle, valeur, modifiee_par, modifiee_le)
             VALUES (:cle, :valeur, :modifieePar, CURRENT_TIMESTAMP)

@@ -2,6 +2,7 @@ package com.abdatytch.market_service.repository;
 
 import com.abdatytch.market_service.entities.Produit;
 import com.abdatytch.market_service.security.PorteeDuCatalogue;
+import org.springframework.data.r2dbc.repository.Modifying;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import org.springframework.stereotype.Repository;
@@ -126,6 +127,7 @@ public interface ProduitRepository extends ReactiveCrudRepository<Produit, UUID>
      * d'incrementer : un increment suppose connaitre l'etat precedent, et se
      * desynchronise des qu'un avis est modere apres coup.
      */
+    @Modifying
     @Query("""
             UPDATE produit SET
                 note_moyenne = COALESCE((SELECT ROUND(AVG(note), 2) FROM avis

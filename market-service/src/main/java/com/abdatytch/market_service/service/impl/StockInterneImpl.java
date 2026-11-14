@@ -83,7 +83,33 @@ public class StockInterneImpl implements IStockInterne {
                         // une. flatMap les lancerait en parallele et l'ordre
                         // impose plus haut ne servirait a rien.
                         .concatMap(ligne -> reserverUneLigne(portee, ligne))
-                        .collectList());
+                        .collectList())
+                // LE GARDE-FOU DE TAILLE.
+                //
+                // Une reservation rend AUTANT de lignes qu'on lui en a
+                // demande, ou elle echoue. Jamais moins.
+                //
+                // C'est une protection de forme, et non de cas : elle attrape
+                // n'importe quel operateur qui laisserait tomber une ligne en
+                // silence, y compris ceux qu'on ajoutera plus tard. Le defaut
+                // du 2026-11-14 — un Mono vide avale par un flatMap — serait
+                // mort ici meme sans le defaultIfEmpty qui le corrige a la
+                // source.
+                //
+                // Deux filets valent mieux qu'un quand le cout d'un trou est
+                // une commande a zero ligne, donc a zero franc, parfaitement
+                // valide pour la base.
+                .flatMap(reservees -> {
+                    if (reservees.size() != ordonnees.size()) {
+                        log.error("Reservation incoherente : {} ligne(s) rendues pour "
+                                        + "{} demandees. Rien n'est conserve.",
+                                reservees.size(), ordonnees.size());
+                        return Mono.error(new IllegalStateException(
+                                "Reservation incoherente : " + reservees.size() + " sur "
+                                        + ordonnees.size()));
+                    }
+                    return Mono.just(reservees);
+                });
     }
 
     private Mono<LigneReserveeResponse> reserverUneLigne(
@@ -111,6 +137,16 @@ public class StockInterneImpl implements IStockInterne {
             Produit produit, ProduitVariante variante, int quantite) {
 
         return variantes.reserver(variante.getId(), quantite)
+                // defaultIfEmpty(0) : un UPDATE R2DBC qui ne touche AUCUNE ligne
+                // emet un Mono VIDE, et non zero. Sans cette ligne, le flatMap
+                // ci-dessous n'est jamais appele : la branche de refus est
+                // sautee, la ligne disparait du resultat, et l'appel rend 200
+                // avec une liste vide.
+                //
+                // Mesure du 2026-11-14 sur le service en marche : reserver 5
+                // unites d'un article qui n'en a qu'une rendait « 200 [] » et
+                // ne journalisait rien. L'appelant croyait avoir reserve.
+                .defaultIfEmpty(0)
                 .flatMap(lignesModifiees -> {
                     if (lignesModifiees == 0) {
                         // Stock insuffisant ou variante inactive. Ce n'est pas
@@ -227,7 +263,12 @@ public class StockInterneImpl implements IStockInterne {
                         .sorted(java.util.Comparator.comparing(
                                 RestitutionStockRequest.Ligne::varianteId))
                         .toList())
-                .concatMap(ligne -> variantes.rendre(ligne.varianteId(), ligne.quantite()))
+                // Meme piege qu'a la reservation : un UPDATE qui ne touche
+                // aucune ligne emet un Mono VIDE. Ici la consequence serait un
+                // total sous-estime, donc un journal qui affirme avoir rendu
+                // moins qu'il n'a rendu.
+                .concatMap(ligne -> variantes.rendre(ligne.varianteId(), ligne.quantite())
+                        .defaultIfEmpty(0))
                 .reduce(0, Integer::sum)
                 .doOnNext(rendues -> log.info("Stock rendu sur {} ligne(s)", rendues));
     }
