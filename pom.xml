@@ -43,7 +43,7 @@
 		  contournements d'authentification dans un service d'authentification ne
 		  se laissent pas en attente.
 		-->
-		<version>4.0.6</version>
+		<version>4.2.0</version>
 		<relativePath/>
 	</parent>
 
@@ -96,7 +96,7 @@
 		<java.version>17</java.version>
 
 		<!-- Spring Cloud : doit rester compatible avec la version de Spring Boot ci-dessus -->
-		<spring-cloud.version>2025.1.4</spring-cloud.version>
+		<spring-cloud.version>2025.1.5</spring-cloud.version>
 
 		<!-- Bibliothèques transverses -->
 		<jjwt.version>0.13.0</jjwt.version>
